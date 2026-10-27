@@ -30,6 +30,7 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - [Audio capture probe across meeting apps](issues/05-audio-capture-probe.md): tap every process owned by the Meeting App (responsible PID, not bundle ID), update the tap live; no-callback fallback only while the app outputs audio; zeros = silence; permission via TCC preflight; Detection ignores Carbon + CoreSpeech; Zoom/Teams from research only.
 - [Public meeting corpora for quality tests](issues/16-public-meeting-corpora.md): AMI + QMSum + ICSI (EN) and SUMM-RE + Simsamu (FR) cover most quality tests; the hand-recorded set shrinks to 4 Meetings (EN 1:1, FR 3+, mixed EN/FR, 60 min Zoom with mutes).
 - [Prior art in Minute and meeting-transcriber](issues/15-prior-art-minute-and-meeting-transcriber.md): pasrom detects calls by power assertions, diarizes Them only, Voice Print cutoff 0.40 cosine distance; Minute ships chunk-then-merge Summary (4K flagged debug-only); Parakeet not clearly better than Whisper on AMI; reusable scoring code + Jitsi replay test.
+- [Real meeting test set](issues/06-real-meeting-test-set.md): 28 public-corpus Meetings in `~/Datasets/carbon-test-set` (AMI ES2004/ES2011 series, ICSI Bed016 + Bmr006, SUMM-RE dev incl. Zoom, Simsamu) as aligned Me/Them WAVs + RTTM/words/summary references; no live-call replay.
 
 ## Not yet specified
 
