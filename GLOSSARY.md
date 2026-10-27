@@ -20,6 +20,10 @@ _Avoid_: Provider app, client, host app
 Carbon noticing that a Meeting is likely under way, which starts transcribing it or offers to.
 _Avoid_: Trigger, auto-record
 
+**Ignored App**:
+An app whose use of the microphone never counts toward Detection, such as a dictation tool or a screen recorder.
+_Avoid_: Blocklist, excluded app
+
 **Transcript**:
 The raw, machine-generated text of what was said in one Meeting, attributed to speakers.
 _Avoid_: Notes, minutes, recording, summary

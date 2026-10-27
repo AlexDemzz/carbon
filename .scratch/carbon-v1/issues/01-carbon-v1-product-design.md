@@ -15,10 +15,10 @@ Resolved in a live grilling session on 2026-10-27. Vocabulary: `GLOSSARY.md`. Ha
 **Product.** Free, public macOS app, US market first, English-only UI. Detects the person's Meetings on any Provider (Meet, Zoom, Teams…) and transcribes them fully on-device so an AI agent can read them. No Google OAuth, no cloud. Prefer native Apple frameworks wherever one exists.
 
 **Detection & capture.**
-- Detection = which process holds the mic (`kAudioHardwarePropertyProcessObjectList` + `kAudioProcessPropertyIsRunningInput`), ~15 s threshold, ignored-apps list, matched to calendar events read through EventKit (no Google sign-in).
+- Detection = which process holds the mic (`kAudioHardwarePropertyProcessObjectList` + `kAudioProcessPropertyIsRunningInput`), ~15 s threshold, ignored-apps list, matched to calendar events read through EventKit (no Google sign-in). Zoom/Teams/Webex in-call power assertions added as a second signal; rules, thresholds and Ignored Apps in "Power assertions as a Detection signal" (issues/17).
 - Auto-transcribe **on by default**: native notification "Transcribing in <language>" with **Stop** (discards captured audio) and **Switch language ▸**; red dot on the menu bar icon for the whole Meeting. When auto is off: native banner asking to transcribe. No first-launch onboarding screen.
 - Audio: Core Audio process tap on the meeting app's whole bundle/process family; fall back to a global system-audio tap if the targeted tap is silent. Only the "system audio recording" permission (no Screen Recording).
-- Auto-stop when all hold: mic released + 30 s silence + calendar event ended; no event → mic released + 10 min silence. Manual Stop always available.
+- Auto-stop when all hold: mic released + 30 s silence + calendar event ended; no event → mic released + 10 min silence. Manual Stop always available. A Meeting caught by a call assertion stops on its release without waiting for the event end (issues/17).
 - No echo handling in v1 (native voice processing ducks call audio). Audio deleted after transcription; setting to keep it.
 - Meetings without a calendar event are transcribed with a default title ("Meeting Oct 27, 14:02"), renamable.
 
