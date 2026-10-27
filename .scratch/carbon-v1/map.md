@@ -14,7 +14,7 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - No hand-run tests or hand-recorded Meetings: the author only uses the built app and reports back. Quality prototypes run fully AFK (public corpora, scripted replay); the human only reacts to the verdict.
 - The author owns the product structure and options already validated in "Carbon v1 product design"; technical calls beyond that (detection signals, thresholds, engines, formats) are not theirs to make. Resolve them by research against open-source prior art and official docs, then decide and record the rationale; only bring a question to the author when it changes the product the author validated.
 - Overnight 2026-10-27 → 28 the author is away and pre-approves the agent's recommendation on every remaining verdict (prototype outcomes, spec review): take the recommended option, record it, and keep going. Tools available: Orca's built-in browser (`orca` CLI) for web steps and Cloudflare `wrangler` for the Worker + R2. Steps that truly need the author (paid Apple Developer ID, signing identities, secrets only they hold) are listed in a checklist for the morning, never blocked on.
-- Tracker: local markdown. Tickets in `issues/`; research findings land in `docs/research/` (the repo is not under git yet, so no `research/<name>` branches).
+- Tracker: local markdown. Tickets in `issues/`; research findings land in `docs/research/` on `main`. The repo is git, private on GitHub (`AlexDemzz/carbon`, open-sourced later): commit and push each resolved ticket to `main`; keep corpora and large downloads outside the repo.
 
 ## Decisions so far
 
