@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.env
+.env.*
+.scratch/carbon-v1/prototypes/audio-capture-probe/probe

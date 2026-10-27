@@ -1,0 +1,52 @@
+# Carbon
+
+Carbon detects the meetings a person takes part in on their Mac and keeps a local, agent-readable Transcript of each.
+
+## Language
+
+**Meeting**:
+A call the person took part in that Carbon transcribed.
+_Avoid_: Call, conference, session, recording
+
+**Provider**:
+The meeting platform a Meeting was held on, such as Google Meet or Zoom.
+_Avoid_: Source, integration, platform, service
+
+**Meeting App**:
+The app on the Mac the person joins a Meeting through, such as Chrome, Safari or the Zoom app. One Provider can be reached through several Meeting Apps, and one browser can host several Providers.
+_Avoid_: Provider app, client, host app
+
+**Detection**:
+Carbon noticing that a Meeting is likely under way, which starts transcribing it or offers to.
+_Avoid_: Trigger, auto-record
+
+**Transcript**:
+The raw, machine-generated text of what was said in one Meeting, attributed to speakers.
+_Avoid_: Notes, minutes, recording, summary
+
+**Meeting Language**:
+The spoken language a Meeting is transcribed in, chosen by the person rather than detected.
+_Avoid_: Locale, transcription language
+
+**Speaker**:
+A distinct voice in a Transcript: the person themself ("Me") or another participant, unnamed ("Speaker A") until named.
+_Avoid_: Participant, attendee, voice
+
+**Voice Print**:
+The remembered signature of a named Speaker's voice, used to recognize them in later Meetings.
+_Avoid_: Embedding, voice profile
+
+**Summary**:
+A short recap of a Meeting: key points and next steps.
+_Avoid_: Notes, minutes, recap
+
+**Library**:
+The set of Meetings, with their Transcripts and Summaries, stored on the person's Mac.
+_Avoid_: Vault, archive, folder
+
+**Local Edit**:
+A change the person made to a Meeting in the Library.
+
+**Deleted Meeting**:
+A Meeting the person removed from the Library.
+_Avoid_: Archived, trashed

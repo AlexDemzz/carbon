@@ -1,0 +1,337 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Answers the ticket "Icon board" (../../issues/11-icon-board.md).
+  Four app icon + menu bar template icon directions around "carbon copy", switchable via ?variant=A|B|C|D|all.
+  Open the file in a browser; ← / → cycle variants.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Carbon icon board</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; min-width: 0; }
+  :root {
+    color-scheme: light dark;
+    text-wrap: pretty;
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    --bg: light-dark(oklch(0.97 0 none), oklch(0.17 0 none));
+    --panel: light-dark(oklch(1 0 none), oklch(0.22 0 none));
+    --ink: light-dark(oklch(0.2 0 none), oklch(0.95 0 none));
+    --muted: light-dark(oklch(0.5 0 none), oklch(0.68 0 none));
+    --line: light-dark(oklch(0.9 0 none), oklch(0.3 0 none));
+    --wall-light: linear-gradient(160deg, oklch(0.9 0.04 230), oklch(0.82 0.06 300));
+    --wall-dark: linear-gradient(160deg, oklch(0.32 0.06 260), oklch(0.18 0.05 300));
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); padding: 2rem 1rem 6rem; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  svg { display: block; flex: none; }
+  main { max-inline-size: 72rem; margin-inline: auto; display: flex; flex-direction: column; gap: 1.5rem; }
+  header p { margin: 0.4rem 0 0; color: var(--muted); max-inline-size: 48rem; }
+  .eyebrow { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+  .panel h2 { font-size: 0.95rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
+
+  .wall { border-radius: 0.75rem; padding: 1.5rem; display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: end; justify-content: safe center; flex: 1 1 20rem; }
+  .wall.light { background: var(--wall-light); color: oklch(0.2 0 none); }
+  .wall.dark { background: var(--wall-dark); color: oklch(0.95 0 none); }
+  .size { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; font-size: 0.7rem; opacity: 0.75; font-variant-numeric: tabular-nums; }
+
+  .menubar { display: flex; align-items: center; justify-content: end; gap: 0.9rem; block-size: 24px; padding-inline: 0.75rem; border-radius: 0.5rem; font-size: 13px; font-weight: 500; }
+  .menubar.light { background: oklch(0.97 0.01 250 / 0.85); color: oklch(0.15 0 none); }
+  .menubar.dark { background: oklch(0.2 0.01 260 / 0.9); color: oklch(0.97 0 none); }
+  .menubar .dummy { inline-size: 15px; block-size: 11px; border-radius: 3px; background: currentColor; opacity: 0.55; }
+  .menubar .clock { font-variant-numeric: tabular-nums; }
+  .bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 0.75rem; }
+  .bars figure { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+  .bars figcaption, .zoom figcaption { font-size: 0.75rem; color: var(--muted); }
+
+  .zoom { display: flex; flex-wrap: wrap; gap: 1rem; }
+  .zoom figure { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; align-items: center; }
+  .tile { inline-size: 7rem; aspect-ratio: 1; border-radius: 0.6rem; display: grid; place-items: center; }
+  .tile.light { background: oklch(0.96 0 none); color: oklch(0.1 0 none); border: 1px solid var(--line); }
+  .tile.dark { background: oklch(0.2 0 none); color: oklch(0.98 0 none); }
+
+  .notif { inline-size: min(100%, 22rem); display: flex; gap: 0.7rem; align-items: start; padding: 0.75rem 0.85rem; border-radius: 1.1rem; backdrop-filter: blur(20px); font-size: 13px; line-height: 1.3; }
+  .wall.light .notif { background: oklch(0.98 0 none / 0.72); }
+  .wall.dark .notif { background: oklch(0.28 0 none / 0.72); }
+  .notif strong { display: block; }
+  .notif .actions { display: flex; gap: 0.4rem; margin-block-start: 0.5rem; }
+  .notif .actions span { padding: 0.2rem 0.6rem; border-radius: 999px; background: oklch(0.5 0 none / 0.18); font-size: 12px; }
+  .wall.notifs { align-items: start; }
+
+  .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+  .overview .panel { align-items: center; text-align: center; }
+  .overview a { color: inherit; text-decoration: none; }
+  .overview .glyphs { display: flex; gap: 0.5rem; }
+  .overview p { margin: 0; font-size: 0.85rem; color: var(--muted); }
+
+  .switcher { position: fixed; inset-block-end: max(1rem, env(safe-area-inset-bottom, 0px)); inset-inline-start: 50%; translate: -50% 0; display: flex; align-items: center; gap: 0.25rem; padding: 0.3rem; border-radius: 999px; background: oklch(0.15 0 none); color: oklch(0.98 0 none); box-shadow: 0 8px 30px oklch(0 0 none / 0.35); font-size: 0.85rem; z-index: 10; }
+  .switcher button { font: inherit; color: inherit; background: transparent; border: 0; border-radius: 999px; inline-size: 2.2rem; block-size: 2.2rem; cursor: pointer; touch-action: manipulation; user-select: none; transition: scale 120ms var(--ease-out); }
+  .switcher button:active { scale: 0.96; }
+  .switcher button:focus-visible { outline: max(2px, 0.08em) solid currentColor; outline-offset: 0.1em; }
+  @media (hover: hover) and (pointer: fine) { .switcher button:hover { background: oklch(1 0 none / 0.12); } }
+  .switcher output { padding-inline: 0.6rem; min-inline-size: 11rem; text-align: center; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<nav class="switcher" aria-label="Prototype variant">
+  <button type="button" id="prev" aria-label="Previous variant">←</button>
+  <output id="label"></output>
+  <button type="button" id="next" aria-label="Next variant">→</button>
+</nav>
+<script>
+const SQUIRCLE = 'x="100" y="100" width="824" height="824" rx="185"';
+let uidCounter = 0;
+const uid = () => `i${uidCounter++}`;
+
+function appFrame(id, defs, bg, content) {
+  return `<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+    <defs>${defs}
+      <clipPath id="${id}-clip"><rect ${SQUIRCLE}/></clipPath>
+      <linearGradient id="${id}-sheen" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="white" stop-opacity="0.34"/><stop offset="0.5" stop-color="white" stop-opacity="0"/>
+      </linearGradient>
+      <filter id="${id}-drop" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dy="14" stdDeviation="16" flood-opacity="0.28"/></filter>
+      <filter id="${id}-soft" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dy="10" stdDeviation="14" flood-opacity="0.35"/></filter>
+    </defs>
+    <rect ${SQUIRCLE} fill="${bg}" filter="url(#${id}-drop)"/>
+    <g clip-path="url(#${id}-clip)">${content}<rect ${SQUIRCLE} fill="url(#${id}-sheen)"/></g>
+    <rect ${SQUIRCLE} fill="none" stroke="white" stroke-opacity="0.2" stroke-width="4"/>
+  </svg>`;
+}
+
+function arc(cx, cy, r, gapDeg) {
+  const a = gapDeg * Math.PI / 180;
+  const x = cx + r * Math.cos(a), y1 = cy - r * Math.sin(a), y2 = cy + r * Math.sin(a);
+  return `M ${x} ${y1} A ${r} ${r} 0 1 0 ${x} ${y2}`;
+}
+
+const RED = 'oklch(0.63 0.24 27)';
+
+const VARIANTS = {
+  A: {
+    name: 'Carbon sheet',
+    idea: 'A typed page lifted off its carbon backing. The most literal "carbon copy": a document, with Me / Them speaker labels as the two accent lines.',
+    app(id) {
+      const defs = `
+        <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.44 0.03 260)"/><stop offset="1" stop-color="oklch(0.2 0.02 260)"/></linearGradient>
+        <linearGradient id="${id}-carbon" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="oklch(0.3 0.04 262)"/><stop offset="1" stop-color="oklch(0.12 0.02 262)"/></linearGradient>
+        <linearGradient id="${id}-paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(1 0 none)"/><stop offset="1" stop-color="oklch(0.91 0.006 260)"/></linearGradient>`;
+      const grey = 'oklch(0.72 0.01 260)';
+      return appFrame(id, defs, `url(#${id}-bg)`, `
+        <rect x="370" y="250" width="380" height="500" rx="40" transform="rotate(8 560 500)" fill="url(#${id}-carbon)" stroke="oklch(1 0 none / 0.14)" stroke-width="4"/>
+        <g transform="rotate(-5 480 520)" filter="url(#${id}-soft)">
+          <rect x="290" y="270" width="380" height="500" rx="40" fill="url(#${id}-paper)"/>
+          <rect x="350" y="365" width="110" height="30" rx="15" fill="oklch(0.55 0.17 255)"/>
+          <rect x="350" y="420" width="260" height="26" rx="13" fill="${grey}"/>
+          <rect x="350" y="470" width="210" height="26" rx="13" fill="${grey}"/>
+          <rect x="350" y="545" width="110" height="30" rx="15" fill="oklch(0.35 0.03 260)"/>
+          <rect x="350" y="600" width="260" height="26" rx="13" fill="${grey}"/>
+          <rect x="350" y="650" width="170" height="26" rx="13" fill="${grey}"/>
+        </g>`);
+    },
+    glyph(id, rec) {
+      return `
+        <mask id="${id}-back"><rect width="18" height="18" fill="white"/><rect x="1.2" y="3.3" width="11.9" height="14.6" rx="2.4" fill="black"/></mask>
+        <mask id="${id}-front"><rect width="18" height="18" fill="white"/>
+          <rect x="4.3" y="7.4" width="5.6" height="1.25" rx="0.6" fill="black"/><rect x="4.3" y="10.1" width="4.2" height="1.25" rx="0.6" fill="black"/><rect x="4.3" y="12.8" width="5.2" height="1.25" rx="0.6" fill="black"/>
+        </mask>
+        <mask id="${id}-rec"><rect width="18" height="18" fill="white"/>${rec ? '<circle cx="15" cy="3.2" r="4.2" fill="black"/>' : ''}</mask>
+        <g mask="url(#${id}-rec)">
+          <rect x="6.3" y="1.4" width="9.2" height="11.6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3" mask="url(#${id}-back)"/>
+          <rect x="2.3" y="4.4" width="9.6" height="12.2" rx="1.6" fill="currentColor" mask="url(#${id}-front)"/>
+        </g>
+        ${rec ? `<circle cx="15" cy="3.2" r="2.8" fill="${RED}"/>` : ''}`;
+    },
+    recNote: 'Red badge punched out of the top-right corner.',
+  },
+
+  B: {
+    name: 'Graphene ring',
+    idea: 'The carbon atom ring holding a voice. Abstract and badge-like: reads as "Carbon" first, transcription second.',
+    app(id) {
+      const hex = (r) => Array.from({ length: 6 }, (_, k) => {
+        const a = (-90 + 60 * k) * Math.PI / 180;
+        return [512 + r * Math.cos(a), 512 + r * Math.sin(a)];
+      });
+      const ring = hex(270);
+      const defs = `
+        <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.98 0.004 250)"/><stop offset="1" stop-color="oklch(0.85 0.012 250)"/></linearGradient>
+        <linearGradient id="${id}-ink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.36 0.03 258)"/><stop offset="1" stop-color="oklch(0.14 0.02 258)"/></linearGradient>`;
+      const bars = [120, 230, 320, 210, 110].map((h, i) =>
+        `<rect x="${512 + (i - 2) * 72 - 21}" y="${512 - h / 2}" width="42" height="${h}" rx="21" fill="${i === 2 ? 'oklch(0.55 0.17 255)' : `url(#${id}-ink)`}"/>`).join('');
+      return appFrame(id, defs, `url(#${id}-bg)`, `
+        <g filter="url(#${id}-soft)">
+          <polygon points="${ring.map(p => p.join(',')).join(' ')}" fill="oklch(1 0 none / 0.55)" stroke="url(#${id}-ink)" stroke-width="44" stroke-linejoin="round"/>
+          ${ring.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="44" fill="url(#${id}-ink)"/>`).join('')}
+        </g>
+        ${bars}`);
+    },
+    glyph(id, rec) {
+      const pts = Array.from({ length: 6 }, (_, k) => {
+        const a = (-90 + 60 * k) * Math.PI / 180;
+        return `${9 + 7.6 * Math.cos(a)},${9 + 7.6 * Math.sin(a)}`;
+      }).join(' ');
+      const inner = rec
+        ? `<circle cx="9" cy="9" r="3.1" fill="${RED}"/>`
+        : `<g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="6.3" y1="7.4" x2="6.3" y2="10.6"/><line x1="9" y1="5.8" x2="9" y2="12.2"/><line x1="11.7" y1="7" x2="11.7" y2="11"/></g>`;
+      return `<polygon points="${pts}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>${inner}`;
+    },
+    recNote: 'The waveform inside the ring becomes the red dot.',
+  },
+
+  C: {
+    name: 'Voice to words',
+    idea: 'A waveform that turns into lines of text: what Carbon does, on warm paper. The "copy" is the voice copied down.',
+    app(id) {
+      const ink = 'oklch(0.24 0.012 260)';
+      const defs = `<linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.985 0.012 85)"/><stop offset="1" stop-color="oklch(0.9 0.025 78)"/></linearGradient>`;
+      const bars = [150, 300, 220, 120].map((h, i) =>
+        `<rect x="${245 + i * 76}" y="${512 - h / 2}" width="46" height="${h}" rx="23" fill="${ink}"/>`).join('');
+      const lines = [210, 160, 210, 120].map((w, i) =>
+        `<rect x="${570}" y="${398 + i * 66}" width="${w}" height="46" rx="23" fill="${ink}" opacity="${1 - i * 0.14}"/>`).join('');
+      return appFrame(id, defs, `url(#${id}-bg)`, `<g filter="url(#${id}-soft)">${bars}${lines}</g>`);
+    },
+    glyph(id, rec) {
+      const left = rec
+        ? `<circle cx="4.6" cy="9" r="3" fill="${RED}"/>`
+        : `<g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2.2" y1="6.6" x2="2.2" y2="11.4"/><line x1="4.6" y1="4.4" x2="4.6" y2="13.6"/><line x1="7" y1="6" x2="7" y2="12"/></g>`;
+      return `${left}<g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="10" y1="5.4" x2="16.2" y2="5.4"/><line x1="10" y1="9" x2="14.6" y2="9"/><line x1="10" y1="12.6" x2="16.2" y2="12.6"/></g>`;
+    },
+    recNote: 'The waveform half becomes the red dot; the text lines stay.',
+  },
+
+  D: {
+    name: 'Double C',
+    idea: 'A C and its offset copy on carbon-fibre black. Monogram, most brand-like, says nothing about audio.',
+    app(id) {
+      const defs = `
+        <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(0.26 0 none)"/><stop offset="1" stop-color="oklch(0.1 0 none)"/></linearGradient>
+        <pattern id="${id}-weave" width="48" height="48" patternUnits="userSpaceOnUse">
+          <rect width="24" height="24" fill="white" opacity="0.05"/><rect x="24" y="24" width="24" height="24" fill="white" opacity="0.05"/>
+        </pattern>
+        <linearGradient id="${id}-silver" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="oklch(1 0 none)"/><stop offset="1" stop-color="oklch(0.76 0.012 255)"/></linearGradient>`;
+      return appFrame(id, defs, `url(#${id}-bg)`, `
+        <rect ${SQUIRCLE} fill="url(#${id}-weave)"/>
+        <path d="${arc(545, 555, 225, 48)}" fill="none" stroke="oklch(0.42 0.06 258)" stroke-width="120" stroke-linecap="round"/>
+        <path d="${arc(480, 490, 225, 48)}" fill="none" stroke="url(#${id}-silver)" stroke-width="120" stroke-linecap="round" filter="url(#${id}-soft)"/>`);
+    },
+    glyph(id, rec) {
+      return `
+        <path d="${arc(10, 10.5, 5.3, 50)}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity="0.45"/>
+        <path d="${arc(8, 8.3, 5.3, 50)}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        ${rec ? `<circle cx="14.6" cy="10" r="2.5" fill="${RED}"/>` : ''}`;
+    },
+    recNote: 'The red dot sits in the mouth of the C.',
+  },
+};
+
+const KEYS = [...Object.keys(VARIANTS), 'all'];
+
+const appIcon = (v, size) => `<div style="inline-size:${size}px">${VARIANTS[v].app(uid())}</div>`;
+const glyph = (v, rec, size) => {
+  const id = uid();
+  return `<svg width="${size}" height="${size}" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs></defs>${VARIANTS[v].glyph(id, rec)}</svg>`;
+};
+
+const menubar = (v, theme, rec) => `
+  <div class="menubar ${theme}">
+    <span class="dummy"></span><span class="dummy"></span>${glyph(v, rec, 18)}<span class="dummy"></span><span class="clock">Tue Oct 27  14:02</span>
+  </div>`;
+
+const notification = (v) => `
+  <div class="notif">${appIcon(v, 40)}
+    <div><strong>Carbon</strong>Transcribing in English · Weekly sync
+      <div class="actions"><span>Stop</span><span>Switch language ▸</span></div>
+    </div>
+  </div>`;
+
+function renderVariant(v) {
+  const meta = VARIANTS[v];
+  const sizes = (theme) => `<div class="wall ${theme}">${[256, 128, 64, 32, 16].map(s =>
+    `<div class="size">${appIcon(v, s)}<span>${s}</span></div>`).join('')}</div>`;
+  const zoom = ['light', 'dark'].flatMap(theme => [false, true].map(rec =>
+    `<figure><div class="tile ${theme}">${glyph(v, rec, 90)}</div><figcaption>${theme} · ${rec ? 'recording' : 'idle'}</figcaption></figure>`)).join('');
+  const bars = ['light', 'dark'].flatMap(theme => [false, true].map(rec =>
+    `<figure>${menubar(v, theme, rec)}<figcaption>${theme} menu bar · ${rec ? 'recording' : 'idle'}</figcaption></figure>`)).join('');
+  return `
+    <header>
+      <div class="eyebrow">Carbon icon board · direction ${v}</div>
+      <h1>${meta.name}</h1>
+      <p>${meta.idea}</p>
+    </header>
+    <section class="panel"><h2>App icon (Finder, Applications, About, notifications; Carbon has no Dock icon)</h2>
+      <div class="row">${sizes('light')}${sizes('dark')}</div>
+    </section>
+    <section class="panel"><h2>Menu bar template icon, real size (18 pt)</h2>
+      <div class="bars">${bars}</div>
+    </section>
+    <section class="panel"><h2>Menu bar icon, 5× · ${meta.recNote}</h2>
+      <div class="zoom">${zoom}</div>
+    </section>
+    <section class="panel"><h2>Start notification</h2>
+      <div class="row"><div class="wall light notifs">${notification(v)}</div><div class="wall dark notifs">${notification(v)}</div></div>
+    </section>`;
+}
+
+function renderOverview() {
+  return `
+    <header>
+      <div class="eyebrow">Carbon icon board · overview</div>
+      <h1>Four directions around "carbon copy"</h1>
+      <p>Pick one, or name the parts to steal ("glyph from C, icon from A"). Click a card to open its full board.</p>
+    </header>
+    <div class="overview">${Object.entries(VARIANTS).map(([k, m]) => `
+      <a href="?variant=${k}" class="panel">
+        ${appIcon(k, 160)}
+        <h2>${k} · ${m.name}</h2>
+        <div class="glyphs">
+          <div class="tile light" style="inline-size:3.5rem">${glyph(k, false, 36)}</div>
+          <div class="tile light" style="inline-size:3.5rem">${glyph(k, true, 36)}</div>
+          <div class="tile dark" style="inline-size:3.5rem">${glyph(k, false, 36)}</div>
+          <div class="tile dark" style="inline-size:3.5rem">${glyph(k, true, 36)}</div>
+        </div>
+        <p>${m.idea}</p>
+      </a>`).join('')}
+    </div>`;
+}
+
+function current() {
+  const v = new URLSearchParams(location.search).get('variant');
+  return KEYS.includes(v) ? v : 'all';
+}
+
+function render() {
+  const v = current();
+  uidCounter = 0;
+  document.getElementById('app').innerHTML = v === 'all' ? renderOverview() : renderVariant(v);
+  document.getElementById('label').textContent = v === 'all' ? 'Overview' : `${v} (${VARIANTS[v].name})`;
+}
+
+function go(step) {
+  const i = (KEYS.indexOf(current()) + step + KEYS.length) % KEYS.length;
+  const url = new URL(location.href);
+  url.searchParams.set('variant', KEYS[i]);
+  history.replaceState(null, '', url);
+  render();
+}
+
+document.getElementById('prev').addEventListener('click', () => go(-1));
+document.getElementById('next').addEventListener('click', () => go(1));
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return;
+  if (e.key === 'ArrowLeft') go(-1);
+  if (e.key === 'ArrowRight') go(1);
+});
+render();
+</script>
+</body>
+</html>
