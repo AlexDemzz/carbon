@@ -131,6 +131,29 @@ struct RecoveryTests {
         #expect(await makeRecorder(transcriber: transcriber).recover() == [], "Failed/ is never looked at again")
     }
 
+    @Test func recoveryLeavesAMeetingThatStartedMeanwhileLive() async throws {
+        try await crashDuringAMeeting(me: 6, them: 6)
+        let interruptedID = UUID(uuidString: "0B6E3A55-8F7C-4D21-A1E4-5C9D2B7F1E08")!
+        let interrupted = inProgress.appending(path: interruptedID.uuidString)
+        try FileManager.default.moveItem(at: folder, to: interrupted)
+        let state = interrupted.appending(path: "state.json")
+        let json = try String(contentsOf: state, encoding: .utf8)
+            .replacingOccurrences(of: meetingID.uuidString, with: interruptedID.uuidString)
+        try json.write(to: state, atomically: true, encoding: .utf8)
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"), me: 6, them: 6)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        let recoveries = await recorder.recover()
+
+        #expect(recoveries == [.recovered(
+            title: "Meeting Oct 23, 9:15 AM",
+            file: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md"))])
+        #expect(recorder.state == .live(LiveMeeting(
+            id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: date("2026-10-23T13:15:00Z"),
+            language: Locale(identifier: "en_US"))))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: inProgress.path) == [meetingID.uuidString])
+    }
+
     func jsonObject(at url: URL) throws -> NSDictionary {
         try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? NSDictionary)
     }

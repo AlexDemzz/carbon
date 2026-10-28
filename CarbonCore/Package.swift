@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "CarbonCore", targets: ["CarbonCore"])
     ],
     targets: [
-        .target(name: "CarbonCore"),
+        .target(name: "CarbonCore", resources: [.copy("Resources/VendorTable.json")]),
         .testTarget(
             name: "CarbonCoreTests",
             dependencies: ["CarbonCore"],

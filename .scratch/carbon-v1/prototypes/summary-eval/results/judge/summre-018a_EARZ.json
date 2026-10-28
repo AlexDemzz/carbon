@@ -1,0 +1,24 @@
+{"meeting": "summre-018a_EARZ",
+ "top5": [
+  "Exercice: chacun partage son expérience personnelle des GAFAM, des réseaux sociaux, du numérique et de l'open source",
+  "GAFAM: Amazon pratique et pas cher mais évité pour ses conditions de travail; Apple fermé et peu personnalisable mais simple, face à Android/Microsoft plus ouverts",
+  "Numérique en recherche: Me (thèse en littérature) gagne énormément de temps grâce aux livres numériques; professeurs plus lents à s'y mettre",
+  "Open source / libre accès: politique d'AMU, paradoxe des chercheurs non rémunérés pour la recherche; Wikipédia comme exemple; données personnelles cédées aux réseaux sociaux",
+  "Usages des réseaux sociaux: usages variés, LinkedIn utile pour stages et recruteurs, Messenger plutôt que SMS, rachat de WhatsApp par Facebook et cookies/pistage publicitaire"
+ ],
+ "X": {"usefulness": 2, "coverage": "2 / 5",
+  "wrong": [
+   "Next step 'Explorer l'utilisation de YouTube pour les recherches': personne ne s'y engage dans la réunion",
+   "Next step 'Comprendre les implications de l'open source dans la création de bases de données': inventé, aucun engagement"
+  ],
+  "next_steps": 1, "language": "yes", "noise": 2,
+  "comment": "Une liste de remarques sur les réseaux sociaux qui oublie le numérique en recherche, le paradoxe de l'open access et les GAFAM, avec des next steps inventés et un doublon sur l'open source."},
+ "Y": {"usefulness": 3, "coverage": "3 / 5",
+  "wrong": [
+   "Next step 'Explorer les options de personnalisation des appareils pour éviter les restrictions': inventé",
+   "Next step 'Évaluer les avantages et inconvénients de l'utilisation de l'open source dans la recherche': inventé",
+   "Next step 'Identifier les stratégies pour améliorer la gestion des contacts sur les plateformes numériques': inventé"
+  ],
+  "next_steps": 1, "language": "yes", "noise": 0,
+  "comment": "Les points clés sont justes et couvrent le numérique en recherche et le paradoxe de l'open access, mais ils restent vagues sur les GAFAM, et les trois next steps sont inventés alors que la réunion n'avait aucune action."}
+}

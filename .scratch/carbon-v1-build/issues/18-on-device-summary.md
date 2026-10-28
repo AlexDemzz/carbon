@@ -1,13 +1,13 @@
 # 18: On-device Summary in the file and the panel
 
-**What to build:** each Meeting gets a Summary, written in the Meeting Language, with "Key points" and "Next steps". It is inserted above `## Transcript` once ready, after the Transcript file is already on disk, and shown as notes at the top of the Meeting panel. This ticket applies the verdict of "On-device summary quality" (`.scratch/carbon-v1/issues/10-on-device-summary-quality.md`):
+**What to build:** each Meeting gets a Summary, written in the Meeting Language, with "Key points" and "Next steps". It is inserted above `## Transcript` once ready, after the Transcript file is already on disk, and shown as notes at the top of the Meeting panel. **Verdict (2026-10-28): drop.** Only the drop path applies: build the no-op Summarizer and the port wiring, and skip the unchecked boxes about the Foundation Models adapter, rendering, retry and panel notes. This ticket applies the verdict of "On-device summary quality" (`.scratch/carbon-v1/issues/10-on-device-summary-quality.md`):
 - **ship**: as in the spec, using the variant that ticket picks (rolling or map-reduce);
 - **adjust format**: the spec's Summary type and rendering, adjusted per the verdict;
 - **drop**: a no-op Summarizer, `summary: "off"`, no section and no notes. In that case only the port wiring lands.
 
 Spec: "Summary (pending …)", UI (Meeting panel).
 
-**Blocked by:** On-device summary quality (`.scratch/carbon-v1/issues/10-on-device-summary-quality.md`), 08 (Main window: Meeting list, search and Meeting panel), 09 (Meeting actions, the editor window, Local Edits and reconcile).
+**Blocked by:** 08 (Main window: Meeting list, search and Meeting panel), 09 (Meeting actions, the editor window, Local Edits and reconcile).
 
 **Status:** ready-for-agent
 

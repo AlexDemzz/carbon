@@ -1,0 +1,37 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 18.352449999999997,
+  "keyPoints" : [
+    "Les comédies et les super-héros sont choisis comme thèmes principaux pour l'événement de cinéma.",
+    "Le cinéma classique est choisi comme lieu principal, avec la possibilité d'un drive.",
+    "Deadpool est proposé comme film phare pour clôturer l'événement.",
+    "Le cinéma en plein air et le cinéma drive à Aix et Marseille sont mentionnés comme options disponibles.",
+    "Le cinéma en plein air est présent dans divers lieux, y compris le Pavillon Vendôme.",
+    "Le cinéma en drive est considéré comme une alternative adaptée, surtout par temps froid ou froid."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-020b_EBDZ",
+  "nextSteps" : [
+    "Déterminer l'ordre de présentation des films, avec alternance entre comédies et super-héros.",
+    "Envisager une répartition sur plusieurs jours : une journée pour les super-héros et une pour les comédies.",
+    "Confirmer la position de Deadpool, soit au début, soit à la fin, comme film phare.",
+    "Explorer les options de cinéma en plein air et de cinéma drive à Aix et Marseille.",
+    "Identifier les lieux et les conditions pour le cinéma en plein air et le cinéma en drive."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 4443,
+      "kind" : "chunk 1",
+      "seconds" : 11.402737021446228
+    },
+    {
+      "inputTokens" : 1451,
+      "kind" : "chunk 2",
+      "seconds" : 3.9244409799575806
+    }
+  ],
+  "totalSeconds" : 25.07180607318878,
+  "transcriptChars" : 20007,
+  "transcriptTokens" : 5549,
+  "variant" : "rolling"
+}

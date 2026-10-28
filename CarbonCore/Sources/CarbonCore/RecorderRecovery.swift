@@ -15,11 +15,12 @@ extension Recorder {
     static let recoveryAttemptsAllowed = 2
 
     /// Finishes every Meeting a crash interrupted, from the audio flushed to its in-progress folder.
-    /// Call at launch, before any Meeting starts. A folder whose recovery fails stays for the next launch.
+    /// Call once at launch. It runs beside Detection: a Meeting that starts meanwhile is never mistaken for an
+    /// interrupted one. A folder whose recovery fails stays for the next launch.
     public func recover() async -> [Recovery] {
-        guard state == .idle, recording == nil else { return [] }
+        let live = recording?.folder.folder.lastPathComponent
         var recoveries: [Recovery] = []
-        for folder in InProgressMeeting.interrupted(in: inProgressRoot) {
+        for folder in InProgressMeeting.interrupted(in: inProgressRoot) where folder.folder.lastPathComponent != live {
             if let recovery = await recover(folder) { recoveries.append(recovery) }
         }
         return recoveries
@@ -30,9 +31,12 @@ extension Recorder {
             folder.moveToFailed()
             return .failed(title: nil)
         }
+        // Only the bundle ID is saved: an app the vendor table doesn't know is its own provider.
+        let app = saved.meetingApp.map { MeetingApp(bundleID: $0, name: $0) }
         let meeting = LiveMeeting(
             id: saved.id, title: MeetingFormat.defaultTitle(start: start, in: timeZone), start: start,
-            language: Locale(identifier: Locale.identifier(.icu, from: saved.language)))
+            language: Locale(identifier: Locale.identifier(.icu, from: saved.language)), app: app,
+            provider: app.map(vendorTable.provider(for:)) ?? "Unknown")
         guard saved.recoveryAttempts < Self.recoveryAttemptsAllowed else {
             folder.moveToFailed()
             return .failed(title: meeting.title)
@@ -47,17 +51,15 @@ extension Recorder {
             folder.remove()
             return .discarded(title: meeting.title)
         }
-        state = .finishing(meeting)
-        defer { state = .idle }
         let transcriber = transcriber
-        let file = try? await finish(meeting, end: start + seconds, folder: folder) {
+        let written = try? await file(meeting, end: start + seconds, folder: folder) {
             async let meWords = Self.transcribe(
                 me == nil ? nil : folder.meAudio, as: .me, in: meeting.language, with: transcriber)
             async let themWords = Self.transcribe(
                 them == nil ? nil : folder.themAudio, as: .them, in: meeting.language, with: transcriber)
             return (try await meWords, try await themWords)
         }
-        return file.map { .recovered(title: meeting.title, file: $0) }
+        return written.map { .recovered(title: meeting.title, file: $0) }
     }
 
     /// The seconds of audio in the file, or nil when it can't be read.

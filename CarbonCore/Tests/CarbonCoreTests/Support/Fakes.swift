@@ -155,6 +155,10 @@ final class TestClock: Sendable {
     func advance(by seconds: TimeInterval) {
         current.withLock { $0 += seconds }
     }
+
+    func set(_ date: Date) {
+        current.withLock { $0 = date }
+    }
 }
 
 /// A fresh folder under the system temporary directory, removed when the value is released.

@@ -14,9 +14,9 @@ The person wants every Meeting they take on their Mac turned into a plain file o
 
 ## Solution
 
-Carbon is a free, native macOS 26 menu bar app for Apple silicon. It notices when the person is in a Meeting on any Provider and transcribes it on-device. It separates the person ("Me") from the other participants, then tells those participants apart and recognizes the voices it has heard before. With a calendar event it takes the title and participants from it. When the Meeting ends it writes one Markdown file per Meeting into a visible Library folder: YAML frontmatter, a short Summary, then a Transcript with one `**Speaker** [m:ss] text` Turn per line.
+Carbon is a free, native macOS 26 menu bar app for Apple silicon. It notices when the person is in a Meeting on any Provider and transcribes it on-device. It separates the person ("Me") from the other participants, then tells those participants apart and recognizes the voices it has heard before. With a calendar event it takes the title and participants from it. When the Meeting ends it writes one Markdown file per Meeting into a visible Library folder: YAML frontmatter, then a Transcript with one `**Speaker** [m:ss] text` Turn per line.
 
-A split window lists the Meetings with search, shows a Meeting's participants, Summary and Transcript, and lets the person name Speakers, edit the file, copy its path for an agent, or delete it. Carbon starts transcribing automatically by default. It says so with a notification that offers Stop and language switches, and with a red dot in the menu bar for the whole Meeting.
+A split window lists the Meetings with search, shows a Meeting's participants and Transcript, and lets the person name Speakers, edit the file, copy its path for an agent, or delete it. Carbon starts transcribing automatically by default. It says so with a notification that offers Stop and language switches, and with a red dot in the menu bar for the whole Meeting.
 
 It ships as a signed, notarized DMG from https://carbon.alexandrejoly.me/download and updates itself through Sparkle.
 
@@ -79,7 +79,9 @@ It ships as a signed, notarized DMG from https://carbon.alexandrejoly.me/downloa
 44. As a person, I want to turn voice recognition off entirely, so that Carbon never stores a Voice Print.
 45. As a person, I want Carbon to fall back to Me / Them when it can't tell the voices apart, so that I still get a Transcript.
 
-### Summary (pending the "On-device summary quality" verdict)
+### Summary (not in v1)
+
+"On-device summary quality" dropped the Summary from v1. Stories 46–48 and 65 are kept for v1.1+ and are not built now. Story 49 holds as written.
 
 46. As a person, I want a short Summary at the top of each Meeting file, with key points and next steps, so that I or my agent can see what happened without reading everything.
 47. As a person in a French Meeting, I want the Summary written in French, so that it matches what was said.
@@ -203,7 +205,7 @@ Each module is deep: a small interface over a lot of behavior.
   - **Delete**: deleting a print removes it and clears `voicePrintId` in every Meeting that links it. The names already written in Markdown files stay: they are the person's text.
   - **Switch**: "Recognize voices" (on by default) in Settings › Voice Prints. Off, Carbon neither matches nor enrolls, and asks once whether to delete the existing prints.
   - The file never leaves the Mac, is not in the Library folder, and is excluded from the timestamped backups.
-- **Summarizer** (app adapter behind a port, **pending**, see below).
+- **Summarizer** (app adapter behind a port; a no-op in v1, see below).
 - **Library** (in `CarbonCore`). Owns the Markdown files and `meetings.json`. Its interface: `create(meeting, transcript)`, `insertSummary(id, summary)`, `renameSpeaker(id, label, name)`, `rename(id, title)`, `setColor`, `delete(id)`, `save(id, editedMarkdown)`, `reconcile()`, `search(query)`, and an observable list of Meetings. Details under "Library and `meetings.json`".
 - **Recorder** (in `CarbonCore`, the orchestrator). In: Detector commands and the ports (Capture, Transcriber, Diarizer, Summarizer, EventMatcher input, clock). Out: Library writes and UI state (`idle`, `live(meeting)`, `finishing(meeting)`). It runs the Meeting lifecycle: in-progress folder → live transcription → end → diarization → Voice Print match → TranscriptBuilder → Library create → Summary → Library insertSummary → cleanup. It is the main test seam (see Testing).
 - **Updater** (app adapter). Sparkle `SPUStandardUpdaterController`. Its feed URL comes from Info.plist, its automatic-check toggle is bound to Settings, and its menu item is "Check for Updates…".
@@ -275,16 +277,20 @@ Each module is deep: a small interface over a lot of behavior.
 - A Meeting the person stopped with Stop (discard) or Discard deletes its folder at once.
 - If recovery itself crashes twice on the same folder (counted in `state.json`), the folder is moved to `InProgress/Failed/` and Carbon stops retrying.
 
-### Summary (pending "On-device summary quality")
+### Summary (dropped from v1)
 
-Specified as designed in "Carbon v1 product design". The verdict of issues/10 (**ship as designed / adjust format / drop**) is still to come, because the Apple Intelligence model hadn't finished downloading. The harness and the bar are fixed in that ticket's prototype.
+**Verdict of issues/10: drop.** Apple Foundation Models has an 8,192-token context on macOS 27. On the 18 AMI, ICSI and SUMM-RE Meetings it scored a mean usefulness of 2.7 in English and 2.1–2.9 in French, against a bar of 3. Each Summary carried 1.4–2.4 wrong or unsupported items, mostly invented next steps, and 1 Meeting in 18 hit a guardrail false positive. Speed passed (≤ 3 min per hour of audio).
 
-- Apple Foundation Models (`SystemLanguageModel.default`), chunk-then-merge inside the model's context (`contextSize`, 4K today), written in the Meeting Language.
+**v1:** the Summarizer port gets a no-op adapter and `summary` is `off` for every Meeting. `## Summary` is never written, and the Meeting panel shows no notes section. Nothing else changes: the port, the `summary` field and `insertSummary` stay, so a later model can be plugged in.
+
+The design below is kept as the starting point for v1.1+, when the summary-eval harness passes on a newer model. Map-reduce was the better variant: fewer wrong items, and less noise in French.
+
+- Apple Foundation Models (`SystemLanguageModel.default`), chunk-then-merge inside the model's context (`contextSize`, 8K on macOS 27), written in the Meeting Language.
   - Guided generation (`@Generable`) with two fields, key points and next steps (with the owner when known), greedy sampling and a fresh session per pass.
   - The input is the rendered Transcript, one Turn per line.
   - The chunk budget comes from `tokenCount(for:)`: context − output reserve − prompt overhead.
   - Chunks break at line boundaries.
-- Which chunking variant ships, Minute's rolling deltas or map-reduce with a final 3–8 key points, is part of the verdict. The port is the same either way: `summarize(transcript, language) async throws -> Summary { keyPoints, nextSteps }`.
+- Variant: map-reduce, with a final 3–8 key points (it beat Minute's rolling deltas). The port: `summarize(transcript, language) async throws -> Summary { keyPoints, nextSteps }`.
 - Written as:
 
   ```markdown
@@ -302,17 +308,13 @@ Specified as designed in "Carbon v1 product design". The verdict of issues/10 (*
   When nothing was agreed, the "Next steps" heading is left out.
 - Availability: if the model is unavailable (`modelNotReady`, Apple Intelligence off, unsupported device or language), the Meeting is marked `summary: unavailable`. Carbon retries pending and unavailable Meetings when `availability` turns available, oldest first, one at a time.
 - Failures: a guardrail violation, a context overflow, or invalid output after one repair pass marks the Meeting `failed`, with no retry. The panel then shows "No Summary for this Meeting." in secondary text.
-- Applying the verdict:
-  - **ship**: as above.
-  - **adjust format**: change only the Summary type and its rendering, for example dropping next steps or changing the item count. TranscriptBuilder, Library and UI keep their interfaces.
-  - **drop**: the Summarizer port gets a no-op adapter, `summary` is `off`, the `## Summary` section is never written and the panel shows no notes section. Nothing else changes.
 
 ### UI
 
 As validated in "Main window, menus and notification mock" (issues/12), which wins over the UI part of the product design. Summary:
 
 - **Main window**: native split view. Sidebar: "Search Meetings" field, then rows (color dot, bold title, grey "date · length · participants" with full participants on hover), newest first.
-- **Meeting panel**: title and "date · length · Provider · Meeting Language" in the title bar; Edit and More (⋯) as separate toolbar buttons. Body: participant tokens, then the Summary notes, then the Transcript as "Speaker · 0:19" over each Turn, with tabular digits. Every Speaker except Me has a chevron menu (attendees + "Other Name…"); unnamed ones are blue.
+- **Meeting panel**: title and "date · length · Provider · Meeting Language" in the title bar; Edit and More (⋯) as separate toolbar buttons. Body: participant tokens, then the Transcript (the Summary notes go above it once a Summary ships, not in v1) as "Speaker · 0:19" over each Turn, with tabular digits. Every Speaker except Me has a chevron menu (attendees + "Other Name…"); unnamed ones are blue.
 - **Editor window**: the whole Markdown file in a plain-text editor with Speaker chips on top. Save (⌘S) writes the file. Closing with unsaved changes asks first. An editor save is a Local Edit.
 - **Menus**:
   - Context menu: Copy Path ⇧⌘C, Copy Markdown ⌘C, Reveal in Finder, Edit ↩, color palette, Delete ⌫.
@@ -407,7 +409,7 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
 ## Out of Scope
 
 - Hand-recorded Meetings and hand-run Detection tuning ("Detection and auto-stop rules on real usage", the hand part of "Real meeting test set").
-- A Parakeet post-pass (including for phone-band audio), attendee-name boosting, automatic or mid-Meeting language switching, echo cancellation, participant names via Accessibility or a browser extension, syncing Provider transcripts or Gemini summaries, multiple accounts: v1.1+.
+- A Parakeet post-pass (including for phone-band audio), attendee-name boosting, automatic or mid-Meeting language switching, echo cancellation, participant names via Accessibility or a browser extension, syncing Provider transcripts or Gemini summaries, multiple accounts, an on-device Summary ("On-device summary quality"): v1.1+.
 - Google Drive / Meet API sync with OAuth (ADR-0001, superseded by ADR-0003).
 - Isolating one browser tab's audio: other audio of the Meeting App lands in Them (issues/05).
 - Intel Macs, macOS before 26, Mac App Store distribution, localization of the UI (English only).
@@ -416,7 +418,7 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
 
 ## Further Notes
 
-- **Summary verdict pending.** When the Apple Intelligence model is ready, run the summary-eval harness (`run-all.sh`, `score.py`, `judge-rubric.md`), apply the bar fixed in its README, resolve issues/10, and update the "Summary" section of this spec with the verdict and the chosen variant. Only the Summarizer adapter and the Summary rendering depend on it, so implementation of everything else can start now.
+- **Summary dropped** by "On-device summary quality". Re-run `prototypes/summary-eval` (`run-all.sh`, `score.py`, `judge-rubric.md`, the same bar) when Apple ships a stronger on-device model.
 - **Weak cases to watch while dogfooding** (from the resolved tickets):
   - phone-band dial-in audio (SpeechTranscriber drops passages);
   - overlap-heavy talk (missed by diarization);

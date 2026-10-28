@@ -1,0 +1,37 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 20.435966666666666,
+  "keyPoints" : [
+    "Le thème de la transition numérique est trop large et pourrait faire perdre l'attention des jeunes.",
+    "L'utilisation du téléphone et des réseaux sociaux comporte des risques comme la surutilisation, les ondes, la pollution et le cyberharcèlement."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-032b_EADH",
+  "nextSteps" : [
+    "Explorer la possibilité de concentrer le thème sur une seule journée avec des sessions distinctes pour les dangers du téléphone et des réseaux sociaux.",
+    "Discuter de la faisabilité d'un événement sur plusieurs jours avec des thèmes quotidiens, malgré le risque de perte d'engagement."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 4422,
+      "kind" : "chunk 1",
+      "seconds" : 10.737295031547546
+    },
+    {
+      "error" : "May contain unsafe content",
+      "inputTokens" : 4525,
+      "kind" : "chunk 2",
+      "seconds" : 1.6262359619140625
+    },
+    {
+      "error" : "May contain unsafe content",
+      "inputTokens" : 1816,
+      "kind" : "chunk 3",
+      "seconds" : 0.5763829946517944
+    }
+  ],
+  "totalSeconds" : 34.55475103855133,
+  "transcriptChars" : 38238,
+  "transcriptTokens" : 10222,
+  "variant" : "rolling"
+}

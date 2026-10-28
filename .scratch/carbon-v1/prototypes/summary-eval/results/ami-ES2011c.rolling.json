@@ -1,0 +1,37 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 26.9344,
+  "keyPoints" : [
+    "The team is considering a touch-based graphical interface on the TV screen instead of a physical screen for navigation.",
+    "The team is discussing whether to include a screen, noting it may require an advanced chip and be more expensive.",
+    "The team is exploring tactile design ideas using fruit and vegetable themes, including spongy materials like rubber stress balls.",
+    "The team is considering integrating fruit and vegetable names or colors into the remote's design for thematic consistency.",
+    "The idea of a detachable squishy part with changeable fruit and vegetable designs is being discussed.",
+    "The possibility of using silver and yellow company colors on the remote is mentioned.",
+    "The need to place the logo on the remote and integrate batteries under the plastic case is noted.",
+    "The discussion includes alternative power sources like solar, wind-up, and dynamo, with battery being the preferred option due to cost concerns."
+  ],
+  "language" : "en",
+  "meeting" : "ami-ES2011c",
+  "nextSteps" : [
+    "Explore cost implications for different power sources, especially batteries and chip production.",
+    "Determine how to integrate the logo and battery placement into the remote design.",
+    "Begin hands-on prototyping with play-dough to evaluate design and user interface look and feel."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 4423,
+      "kind" : "chunk 1",
+      "seconds" : 9.982213973999023
+    },
+    {
+      "inputTokens" : 2208,
+      "kind" : "chunk 2",
+      "seconds" : 7.189903020858765
+    }
+  ],
+  "totalSeconds" : 28.29938793182373,
+  "transcriptChars" : 25950,
+  "transcriptTokens" : 6323,
+  "variant" : "rolling"
+}

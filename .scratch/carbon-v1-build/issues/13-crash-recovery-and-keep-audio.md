@@ -14,7 +14,8 @@
 
 **Implementation notes:**
 
-- Live and recovered Meetings share `Recorder.finish` (diarization, Library create, Keep audio, cleanup). Voice Prints (14) and Summary (18) should hook in there so recovery gets them too.
+- Live and recovered Meetings share `Recorder.file(_:end:folder:words:)` (diarization, Library create, Keep audio, cleanup). Voice Prints should hook in there so recovery gets them too.
+- Recovery runs alongside Detection at launch. It never touches `state`, and it skips the live Meeting's folder. A recovered Meeting's provider comes from the vendor table by the saved `meetingApp` bundle ID, or is the bundle ID itself when the table doesn't know it.
 - A Meeting with no flushed audio on either stream (killed in its first 5 s) counts as unreadable: it is discarded, with the notification. A single unreadable stream is treated as silence on that side.
 - A recovery that fails without crashing (the transcriber throws, for example) leaves the folder for the next launch and counts as an attempt.
 - An unreadable `state.json` sends the folder straight to `InProgress/Failed/`, with "Carbon couldn't recover a Meeting and stopped trying."

@@ -1,0 +1,162 @@
+ami-ES2004a [rolling] context 8192, transcript 3775 tok, 199 turns
+  chunk 1: 3884 tok, 20.1 s
+  total 27.0 s, 7 key points, 4 next steps
+ami-ES2004a [mapreduce] context 8192, transcript 3775 tok, 199 turns
+  map 1: 3828 tok, 12.2 s
+  reduce 1.1: 255 tok, 3.2 s
+  total 23.2 s, 4 key points, 2 next steps
+ami-ES2004b [rolling] context 8192, transcript 8951 tok, 352 turns
+  chunk 1: 4516 tok, 11.3 s
+  chunk 2: 4548 tok, 13.4 s
+  chunk 3: 554 tok, 1.6 s
+  total 40.2 s, 9 key points, 7 next steps
+ami-ES2004b [mapreduce] context 8192, transcript 8951 tok, 352 turns
+  map 1: 6639 tok, 26.5 s
+  map 2: 2418 tok, 10.2 s
+  reduce 1.1: 643 tok, 7.3 s
+  total 55.6 s, 8 key points, 8 next steps
+ami-ES2004c [rolling] context 8192, transcript 9293 tok, 379 turns
+  chunk 1: 4465 tok, 16.9 s
+  chunk 2: 4686 tok, 13.6 s
+  chunk 3: 1083 tok, 2.4 s
+  total 47.0 s, 13 key points, 8 next steps
+ami-ES2004c [mapreduce] context 8192, transcript 9293 tok, 379 turns
+  map 1: 6536 tok, 20.5 s
+  map 2: 2863 tok, 8.0 s
+  reduce 1.1: 446 tok, 3.0 s
+  total 45.6 s, 8 key points, 0 next steps
+ami-ES2004d [rolling] context 8192, transcript 8879 tok, 492 turns
+  chunk 1: 4420 tok, 12.7 s
+  chunk 2: 4543 tok, 11.6 s
+  chunk 3: 663 tok, 1.5 s
+  total 44.5 s, 11 key points, 3 next steps
+ami-ES2004d [mapreduce] context 8192, transcript 8879 tok, 492 turns
+  map 1: 6513 tok, 17.3 s
+  map 2: 2472 tok, 4.2 s
+  reduce 1.1: 293 tok, 3.1 s
+  total 44.1 s, 5 key points, 3 next steps
+ami-ES2011a [rolling] context 8192, transcript 3358 tok, 159 turns
+  chunk 1: 3467 tok, 7.7 s
+  total 17.1 s, 5 key points, 0 next steps
+ami-ES2011a [mapreduce] context 8192, transcript 3358 tok, 159 turns
+  map 1: 3411 tok, 13.2 s
+  reduce 1.1: 332 tok, 3.8 s
+  total 28.7 s, 4 key points, 5 next steps
+ami-ES2011b [rolling] context 8192, transcript 6099 tok, 251 turns
+  chunk 1: 4493 tok, 10.9 s
+  chunk 2: 1892 tok, 3.4 s
+  total 28.9 s, 4 key points, 1 next steps
+ami-ES2011b [mapreduce] context 8192, transcript 6099 tok, 251 turns
+  map 1: 6152 tok, 20.7 s
+  reduce 1.1: 294 tok, 3.6 s
+  total 33.5 s, 7 key points, 2 next steps
+ami-ES2011c [rolling] context 8192, transcript 6323 tok, 282 turns
+  chunk 1: 4423 tok, 10.0 s
+  chunk 2: 2208 tok, 7.2 s
+  total 28.3 s, 8 key points, 3 next steps
+ami-ES2011c [mapreduce] context 8192, transcript 6323 tok, 282 turns
+  map 1: 6376 tok, 20.9 s
+  reduce 1.1: 297 tok, 3.8 s
+  total 38.7 s, 4 key points, 5 next steps
+ami-ES2011d [rolling] context 8192, transcript 6453 tok, 383 turns
+  chunk 1: 4392 tok, 9.0 s
+  chunk 2: 2350 tok, 3.3 s
+  total 26.2 s, 4 key points, 1 next steps
+ami-ES2011d [mapreduce] context 8192, transcript 6453 tok, 383 turns
+  map 1: 6506 tok, 19.4 s
+  reduce 1.1: 280 tok, 2.6 s
+  total 36.7 s, 4 key points, 4 next steps
+icsi-Bed016 [rolling] context 8192, transcript 10328 tok, 682 turns
+  chunk 1: 4366 tok, 7.9 s
+  chunk 2: 4455 tok, 7.5 s
+  chunk 3: 1998 tok, 3.7 s
+  total 43.2 s, 5 key points, 5 next steps
+icsi-Bed016 [mapreduce] context 8192, transcript 10328 tok, 682 turns
+  map 1: 6479 tok, 12.1 s
+  map 2: 3955 tok, 8.0 s
+  reduce 1.1: 239 tok, 3.2 s
+  total 49.9 s, 6 key points, 1 next steps
+icsi-Bmr006 [rolling] context 8192, transcript 24441 tok, 1471 turns
+  chunk 1: 4223 tok, 12.7 s
+  chunk 2: 4507 tok, 12.3 s
+  chunk 3: 4644 tok, 12.3 s
+  chunk 4: ERROR Content contains 8193 tokens, which exceeds the maximum allowed context size of 8192.
+  chunk 5: 4785 tok, 14.5 s
+  chunk 6: 3912 tok, 4.2 s
+  total 228.3 s, 17 key points, 12 next steps
+icsi-Bmr006 [mapreduce] context 8192, transcript 24441 tok, 1471 turns
+  map 1: 6518 tok, 18.9 s
+  map 2: 6408 tok, 17.7 s
+  map 3: 6462 tok, 17.7 s
+  map 4: 5265 tok, 13.1 s
+  reduce 1.1: 691 tok, 5.7 s
+  total 129.5 s, 4 key points, 12 next steps
+summre-018a_EARZ [rolling] context 8192, transcript 7716 tok, 351 turns
+  chunk 1: 4487 tok, 8.8 s
+  chunk 2: 3494 tok, 6.9 s
+  total 30.0 s, 5 key points, 2 next steps
+summre-018a_EARZ [mapreduce] context 8192, transcript 7716 tok, 351 turns
+  map 1: 6600 tok, 15.2 s
+  map 2: 1222 tok, 3.4 s
+  reduce 1.1: 284 tok, 2.8 s
+  total 35.3 s, 4 key points, 3 next steps
+summre-018b_EADZ [rolling] context 8192, transcript 6938 tok, 397 turns
+  chunk 1: 4430 tok, 10.8 s
+  chunk 2: 2825 tok, 6.9 s
+  total 33.0 s, 4 key points, 5 next steps
+summre-018b_EADZ [mapreduce] context 8192, transcript 6938 tok, 397 turns
+  map 1: 6496 tok, 16.5 s
+  map 2: 548 tok, 2.2 s
+  reduce 1.1: 303 tok, 4.1 s
+  total 37.5 s, 7 key points, 4 next steps
+summre-020b_EBDZ [rolling] context 8192, transcript 5549 tok, 260 turns
+  chunk 1: 4443 tok, 11.4 s
+  chunk 2: 1451 tok, 3.9 s
+  total 25.1 s, 6 key points, 5 next steps
+summre-020b_EBDZ [mapreduce] context 8192, transcript 5549 tok, 260 turns
+  map 1: 5602 tok, 14.3 s
+  reduce 1.1: 226 tok, 3.2 s
+  total 27.1 s, 4 key points, 3 next steps
+summre-020c_EBPZ [rolling] context 8192, transcript 4926 tok, 208 turns
+  chunk 1: 4481 tok, 13.2 s
+  chunk 2: 862 tok, 4.0 s
+  total 25.1 s, 7 key points, 7 next steps
+summre-020c_EBPZ [mapreduce] context 8192, transcript 4926 tok, 208 turns
+  map 1: 4979 tok, 15.0 s
+  reduce 1.1: 277 tok, 3.5 s
+  total 27.6 s, 4 key points, 5 next steps
+summre-021a_EARD [rolling] context 8192, transcript 5469 tok, 221 turns
+  chunk 1: 4460 tok, 11.1 s
+  chunk 2: 1356 tok, 2.7 s
+  total 21.9 s, 5 key points, 3 next steps
+summre-021a_EARD [mapreduce] context 8192, transcript 5469 tok, 221 turns
+  map 1: 5522 tok, 12.6 s
+  reduce 1.1: 186 tok, 2.6 s
+  total 23.7 s, 3 key points, 3 next steps
+summre-021b_EADD [rolling] context 8192, transcript 7504 tok, 455 turns
+  chunk 1: 4416 tok, 12.8 s
+  chunk 2: 3452 tok, 6.3 s
+  total 37.2 s, 6 key points, 6 next steps
+summre-021b_EADD [mapreduce] context 8192, transcript 7504 tok, 455 turns
+  map 1: 6479 tok, 22.8 s
+  map 2: 1131 tok, 3.6 s
+  reduce 1.1: 466 tok, 1.6 s
+  total 44.7 s, 3 key points, 0 next steps
+summre-032a_EARH [rolling] context 8192, transcript 6053 tok, 163 turns
+  chunk 1: 4447 tok, 8.7 s
+  chunk 2: 1891 tok, 2.1 s
+  total 17.6 s, 2 key points, 2 next steps
+summre-032a_EARH [mapreduce] context 8192, transcript 6053 tok, 163 turns
+  map 1: 6106 tok, 18.3 s
+  reduce 1.1: 293 tok, 3.6 s
+  total 28.4 s, 4 key points, 4 next steps
+summre-032b_EADH [rolling] context 8192, transcript 10222 tok, 567 turns
+  chunk 1: 4422 tok, 10.7 s
+  chunk 2: ERROR May contain unsafe content
+  chunk 3: ERROR May contain unsafe content
+  total 34.6 s, 2 key points, 2 next steps
+summre-032b_EADH [mapreduce] context 8192, transcript 10222 tok, 567 turns
+  map 1: 6551 tok, 15.2 s
+  map 2: ERROR May contain unsafe content
+  reduce 1.1: 206 tok, 2.5 s
+  total 40.2 s, 3 key points, 3 next steps
