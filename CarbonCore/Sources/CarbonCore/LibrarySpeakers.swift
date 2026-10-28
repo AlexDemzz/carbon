@@ -5,14 +5,26 @@ extension Library {
     /// the Turns and everything else stay as they are, Local Edits included.
     ///
     /// A Speaker with at least 10 s of speech is remembered as a Voice Print of `name`; `email` is the attendee's.
+    ///
+    /// In a meeting room, a Speaker heard on the mic may be named `Me`, which remembers the owner's voice, and a `Me`
+    /// the owner's print got wrong may be named someone else. Elsewhere `Me` is neither renamed nor given.
     public func renameSpeaker(_ id: UUID, label: String, name: String, email: String? = nil) throws {
-        guard label != TranscriptBuilder.me, let name = TranscriptBuilder.label(forName: name) else {
+        let entry = try entry(id, in: loadIndex())
+        let named = entry.speakers.filter { $0.label == label }
+        let isOnMic = !named.isEmpty && named.allSatisfy { $0.stream == .me }
+        let isOwner = isOnMic
+            && name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .caseInsensitiveCompare(TranscriptBuilder.me) == .orderedSame
+        guard label != TranscriptBuilder.me || isOnMic,
+              let name = isOwner ? TranscriptBuilder.me : TranscriptBuilder.label(forName: name)
+        else {
             throw LibraryError.invalidSpeakerName
         }
-        let links = try rememberVoices(of: entry(id, in: loadIndex()), label: label, name: name, email: email)
+        let links = try rememberVoices(of: entry, label: label, name: name, email: email, isOwner: isOwner)
         var isNewParticipant = false
         try writeSurgically(id, updating: { entry in
-            isNewParticipant = !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            isNewParticipant = !isOwner
+                && !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
             if isNewParticipant { entry.participants.append(Participant(name: name)) }
             // A Them stream that isn't split has no `speakers` entry yet: its first naming records it as cluster `Them`.
             // That is every fallback Speaker, and Them in a meeting room whose call couldn't be diarized.

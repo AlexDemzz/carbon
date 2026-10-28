@@ -557,7 +557,7 @@ struct RecorderTests {
     }
 
     @Test func aSoloMeetingUpdatesTheOwnersPrint() async throws {
-        try remember([(Self.owner, "Me", [0, 1, 0], true)])
+        try remember([(Self.owner, "Me", [0, 0.6, 0.8], true)])
         let recorder = makeRecorder(
             transcriber: ReplayTranscriber(words: Self.groupCall),
             diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.soloMic[0])]))
@@ -570,6 +570,43 @@ struct RecorderTests {
         #expect(prints.count == 1)
         #expect(prints["Me"]?["meetings"] as? Int == 2)
         #expect(prints["Me"]?["recent"] as? [String] == [MeetingIndex.Speaker.encode(centroid: [0, 0, 1])])
+    }
+
+    @Test func aSoloMeetingWhoseMainVoiceIsFarFromTheOwnersPrintLeavesItAsItWas() async throws {
+        try remember([(Self.owner, "Me", [0, 1, 0], true)])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.soloMic[0])]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(try prints()["Me"]?["meetings"] as? Int == 1)
+    }
+
+    @Test func aSoloMeetingWithEchoOnTheMicLeavesTheOwnerUnenrolled() async throws {
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.echoOnTheMic[0])]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 40)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test func whenTheCallsDiarizationFailsASoloMeetingLeavesTheOwnerUnenrolled() async throws {
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.fail, .fail], me: [.replay(Self.soloMic[0])]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
     }
 
     @Test func underTenSecondsOfMicSpeechLeavesTheOwnerUnenrolled() async throws {

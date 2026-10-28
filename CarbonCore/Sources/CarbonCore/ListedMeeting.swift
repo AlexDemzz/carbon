@@ -45,6 +45,12 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         label == TranscriptBuilder.them || speakers.contains { $0.label == label && $0.name == nil }
     }
 
+    /// True for a Speaker heard on the mic of a meeting room: the one kind that can be named `Me`, or renamed from it.
+    public func isOnMic(_ label: String) -> Bool {
+        let named = speakers.filter { $0.label == label }
+        return !named.isEmpty && named.allSatisfy { $0.stream == .me }
+    }
+
     /// True for a diarized Speaker whose voice is too short to become a Voice Print: under 10 s of speech.
     public func tooLittleSpeechToRemember(_ label: String) -> Bool {
         let clusters = speakers.filter { $0.label == label && $0.centroid != nil }

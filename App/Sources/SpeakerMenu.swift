@@ -1,8 +1,8 @@
 import CarbonCore
 import SwiftUI
 
-/// A Speaker's name with a chevron: the Meeting's attendees, then "Other Name…". Unnamed Speakers are blue.
-/// Me has no menu.
+/// A Speaker's name with a chevron: Me for a Speaker heard on a meeting room's mic, the Meeting's attendees, then
+/// "Other Name…". Unnamed Speakers are blue. Me has no menu, except on a meeting room's mic.
 struct SpeakerMenu: View {
     let model: AppModel
     let meeting: ListedMeeting
@@ -16,12 +16,17 @@ struct SpeakerMenu: View {
     private var isUnnamed: Bool { meeting.isUnnamedSpeaker(label) }
 
     var body: some View {
-        if label == TranscriptBuilder.me {
+        if label == TranscriptBuilder.me, !meeting.isOnMic(label) {
             Text(label)
         } else {
             Menu {
                 if model.recognizesVoices, meeting.tooLittleSpeechToRemember(label) {
                     Text("Not enough speech to remember this voice.")
+                    Divider()
+                }
+                if meeting.isOnMic(label) {
+                    Toggle(TranscriptBuilder.me, isOn: Binding(
+                        get: { label == TranscriptBuilder.me }, set: { _ in rename(to: TranscriptBuilder.me) }))
                     Divider()
                 }
                 ForEach(meeting.participants.map(\.name), id: \.self) { name in

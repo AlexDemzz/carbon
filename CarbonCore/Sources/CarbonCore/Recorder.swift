@@ -558,7 +558,8 @@ public final class Recorder {
             if MicRoom.isRoom(micDiarization, echo: echo) {
                 split.me = micDiarization
                 split.echo = echo
-            } else {
+            } else if echo.isEmpty, themDiarization != nil || them.isEmpty {
+                // Never learn the owner's voice from a Meeting the call may have echoed into.
                 owner = MicRoom.owner(micDiarization, echo: echo)
             }
         }
