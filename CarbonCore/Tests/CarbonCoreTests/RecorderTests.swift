@@ -27,10 +27,12 @@ struct RecorderTests {
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
-        keepAudio: Bool = false, trash: URL? = nil
+        keepAudio: Bool = false, trash: URL? = nil, recognizesVoices: Bool = true
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
+        let library = makeLibrary(trash: trash)
+        library.recognizesVoices = recognizesVoices
         return Recorder(
             microphone: microphone ?? FakeAudioSource(seconds: seconds),
             systemAudio: systemAudio ?? FakeAudioSource(seconds: seconds),
@@ -38,7 +40,7 @@ struct RecorderTests {
             transcriber: transcriber,
             diarizer: diarizer,
             diarizationTimeout: { _ in .milliseconds(100) },
-            library: makeLibrary(trash: trash),
+            library: library,
             keepAudio: { keepAudio },
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
@@ -234,6 +236,76 @@ struct RecorderTests {
                 "speechSeconds": 3, "centroid": "AACAPwAAAAA=",
             ],
         ] as NSArray)
+    }
+
+    /// Sam was named in an earlier Meeting with the voice of cluster S2, [0.6, 0.8].
+    func rememberSam() throws {
+        try Data("""
+            {"version": 1, "prints": [{
+              "id": "11111111-1111-4111-8111-111111111111", "name": "Sam Rivera", "email": "sam@example.com",
+              "model": "fluidaudio/community-1@0.17.7", "centroid": "mpkZP83MTD8=", "recent": [],
+              "meetings": 1, "createdAt": "2026-10-01T10:00:00Z", "lastHeardAt": "2026-10-01T10:00:00Z"
+            }]}
+            """.utf8).write(to: support.url.appending(path: "voiceprints.json"))
+    }
+
+    @Test func aRememberedVoiceIsNamedInTheFirstWrite() async throws {
+        try rememberSam()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: ScriptedDiarizer([.replay(Self.twoVoices)]))
+        var diagnostics: [String] = []
+        recorder.onDiagnostic = { diagnostics.append($0) }
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            participants:
+              - Sam Rivera <sam@example.com>
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Sam Rivera** [0:02] Hello all.
+
+            **Speaker B** [0:20] Morning.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["speakers"] as? NSArray == [
+            [
+                "label": "Sam Rivera", "cluster": "A", "name": "Sam Rivera",
+                "voicePrintId": "11111111-1111-4111-8111-111111111111", "match": "auto", "distance": 0,
+                "speechSeconds": 12.5, "centroid": "mpkZP83MTD8=",
+            ],
+            [
+                "label": "Speaker B", "cluster": "B", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "speechSeconds": 3, "centroid": "AACAPwAAAAA=",
+            ],
+        ] as NSArray)
+        let print = try #require((try jsonObject(at: support.url.appending(path: "voiceprints.json"))["prints"] as? [NSDictionary])?.first)
+        #expect(print["meetings"] as? Int == 2)
+        #expect(print["recent"] as? [String] == ["mpkZP83MTD8="])
+        #expect(print["lastHeardAt"] as? String == "2026-10-23T13:15:00Z")
+        #expect(diagnostics == ["Voice Print best distance 0.000 for Speaker A: matched"])
+    }
+
+    @Test func withRecognitionOffARememberedVoiceStaysUnnamed() async throws {
+        try rememberSam()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: ScriptedDiarizer([.replay(Self.twoVoices)]),
+            recognizesVoices: false)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker A** [0:02] Hello all."))
+        let print = try #require((try jsonObject(at: support.url.appending(path: "voiceprints.json"))["prints"] as? [NSDictionary])?.first)
+        #expect(print["meetings"] as? Int == 1)
     }
 
     @Test(arguments: [ScriptedDiarizer.Outcome.fail, .hang])

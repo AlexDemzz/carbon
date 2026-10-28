@@ -78,6 +78,8 @@ public final class Recorder {
     /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
     public var autoTranscribe = true
     @ObservationIgnored public var onEvent: (@MainActor (Event) -> Void)?
+    /// A line for the diagnostic log, e.g. each Voice Print best distance.
+    @ObservationIgnored public var onDiagnostic: (@MainActor (String) -> Void)?
     /// Called when Detection could not start or save a Meeting.
     @ObservationIgnored public var onDetectionFailure: (@MainActor (any Error) -> Void)?
 
@@ -380,12 +382,16 @@ public final class Recorder {
         let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
         // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
         let split = letters.isEmpty ? nil : diarization
-        let participants = meeting.event.map(EventMatcher.participants(of:)) ?? []
+        var participants = meeting.event.map(EventMatcher.participants(of:)) ?? []
         // In a 1:1 Event, the lone Them Speaker (or Them) is the other attendee.
         let attendee = participants.count == 1 ? TranscriptBuilder.label(forName: participants[0].name) : nil
         var speakers = split.map { Self.speakers($0, letters: letters) } ?? []
         var labels: [String: String] = [:]
-        if let attendee, speakers.count == 1 {
+        var heard: [(print: UUID, embedding: [Float])] = []
+        if let split, library.recognizesVoices {
+            heard = recognizeVoices(in: split, letters: letters, speakers: &speakers, labels: &labels, participants: &participants)
+        }
+        if let attendee, speakers.count == 1, speakers[0].match == nil {
             labels[speakers[0].cluster] = attendee
             speakers[0].label = attendee
             speakers[0].name = attendee
@@ -407,12 +413,46 @@ public final class Recorder {
                 calendarEventId: meeting.event?.id, participants: participants,
                 transcriptKind: split == nil ? .fallback : .speakers, speakers: speakers),
             transcript: TranscriptBuilder.body(turns))
+        // The file is what matters: a print that couldn't be updated stays as it was.
+        try? library.hearVoices(heard, at: meeting.start)
         if keepAudio() {
             // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
             try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)
         }
         folder.remove()
         return file
+    }
+
+    /// Names the Speakers whose voice matches a Voice Print, and logs every best distance. Returns what was heard.
+    private func recognizeVoices(
+        in diarization: Diarization, letters: [String: String], speakers: inout [MeetingIndex.Speaker],
+        labels: inout [String: String], participants: inout [Participant]
+    ) -> [(print: UUID, embedding: [Float])] {
+        let prints = library.voicePrints.prints
+        let matches = VoicePrintMatcher.match(
+            diarization.clusters.filter { letters[$0.id] != nil }, prints: prints, model: library.voicePrintModel)
+        var heard: [(print: UUID, embedding: [Float])] = []
+        for cluster in diarization.clusters {
+            guard let letter = letters[cluster.id], let match = matches[cluster.id],
+                  let position = speakers.firstIndex(where: { $0.cluster == letter })
+            else { continue }
+            let print = match.printID.flatMap { id in prints.first { $0.id == id } }
+            onDiagnostic?(
+                "Voice Print best distance \(String(format: "%.3f", match.distance)) for Speaker \(letter): "
+                    + (print == nil ? "not matched" : "matched"))
+            speakers[position].distance = match.distance
+            guard let print else { continue }
+            speakers[position].label = print.name
+            speakers[position].name = print.name
+            speakers[position].voicePrintId = print.id
+            speakers[position].match = "auto"
+            labels[letter] = print.name
+            heard.append((print.id, cluster.centroid))
+            if !participants.contains(where: { $0.name.caseInsensitiveCompare(print.name) == .orderedSame }) {
+                participants.append(Participant(name: print.name, email: print.email))
+            }
+        }
+        return heard
     }
 
     /// The diarization watchdog's limit for one attempt: 2 min plus 10 s per minute of audio.

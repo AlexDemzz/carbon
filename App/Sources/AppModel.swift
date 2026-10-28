@@ -61,7 +61,9 @@ final class AppModel {
         reconcileLibrary()
         watchLibrary()
         registerShowCarbonShortcut()
-        UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true])
+        UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true])
+        library.recognizesVoices = UserDefaults.standard.bool(forKey: SettingsKey.recognizeVoices)
+        recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
         recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
         recorder.onEvent = { [weak self] event in self?.announce(event) }
@@ -276,8 +278,10 @@ final class AppModel {
     /// Names a Speaker: only its Turn headers change in the file. Returns false, after telling the person, when it couldn't.
     @discardableResult
     func renameSpeaker(_ meeting: ListedMeeting, label: String, to name: String) -> Bool {
+        // Picking an attendee gives their Voice Print the attendee's email.
+        let email = meeting.participants.first { $0.name == name }?.email
         do {
-            try library.renameSpeaker(meeting.id, label: label, name: name)
+            try library.renameSpeaker(meeting.id, label: label, name: name, email: email)
             return true
         } catch {
             present(error, title: "Carbon couldn't name the Speaker")
@@ -306,7 +310,7 @@ final class AppModel {
         }
     }
 
-    private func perform(_ failureTitle: String, _ action: () throws -> Void) {
+    func perform(_ failureTitle: String, _ action: () throws -> Void) {
         do { try action() } catch { present(error, title: failureTitle) }
     }
 
@@ -367,6 +371,8 @@ enum SettingsKey {
     static let libraryFolder = "libraryFolder"
     /// Show Carbon's shortcut, a JSON `Shortcut`.
     static let showCarbonShortcut = "showCarbonShortcut"
+    /// "Recognize voices", on by default.
+    static let recognizeVoices = "recognizeVoices"
 }
 
 extension Locale {

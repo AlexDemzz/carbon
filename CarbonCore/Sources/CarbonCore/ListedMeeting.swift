@@ -45,6 +45,12 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         label == TranscriptBuilder.them || speakers.contains { $0.label == label && $0.name == nil }
     }
 
+    /// True for a diarized Speaker whose voice is too short to become a Voice Print: under 10 s of speech.
+    public func tooLittleSpeechToRemember(_ label: String) -> Bool {
+        let clusters = speakers.filter { $0.label == label && $0.centroid != nil }
+        return !clusters.isEmpty && clusters.allSatisfy { $0.speechSeconds < VoicePrintMatcher.minimumSpeechSeconds }
+    }
+
     private static func searchLines(_ markdown: String) -> [String] {
         var lines = markdown.split(separator: "\n")[...]
         if lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") {

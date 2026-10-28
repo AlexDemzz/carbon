@@ -77,12 +77,12 @@ extension Library {
         refreshListed(index.meetings[position])
     }
 
-    private func entry(_ id: UUID, in index: MeetingIndex) throws -> MeetingIndex.Entry {
+    func entry(_ id: UUID, in index: MeetingIndex) throws -> MeetingIndex.Entry {
         guard let entry = index.meetings.first(where: { $0.id == id }) else { throw LibraryError.unknownMeeting(id) }
         return entry
     }
 
-    private func refreshListed(_ entry: MeetingIndex.Entry) {
+    func refreshListed(_ entry: MeetingIndex.Entry) {
         meetings.removeAll { $0.id == entry.id }
         if let listed = ListedMeeting(entry, folder: folder) { meetings.append(listed) }
         meetings.sort(by: Self.newestFirst)

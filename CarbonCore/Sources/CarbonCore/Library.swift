@@ -15,6 +15,13 @@ public final class Library {
     @ObservationIgnored let now: @Sendable () -> Date
     @ObservationIgnored private var lastBackup: Date?
     @ObservationIgnored let moveToTrash: @Sendable (URL) throws -> Void
+    @ObservationIgnored let makeVoicePrintID: @Sendable () -> UUID
+    /// The voices Carbon remembers, in `voiceprints.json` next to `meetings.json`.
+    public let voicePrints: VoicePrintStore
+    /// "Recognize voices": off, Carbon neither matches nor enrolls Voice Prints.
+    public var recognizesVoices = true
+    /// The embedding model of this build's diarization: only prints it made are compared.
+    @ObservationIgnored public let voicePrintModel: String
 
     /// The Meetings whose file Carbon could read, newest first. Filled by `load()`, kept current by Carbon's writes.
     public internal(set) var meetings: [ListedMeeting] = []
@@ -27,10 +34,15 @@ public final class Library {
         folder: URL, supportFolder: URL, now: @escaping @Sendable () -> Date = Date.init,
         moveToTrash: @escaping @Sendable (URL) throws -> Void = {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
-        }
+        },
+        voicePrintModel: String = VoicePrint.currentModel,
+        makeVoicePrintID: @escaping @Sendable () -> UUID = UUID.init
     ) {
         self.folder = folder
         self.moveToTrash = moveToTrash
+        self.voicePrintModel = voicePrintModel
+        self.makeVoicePrintID = makeVoicePrintID
+        voicePrints = VoicePrintStore(file: supportFolder.appending(path: "voiceprints.json"))
         indexFile = supportFolder.appending(path: "meetings.json")
         backupsFolder = supportFolder.appending(path: "Backups")
         self.now = now

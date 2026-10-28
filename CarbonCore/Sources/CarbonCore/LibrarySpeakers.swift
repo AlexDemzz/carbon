@@ -3,10 +3,13 @@ import Foundation
 extension Library {
     /// Names the Speaker whose Turn headers read `label`. Only those header lines change in the file: the text,
     /// the Turns and everything else stay as they are, Local Edits included.
-    public func renameSpeaker(_ id: UUID, label: String, name: String) throws {
+    ///
+    /// A Speaker with at least 10 s of speech is remembered as a Voice Print of `name`; `email` is the attendee's.
+    public func renameSpeaker(_ id: UUID, label: String, name: String, email: String? = nil) throws {
         guard label != TranscriptBuilder.me, let name = TranscriptBuilder.label(forName: name) else {
             throw LibraryError.invalidSpeakerName
         }
+        let links = try rememberVoices(of: entry(id, in: loadIndex()), label: label, name: name, email: email)
         var isNewParticipant = false
         try writeSurgically(id, updating: { entry in
             isNewParticipant = !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
@@ -20,6 +23,7 @@ extension Library {
                 entry.speakers[position].label = name
                 entry.speakers[position].name = name
                 entry.speakers[position].match = "user"
+                entry.speakers[position].voicePrintId = links[entry.speakers[position].cluster] ?? nil
             }
         }) { markdown in
             let renamed = TranscriptBuilder.renamingSpeaker(label, to: name, in: markdown)

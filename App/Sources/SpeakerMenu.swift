@@ -20,6 +20,10 @@ struct SpeakerMenu: View {
             Text(label)
         } else {
             Menu {
+                if model.recognizesVoices, meeting.tooLittleSpeechToRemember(label) {
+                    Text("Not enough speech to remember this voice.")
+                    Divider()
+                }
                 ForEach(meeting.participants.map(\.name), id: \.self) { name in
                     Toggle(name, isOn: Binding(get: { name == label }, set: { _ in rename(to: name) }))
                 }

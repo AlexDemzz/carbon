@@ -16,6 +16,9 @@ struct SettingsView: View {
             Tab("Permissions", systemImage: "hand.raised", value: .permissions) {
                 PermissionsSettings(model: model)
             }
+            Tab("Voice Prints", systemImage: "waveform", value: .voicePrints) {
+                VoicePrintsSettings(model: model)
+            }
             Tab("About", systemImage: "info.circle", value: SettingsTab.about) {
                 AboutSettings(model: model)
             }
