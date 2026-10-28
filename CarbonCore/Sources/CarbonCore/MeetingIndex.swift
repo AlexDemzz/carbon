@@ -104,5 +104,10 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
     public struct Tombstone: Equatable, Sendable, Codable {
         public var id: UUID
         public var deletedAt: String
+
+        public init(id: UUID, deletedAt: String) {
+            self.id = id
+            self.deletedAt = deletedAt
+        }
     }
 }

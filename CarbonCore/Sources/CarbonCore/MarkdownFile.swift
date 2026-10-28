@@ -25,6 +25,31 @@ enum MarkdownFile {
         return lines.joined(separator: "\n") + "\n\n" + body
     }
 
+    /// The frontmatter's `id`, Carbon's Meeting UUID, or nil for a file Carbon didn't write.
+    static func id(in markdown: String) -> UUID? {
+        frontmatterLines(markdown)?.lazy.compactMap { line in
+            line.hasPrefix("id:") ? UUID(uuidString: line.dropFirst(3).trimmingCharacters(in: .whitespaces)) : nil
+        }.first
+    }
+
+    /// The file with only its frontmatter `title` line changed, or nil when it has none.
+    static func replacingTitle(in markdown: String, with title: String) -> String? {
+        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let frontmatter = frontmatterLines(markdown),
+              let position = frontmatter.firstIndex(where: { $0.hasPrefix("title:") })
+        else { return nil }
+        let lineEnd = lines[position].hasSuffix("\r") ? "\r" : ""
+        lines[position] = "title: \(yaml(title))\(lineEnd)"
+        return lines.joined(separator: "\n")
+    }
+
+    /// The lines between the opening and closing `---`, or nil without frontmatter.
+    static func frontmatterLines(_ markdown: String) -> ArraySlice<Substring>? {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return nil }
+        return lines[1..<end]
+    }
+
     /// A plain scalar when YAML reads it back unchanged, a double-quoted string otherwise.
     static func yaml(_ value: String) -> String {
         let indicators = Set("-?:,[]{}#&*!|>'\"%@`")
