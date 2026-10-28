@@ -38,6 +38,32 @@ public final class Recorder {
         case finishing(LiveMeeting)
     }
 
+    /// What the person is told about, as notifications.
+    public enum Event: Equatable, Sendable {
+        /// Detection started a Meeting on its own.
+        case started(LiveMeeting)
+        /// Detection offers a Meeting (auto-transcribe off).
+        case offered(Offer)
+        /// The offer went away: nobody answered within 60 s, or its app released the mic.
+        case offerWithdrawn(MeetingApp)
+        case transcriptReady(id: UUID, title: String, file: URL)
+    }
+
+    public struct Offer: Equatable, Sendable {
+        public var app: MeetingApp
+        public var title: String
+        public var provider: String
+        /// The language Transcribe starts the Meeting in.
+        public var language: Locale
+
+        public init(app: MeetingApp, title: String, provider: String, language: Locale) {
+            self.app = app
+            self.title = title
+            self.provider = provider
+            self.language = language
+        }
+    }
+
     public enum Failure: Error, Equatable {
         case notIdle
         case notLive
@@ -49,24 +75,28 @@ public final class Recorder {
     public var ignoredApps: Set<String> = []
     /// The Meeting Language Detection starts Meetings in. Nil until it is known; Detection starts nothing meanwhile.
     public var detectionLanguage: Locale?
+    /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
+    public var autoTranscribe = true
+    @ObservationIgnored public var onEvent: (@MainActor (Event) -> Void)?
     /// Called when Detection could not start or save a Meeting.
     @ObservationIgnored public var onDetectionFailure: (@MainActor (any Error) -> Void)?
 
     private let microphone: any AudioSource
     private let systemAudio: @Sendable (MeetingApp?) -> any AudioSource
     private let systemAudioPermission: @Sendable () -> SystemAudioPermission
-    private let transcriber: any Transcriber
+    let transcriber: any Transcriber
     private let diarizer: any Diarizer
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let library: Library
-    private let vendorTable: VendorTable
-    private let matcher: EventMatcher
-    private let inProgressRoot: URL
-    private let timeZone: TimeZone
+    private let keepAudio: @Sendable () -> Bool
+    let vendorTable: VendorTable
+    let matcher: EventMatcher
+    let inProgressRoot: URL
+    let timeZone: TimeZone
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
     private var detector: Detector
-    private var recording: Recording?
+    var recording: Recording?
     /// The last time the stream that tells whether the Meeting is still going was not silent.
     private let lastSound = LastSound()
 
@@ -79,7 +109,7 @@ public final class Recorder {
         }
     }
 
-    private struct Recording {
+    struct Recording {
         var meeting: LiveMeeting
         var folder: InProgressMeeting
         var mode: InProgressMeeting.State.Mode
@@ -87,7 +117,7 @@ public final class Recorder {
         var them: Stream
     }
 
-    private struct Stream {
+    struct Stream {
         var source: any AudioSource
         var session: any TranscriptionSession
         var recorder: StreamRecorder
@@ -99,7 +129,7 @@ public final class Recorder {
     }
 
     /// `systemAudio` makes the Them stream for a Meeting App: a tap on every process it owns, or, for nil,
-    /// everything the Mac plays except Carbon.
+    /// everything the Mac plays except Carbon. `keepAudio` is the Keep audio setting, read as each Meeting ends.
     public init(
         microphone: any AudioSource,
         systemAudio: @escaping @Sendable (MeetingApp?) -> any AudioSource,
@@ -108,6 +138,7 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
+        keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         vendorTable: VendorTable = .shipped,
         timeZone: TimeZone = .current,
@@ -121,6 +152,7 @@ public final class Recorder {
         self.diarizer = diarizer
         self.diarizationTimeout = diarizationTimeout
         self.library = library
+        self.keepAudio = keepAudio
         self.vendorTable = vendorTable
         matcher = EventMatcher(vendorTable: vendorTable)
         detector = Detector(vendorTable: vendorTable)
@@ -139,6 +171,7 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
+        keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         timeZone: TimeZone = .current,
         now: @escaping @Sendable () -> Date = Date.init,
@@ -147,7 +180,7 @@ public final class Recorder {
         self.init(
             microphone: microphone, systemAudio: { _ in systemAudio }, systemAudioPermission: systemAudioPermission,
             transcriber: transcriber, diarizer: diarizer, diarizationTimeout: diarizationTimeout, library: library,
-            inProgressFolder: inProgressFolder, timeZone: timeZone, now: now, makeID: makeID)
+            keepAudio: keepAudio, inProgressFolder: inProgressFolder, timeZone: timeZone, now: now, makeID: makeID)
     }
 
     /// Runs Detection on `source` until its snapshots end: starts and ends Meetings without a click.
@@ -160,7 +193,7 @@ public final class Recorder {
     private func observe(_ snapshot: MicSnapshot) async {
         let signals = Detector.Signals(
             time: snapshot.time, micHolders: snapshot.micHolders, lastSound: lastSound.value,
-            ignoredApps: ignoredApps, events: snapshot.events)
+            ignoredApps: ignoredApps, autoTranscribe: autoTranscribe, events: snapshot.events)
         for command in detector.observe(signals) {
             do {
                 switch command {
@@ -170,10 +203,22 @@ public final class Recorder {
                         continue
                     }
                     try await begin(language: language, app: app, event: event, mode: .auto)
+                    if case .live(let meeting) = state { onEvent?(.started(meeting)) }
                 case .event(let event):
                     try retarget(to: event)
                 case .end:
                     if case .live = state { try await finish() }
+                case .offer(let app, let event):
+                    guard let language = detectionLanguage, state == .idle else {
+                        detector.offerDeclined(at: snapshot.time)
+                        continue
+                    }
+                    onEvent?(.offered(Offer(
+                        app: app, title: Self.title(of: event) ?? MeetingFormat.defaultTitle(start: now(), in: timeZone),
+                        provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))),
+                        language: language)))
+                case .withdrawOffer(let app):
+                    onEvent?(.offerWithdrawn(app))
                 }
             } catch {
                 onDetectionFailure?(error)
@@ -187,6 +232,27 @@ public final class Recorder {
         guard state == .idle, recording == nil else { throw Failure.notIdle }
         let (app, event) = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
         try await begin(language: language, app: app, event: event, mode: .manual)
+    }
+
+    /// The app of the offer waiting for an answer.
+    public var pendingOffer: MeetingApp? { detector.pendingOffer }
+
+    /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
+    public func acceptOffer(language: Locale) async throws {
+        guard state == .idle, recording == nil, let (app, event) = detector.offerAccepted() else { return }
+        try await begin(language: language, app: app, event: event, mode: .auto)
+    }
+
+    /// The offer was dismissed: its app is not offered again for 10 min.
+    public func declineOffer() {
+        detector.offerDeclined(at: now())
+    }
+
+    /// Never on the offer: its app joins the person's Ignored Apps.
+    public func neverOffer() {
+        guard let app = detector.pendingOffer else { return }
+        detector.offerDeclined(at: now())
+        ignoredApps.insert(app.bundleID)
     }
 
     /// Ends the live Meeting and keeps it. Returns the Markdown file written to the Library.
@@ -254,11 +320,14 @@ public final class Recorder {
     }
 
     /// Titles the Meeting after its Event, or by default, and resolves its Provider.
-    private func name(_ meeting: inout LiveMeeting, after event: CalendarEvent?) {
+    func name(_ meeting: inout LiveMeeting, after event: CalendarEvent?) {
         meeting.event = event
-        meeting.title = event?.title.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-            ?? MeetingFormat.defaultTitle(start: meeting.start, in: timeZone)
+        meeting.title = Self.title(of: event) ?? MeetingFormat.defaultTitle(start: meeting.start, in: timeZone)
         meeting.provider = vendorTable.provider(for: meeting.app, link: event.flatMap(matcher.link(in:)))
+    }
+
+    private static func title(of event: CalendarEvent?) -> String? {
+        event?.title.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
     }
 
     private func state(of meeting: LiveMeeting, mode: InProgressMeeting.State.Mode) -> InProgressMeeting.State {
@@ -289,12 +358,25 @@ public final class Recorder {
         }
         try recording.me.close()
         try recording.them.close()
-        async let meWords = recording.me.session.finish()
-        async let themWords = recording.them.session.finish()
+        let (me, them) = (recording.me.session, recording.them.session)
+        let file = try await file(meeting, end: end, folder: recording.folder) {
+            async let meWords = me.finish()
+            async let themWords = them.finish()
+            return (try await meWords, try await themWords)
+        }
+        onEvent?(.transcriptReady(id: meeting.id, title: meeting.title, file: file))
+        return file
+    }
+
+    /// The end of a Meeting, live or recovered: diarization, Library write, kept audio, cleanup.
+    func file(
+        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
+        words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
+    ) async throws -> URL {
         async let diarized = Self.diarize(
-            recording.folder.themAudio, with: diarizer,
-            timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
-        let (me, them, diarization) = (try await meWords, try await themWords, await diarized)
+            folder.themAudio, with: diarizer, timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
+        let (me, them) = try await words()
+        let diarization = await diarized
         let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
         // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
         let split = letters.isEmpty ? nil : diarization
@@ -325,7 +407,11 @@ public final class Recorder {
                 calendarEventId: meeting.event?.id, participants: participants,
                 transcriptKind: split == nil ? .fallback : .speakers, speakers: speakers),
             transcript: TranscriptBuilder.body(turns))
-        recording.folder.remove()
+        if keepAudio() {
+            // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
+            try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)
+        }
+        folder.remove()
         return file
     }
 

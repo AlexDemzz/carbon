@@ -10,13 +10,14 @@ struct DetectorTests {
     /// Feeds one snapshot per second from `from` to `to` (seconds after t0), with `holders` on the mic.
     func play(
         _ detector: inout Detector, _ from: Int, _ to: Int, holders: [MeetingApp], lastSound: Int? = nil,
-        ignoredApps: Set<String> = []
+        ignoredApps: Set<String> = [], autoTranscribe: Bool = true
     ) -> [(Int, Detector.Command)] {
         var commands: [(Int, Detector.Command)] = []
         for second in from...to {
             let signals = Detector.Signals(
                 time: t0 + TimeInterval(second), micHolders: holders,
-                lastSound: lastSound.map { t0 + TimeInterval($0) }, ignoredApps: ignoredApps)
+                lastSound: lastSound.map { t0 + TimeInterval($0) }, ignoredApps: ignoredApps,
+                autoTranscribe: autoTranscribe)
             commands += detector.observe(signals).map { (second, $0) }
         }
         return commands
@@ -168,5 +169,77 @@ struct DetectorTests {
 
         #expect(commands.map(\.0) == [25])
         #expect(commands.map(\.1) == [.start(chrome)])
+    }
+
+    // MARK: Offer mode (auto-transcribe off)
+
+    @Test func withAutoTranscribeOffTheMicHeldFor15SecondsOffersAMeetingInsteadOfStartingOne() {
+        var detector = Detector()
+
+        let commands = play(&detector, 0, 30, holders: [chrome], autoTranscribe: false)
+
+        #expect(commands.map(\.0) == [15])
+        #expect(commands.map(\.1) == [.offer(chrome)])
+    }
+
+    @Test func anOfferNobodyAnswersIsWithdrawnAfter60SecondsAndTheSameHoldIsNotOfferedAgain() {
+        var detector = Detector()
+
+        let commands = play(&detector, 0, 2_000, holders: [chrome], autoTranscribe: false)
+
+        #expect(commands.map(\.0) == [15, 75])
+        #expect(commands.map(\.1) == [.offer(chrome), .withdrawOffer(chrome)])
+    }
+
+    @Test func anOfferIsWithdrawnWhenItsAppReleasesTheMic() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 30, holders: [chrome], autoTranscribe: false)
+        commands += play(&detector, 31, 40, holders: [], autoTranscribe: false)
+        commands += play(&detector, 41, 60, holders: [chrome], autoTranscribe: false)
+
+        #expect(commands.map(\.0) == [15, 31, 56])
+        #expect(commands.map(\.1) == [.offer(chrome), .withdrawOffer(chrome), .offer(chrome)])
+    }
+
+    @Test func decliningAnOfferMutesThatAppFor10Minutes() {
+        let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 20, holders: [chrome], autoTranscribe: false)
+        detector.offerDeclined(at: t0 + 20)
+        commands += play(&detector, 21, 100, holders: [chrome], autoTranscribe: false)
+        commands += play(&detector, 101, 110, holders: [], autoTranscribe: false)
+        commands += play(&detector, 111, 650, holders: [chrome], autoTranscribe: false)
+
+        #expect(commands.map(\.0) == [15, 620], "the new hold waits out the mute")
+        #expect(commands.map(\.1) == [.offer(chrome), .offer(chrome)])
+
+        var other = Detector()
+        _ = play(&other, 0, 20, holders: [chrome], autoTranscribe: false)
+        other.offerDeclined(at: t0 + 20)
+        let zoomCommands = play(&other, 21, 40, holders: [chrome, zoom], autoTranscribe: false)
+        #expect(zoomCommands.map(\.0) == [36], "another app is not muted")
+        #expect(zoomCommands.map(\.1) == [.offer(zoom)])
+    }
+
+    @Test func anAcceptedOfferIsAMeetingOnItsAppWithTheUsualStopRules() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 20, holders: [chrome], autoTranscribe: false)
+        #expect(detector.offerAccepted()?.app == chrome)
+        commands += play(&detector, 21, 300, holders: [chrome], lastSound: 300, autoTranscribe: false)
+        commands += play(&detector, 301, 1_000, holders: [], lastSound: 300, autoTranscribe: false)
+
+        #expect(commands.map(\.0) == [15, 901])
+        #expect(commands.map(\.1) == [.offer(chrome), .end(.silence)])
+    }
+
+    @Test func anOfferAnsweredAfterItWasWithdrawnStartsNothing() {
+        var detector = Detector()
+
+        _ = play(&detector, 0, 80, holders: [chrome], autoTranscribe: false)
+
+        #expect(detector.offerAccepted()?.app == nil)
     }
 }
