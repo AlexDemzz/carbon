@@ -1,6 +1,6 @@
 # Builds, signs, notarizes and publishes Carbon on a `vX.Y.Z` tag (e.g. `git tag -a v0.1.0`).
 # Without the signing secrets, or when run by hand, it is a dry run: an unsigned build plus the
-# CarbonCore tests, with every signing and upload step skipped and reported.
+# CarbonCore tests, with every signing, upload and GitHub Release step skipped and reported.
 name: Release
 
 on:
@@ -24,6 +24,8 @@ env:
 jobs:
   release:
     runs-on: macos-26
+    permissions:
+      contents: write
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -229,10 +231,24 @@ jobs:
           $WRANGLER r2 object put "$BUCKET/latest.json" --remote --file build/latest.json \
             --content-type application/json
 
+      # 10. GitHub Release for the tag, with the DMG and the tag annotation as notes
+      - name: Publish the GitHub Release
+        if: steps.mode.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DMG: ${{ steps.mode.outputs.dmg }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "::notice::The GitHub Release $GITHUB_REF_NAME exists: replacing its DMG."
+            gh release upload "$GITHUB_REF_NAME" "build/$DMG" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "build/$DMG" --notes-file build/notes.txt --verify-tag
+          fi
+
       - name: Report a dry run
         if: steps.mode.outputs.release != 'true'
         run: |
-          echo "::notice::Dry run done: unsigned build, tests and DMG only. Skipped: keychain import, Developer ID export, DMG signing, notarization, stapling, sign_update, appcast, Worker deploy and upload."
+          echo "::notice::Dry run done: unsigned build, tests and DMG only. Skipped: keychain import, Developer ID export, DMG signing, notarization, stapling, sign_update, appcast, Worker deploy, upload and GitHub Release."
 
       - name: Upload the dry-run DMG
         if: steps.mode.outputs.release != 'true'

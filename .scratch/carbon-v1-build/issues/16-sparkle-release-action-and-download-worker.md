@@ -2,7 +2,7 @@
 
 **What to build:** everything in the release pipeline that runs without the author's credentials.
 - **App**: Sparkle with "Check for Updates…" and "Check for updates automatically".
-- **Release Action** (in the carbon repo), on `v*` tags: build, sign, notarize, make the DMG, sign it for Sparkle, write the appcast, upload to R2.
+- **Release Action** (in the carbon repo), on `v*` tags: build, sign, notarize, make the DMG, sign it for Sparkle, write the appcast, upload to R2, publish the GitHub Release.
 - **Download Worker**: a standalone `carbon-releases` Worker in this repository's `worker/` serves `/download`, `/appcast.xml` and `/releases/*.dmg` from the R2 bucket `carbon-releases`, through zone routes that run ahead of the landing Worker `carbon` (alexandrejoly.me monorepo, landing page only).
 
 Without the secrets, the Action runs a dry-run path: an unsigned build plus the tests. Spec: "Distribution and release pipeline", Modules (Updater).
@@ -23,6 +23,7 @@ Without the secrets, the Action runs a dry-run path: an unsigned build plus the 
   7. regenerate the appcast with release notes from the tag annotation;
   8. deploy the release Worker from `worker/`;
   9. upload in the order DMG → `appcast.xml` → `latest.json`.
+  10. publish the GitHub Release for the tag, with the DMG attached and the tag annotation as notes (rerun: `gh release upload --clobber`).
 
   When secrets are absent, every signing step is skipped and the run says so.
 - [ ] The R2 bucket `carbon-releases` is created with `wrangler`. *Deferred to ticket 17 (needs the author's Cloudflare account): `npx wrangler r2 bucket create carbon-releases` from `worker/`. Done by the author.*

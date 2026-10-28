@@ -363,10 +363,11 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   7. regenerate `appcast.xml` from the previous one plus this item (release notes from the tag's annotation);
   8. deploy the release Worker from `worker/` with `wrangler deploy`;
   9. upload `releases/Carbon-X.Y.Z.dmg`, then `appcast.xml`, then `latest.json` (`{ "version", "build", "file" }`) to the R2 bucket `carbon-releases` with `wrangler`.
+  10. publish a GitHub Release for the tag with the DMG attached and the tag's annotation as notes (`gh release create --verify-tag` with `GITHUB_TOKEN`, so the job has `contents: write`); a rerun re-uploads the DMG to the existing release with `--clobber`.
 
   Uploading the DMG first means a half-failed release never points at a missing file.
 
-  **Dry run**: a run that is not on a `v*` tag (e.g. started by hand), or that is missing any signing secret, builds unsigned, runs the tests, builds the DMG and uploads it as an Action artifact. Every signing, notarization, Worker deploy and upload step is skipped and reported.
+  **Dry run**: a run that is not on a `v*` tag (e.g. started by hand), or that is missing any signing secret, builds unsigned, runs the tests, builds the DMG and uploads it as an Action artifact. Every signing, notarization, Worker deploy, upload and GitHub Release step is skipped and reported.
 - **Secrets**:
   - `DEVELOPER_ID_P12` (base64) and `DEVELOPER_ID_P12_PASSWORD`;
   - `NOTARY_KEY_P8`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`;
