@@ -14,10 +14,22 @@ final class AppModel {
     /// The Meeting waiting for the Delete confirmation, or for a new title.
     var pendingDelete: ListedMeeting?
     var pendingRename: ListedMeeting?
+    /// The Settings tab in front, so the menu's missing-permission item can open Permissions.
+    var settingsTab: SettingsTab = .general
+    /// What Settings › Permissions and the menu bar menu show. Refreshed on launch, on activation and every minute.
+    var permissions = Permissions(
+        microphone: .allowed, systemAudioRecording: .allowed, calendar: .allowed, notifications: .allowed)
+    /// Show Carbon's global shortcut, ⌥⌘C unless the person recorded another.
+    var showCarbonShortcut: Shortcut {
+        didSet {
+            UserDefaults.standard.set(try? JSONEncoder().encode(showCarbonShortcut), forKey: SettingsKey.showCarbonShortcut)
+            registerShowCarbonShortcut()
+        }
+    }
     /// Set by a view that can open SwiftUI windows, since the global shortcut fires outside SwiftUI.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored var openEditor: ((UUID) -> Void)?
-    @ObservationIgnored private var showCarbonShortcut: GlobalHotKey?
+    @ObservationIgnored private var showCarbonHotKey: GlobalHotKey?
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored private let notifier = Notifier()
     @ObservationIgnored private var otherMeetingLanguages: [Locale] = []
@@ -31,7 +43,11 @@ final class AppModel {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
-        library = Library(folder: documents.appending(path: "Carbon"), supportFolder: support)
+        let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
+            .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
+        library = Library(folder: libraryFolder, supportFolder: support)
+        showCarbonShortcut = UserDefaults.standard.data(forKey: SettingsKey.showCarbonShortcut)
+            .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .showCarbon
         recorder = Recorder(
             microphone: MicrophoneSource(),
             systemAudio: { app in SystemAudioTap(app: app) },
@@ -43,8 +59,8 @@ final class AppModel {
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
-        libraryWatcher = FolderWatcher(folder: library.folder) { [weak self] in self?.reconcileLibrary() }
-        showCarbonShortcut = GlobalHotKey { [weak self] in self?.toggleMainWindow() }
+        watchLibrary()
+        registerShowCarbonShortcut()
         UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true])
         recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
@@ -53,10 +69,39 @@ final class AppModel {
         let notifier = notifier
         Task {
             await FirstLaunch.run(notifier: notifier)
+            Task { [weak self] in await self?.watchPermissions() }
             async let recovered: Void = recoverInterruptedMeetings()
             await startDetection()
             await recovered
         }
+    }
+
+    func watchLibrary() {
+        libraryWatcher = FolderWatcher(folder: library.folder) { [weak self] in self?.reconcileLibrary() }
+    }
+
+    func stopWatchingLibrary() {
+        libraryWatcher = nil
+    }
+
+    /// Permissions change in System Settings, outside Carbon: reread them when Carbon comes forward, and every minute.
+    private func watchPermissions() async {
+        let activations = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                await self?.refreshPermissions()
+            }
+        }
+        defer { activations.cancel() }
+        while !Task.isCancelled {
+            await refreshPermissions()
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    private func registerShowCarbonShortcut() {
+        // Released first, so re-recording the same shortcut doesn't collide with itself.
+        showCarbonHotKey = nil
+        showCarbonHotKey = GlobalHotKey(showCarbonShortcut) { [weak self] in self?.toggleMainWindow() }
     }
 
     /// "Transcribe Meetings automatically". Off, Detection only offers Meetings.
@@ -105,7 +150,7 @@ final class AppModel {
         case .never(let app):
             guard recorder.pendingOffer?.bundleID == app else { return }
             recorder.neverOffer()
-            UserDefaults.standard.set(recorder.ignoredApps.sorted(), forKey: SettingsKey.ignoredApps)
+            saveIgnoredApps()
         case .show(let meetingID):
             showMeeting(meetingID)
         }
@@ -316,8 +361,12 @@ final class AppModel {
 enum SettingsKey {
     static let keepAudio = "keepAudio"
     static let autoTranscribe = "autoTranscribe"
-    /// The person's Ignored Apps, bundle IDs. Settings › Ignored Apps (ticket 14) edits them.
+    /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
     static let ignoredApps = "ignoredApps"
+    /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
+    static let libraryFolder = "libraryFolder"
+    /// Show Carbon's shortcut, a JSON `Shortcut`.
+    static let showCarbonShortcut = "showCarbonShortcut"
 }
 
 extension Locale {
