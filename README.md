@@ -20,6 +20,30 @@ I wanted the transcript without the bot, as a plain file I could hand to an AI a
 - **It names the meeting.** With calendar access, Carbon takes the title and participants from the matching event.
 - **It files a Markdown file.** When the call ends, each meeting becomes one file in `~/Documents/Carbon`, organized by year. Press <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> to copy its path and paste it into Claude Code, Codex or whatever you use.
 
+Everything in this diagram happens on your Mac:
+
+```mermaid
+flowchart LR
+    subgraph mac["On your Mac"]
+        mic["Microphone<br/>(Me)"]
+        them["Call audio<br/>(Them)"]
+        stt["Live transcription<br/>Apple SpeechTranscriber"]
+        diar["CarbonDiarizer helper<br/>FluidAudio + bundled models"]
+        prints[("Voice Prints")]
+        cal["Calendar"]
+        file["Markdown file<br/>~/Documents/Carbon"]
+    end
+    mic --> stt
+    them --> stt
+    them -- "after the call" --> diar
+    stt -- "words" --> file
+    diar -- "Speaker A, B, C" --> file
+    prints -. "names known voices" .-> file
+    cal -. "title, participants" .-> file
+```
+
+Apple's SpeechTranscriber, built into macOS 26, writes the words as people speak. When the call ends, a small helper app inside Carbon, CarbonDiarizer, splits the other side's recorded audio into Speakers. It uses [FluidAudio](https://github.com/FluidInference/FluidAudio), an open-source Swift library by Fluid Inference that runs speaker diarization models with Core ML. Those models were first published on Hugging Face under CC BY 4.0 and now ship inside Carbon, so diarization downloads nothing and your audio never leaves your Mac. For the little network traffic Carbon does make, see [Privacy](#privacy).
+
 A meeting file looks like this:
 
 ```markdown
