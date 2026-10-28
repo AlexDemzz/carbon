@@ -25,10 +25,20 @@ extension Library {
     }
 
     /// Writes what the person typed in the editor. It is theirs: a Local Edit that Carbon never overwrites.
+    /// The frontmatter `title` and `participants` they typed become the Meeting's, for the list and Search.
     public func save(_ id: UUID, editedMarkdown: String) throws {
-        let entry = try entry(id, in: loadIndex())
-        try Data(editedMarkdown.utf8).write(to: folder.appending(path: entry.file), options: .atomic)
-        refreshListed(entry)
+        var index = try loadIndex()
+        guard let position = index.meetings.firstIndex(where: { $0.id == id }) else {
+            throw LibraryError.unknownMeeting(id)
+        }
+        try Data(editedMarkdown.utf8).write(to: folder.appending(path: index.meetings[position].file), options: .atomic)
+        let before = index.meetings[position]
+        if let title = MarkdownFile.title(in: editedMarkdown) { index.meetings[position].title = title }
+        if let participants = MarkdownFile.participants(in: editedMarkdown) {
+            index.meetings[position].participants = participants
+        }
+        if index.meetings[position] != before { try save(index) }
+        refreshListed(index.meetings[position])
     }
 
     /// True when the file differs from what Carbon last wrote.

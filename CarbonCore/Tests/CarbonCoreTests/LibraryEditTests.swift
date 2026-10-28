@@ -153,6 +153,47 @@ struct LibraryEditTests {
         #expect(library.search("my notes").count == 1)
     }
 
+    @Test func anEditorSaveCarriesTheFrontmatterTitleAndParticipantsIntoTheIndex() throws {
+        let library = makeLibrary()
+        try created(library)
+        let edited = createdMarkdown
+            .replacingOccurrences(of: "title: Remote control kickoff", with: "title: \"Remote: \\\"v2\\\" kickoff\"")
+            .replacingOccurrences(of: "  - Priya Nair\n", with: "  - Priya Nair\n  - \"Sam Rivera <sam@example.com>\"\n")
+
+        try library.save(id, editedMarkdown: edited)
+
+        #expect(try entry(library).title == "Remote: \"v2\" kickoff")
+        #expect(try entry(library).participants == [
+            Participant(name: "Priya Nair"), Participant(name: "Sam Rivera", email: "sam@example.com"),
+        ])
+        #expect(library.meetings.map(\.title) == ["Remote: \"v2\" kickoff"])
+        #expect(library.search("rivera").map(\.meeting.title) == ["Remote: \"v2\" kickoff"])
+    }
+
+    @Test func anEditorSaveWithAFlowListOfParticipantsReadsThem() throws {
+        let library = makeLibrary()
+        try created(library)
+        let edited = createdMarkdown.replacingOccurrences(
+            of: "participants:\n  - Priya Nair\n", with: "participants: [Priya Nair, 'Sam O''Neil']\n")
+
+        try library.save(id, editedMarkdown: edited)
+
+        #expect(try entry(library).participants == [Participant(name: "Priya Nair"), Participant(name: "Sam O'Neil")])
+    }
+
+    @Test func anEditorSaveWithoutTitleOrParticipantsKeepsTheIndexOnes() throws {
+        let library = makeLibrary()
+        try created(library)
+        let edited = createdMarkdown
+            .replacingOccurrences(of: "title: Remote control kickoff\n", with: "")
+            .replacingOccurrences(of: "participants:\n  - Priya Nair\n", with: "")
+
+        try library.save(id, editedMarkdown: edited)
+
+        #expect(try entry(library).title == "Remote control kickoff")
+        #expect(try entry(library).participants == [Participant(name: "Priya Nair")])
+    }
+
     // MARK: Delete
 
     @Test func deleteMovesTheFileAndItsAudioToTheTrashAndLeavesATombstone() throws {
