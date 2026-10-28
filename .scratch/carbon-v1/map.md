@@ -21,6 +21,7 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 ## Spec
 
 - [Carbon v1 spec](issues/19-carbon-v1-spec.md) (`ready-for-agent`): the whole of v1 synthesized from the decisions below, including the release pipeline; Summary pending issues/10.
+- Build tickets: [`.scratch/carbon-v1-build/issues/`](../carbon-v1-build/issues/) (01–18, tracer bullets with blocking edges). The Summary is ticket 18, blocked by issues/10. Release credentials are ticket 17 (HITL), and nothing is blocked on it.
 
 ## Decisions so far
 
