@@ -14,9 +14,18 @@ func normalized(_ vector: [Float]) -> [Float] {
     return norm > 0 ? vector.map { $0 / norm } : vector
 }
 
+/// The models ship in the app (App/DiarizationModels), so diarization never touches the network.
+func bundledModelsDirectory() throws -> URL {
+    guard let resources = Bundle.main.resourceURL else {
+        throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "No app bundle around CarbonDiarizer"])
+    }
+    return resources.appending(path: "DiarizationModels", directoryHint: .isDirectory)
+}
+
 func diarize(_ audio: URL) async throws -> Diarization {
+    ModelHub.offlineMode = true
     let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig(clusteringThreshold: clusteringThreshold))
-    try await manager.prepareModels()
+    manager.initialize(models: try await OfflineDiarizerModels.load(from: try bundledModelsDirectory()))
     let result = try await manager.process(audio)
     var speech: [String: Double] = [:]
     for segment in result.segments {
