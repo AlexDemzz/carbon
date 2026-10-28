@@ -26,6 +26,8 @@ struct MenuBarMenu: View {
             Text("Finishing \u{201C}\(meeting.title)\u{201D}\u{2026}")
         }
         Divider()
+        Button("Show Carbon") { model.showMainWindow() }
+            .keyboardShortcut("c", modifiers: [.option, .command])
         Button("Reveal in Finder") { model.revealLibrary() }
         Divider()
         Button("Quit Carbon") { NSApp.terminate(nil) }
