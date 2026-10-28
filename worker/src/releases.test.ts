@@ -105,6 +105,52 @@ describe("/releases/<name>.dmg", () => {
   });
 });
 
+describe("HEAD", () => {
+  const head = (path: string) =>
+    releaseResponse(new Request(`${site}${path}`, { method: "HEAD" }), bucket);
+
+  beforeAll(async () => {
+    await bucket.put(
+      "latest.json",
+      JSON.stringify({ build: 42, file: "Carbon-1.2.0.dmg", version: "1.2.0" })
+    );
+    await bucket.put("appcast.xml", "<rss/>");
+    await bucket.put("releases/Carbon-1.2.0.dmg", "0123456789abcdef");
+  });
+
+  test("redirects /download like GET", async () => {
+    const response = await head("/download");
+
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get("Location")).toBe(
+      "/releases/Carbon-1.2.0.dmg"
+    );
+  });
+
+  test("answers /appcast.xml with GET's headers and no body", async () => {
+    const response = await head("/appcast.xml");
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("Content-Type")).toBe("application/rss+xml");
+    expect(response?.body).toBeNull();
+  });
+
+  test("answers a DMG with its length and no body", async () => {
+    const response = await head("/releases/Carbon-1.2.0.dmg");
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("Content-Length")).toBe("16");
+    expect(response?.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(response?.body).toBeNull();
+  });
+
+  test("is not found for a DMG that was never released", async () => {
+    const response = await head("/releases/Carbon-9.9.9.dmg");
+
+    expect(response?.status).toBe(404);
+  });
+});
+
 describe("other requests", () => {
   test("are left to the landing Worker", async () => {
     await bucket.put(

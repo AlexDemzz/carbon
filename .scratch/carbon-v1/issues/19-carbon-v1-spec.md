@@ -357,7 +357,7 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   1. import the Developer ID `.p12` into a temporary keychain;
   2. `xcodebuild archive` and export with the Developer ID method;
   3. run the `CarbonCore` tests, the appcast script tests and the release Worker tests;
-  4. build `Carbon-X.Y.Z.dmg` with `hdiutil`, holding the app and an Applications symlink;
+  4. build `Carbon-X.Y.Z.dmg` with `dmgbuild`: an install window with the app on the left, an Applications alias on the right, a drag-to-Applications background and Carbon's volume icon;
   5. sign, notarize and staple the DMG;
   6. sign the DMG with Sparkle's `sign_update` (EdDSA private key from secrets);
   7. regenerate `appcast.xml` from the previous one plus this item (release notes from the tag's annotation);
@@ -379,6 +379,7 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   - `GET /download` → 302 to `/releases/<file from latest.json>`, `Cache-Control: no-store`, so the site's `DOWNLOAD_URL = "/download"` stays as is.
   - `GET /appcast.xml` → the R2 object, `application/rss+xml`, `Cache-Control: max-age=300`.
   - `GET /releases/<name>.dmg` → the R2 object streamed with `application/x-apple-diskimage`, `Content-Disposition: attachment`, immutable caching, `Range` supported, 404 for unknown names.
+  - `HEAD` on any of the three → the same status and headers as `GET`, without the body.
 
   The bucket stays private: the release Worker is its only reader. Each release redeploys the release Worker (step 8), never the landing Worker.
 - **Vendor table updates** ship inside app releases. There is no separate remote config fetch, so the app makes no network calls beyond Sparkle's.
