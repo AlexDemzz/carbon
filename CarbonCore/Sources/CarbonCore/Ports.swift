@@ -47,11 +47,34 @@ public struct MicSnapshot: Equatable, Sendable {
     public var micHolders: [MeetingApp]
     /// The calendar events around `time`, reduced to plain values.
     public var events: [CalendarEvent]
+    /// The power assertions, when they were polled at this snapshot (every 3 s at most); nil between polls.
+    public var assertions: [PowerAssertion]?
 
-    public init(time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = []) {
+    public init(
+        time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = [], assertions: [PowerAssertion]? = nil
+    ) {
         self.time = time
         self.micHolders = micHolders
         self.events = events
+        self.assertions = assertions
+    }
+}
+
+/// One entry of `IOPMCopyAssertionsByProcess()`, with its process resolved to its owning app.
+public struct PowerAssertion: Equatable, Sendable {
+    public var app: MeetingApp
+    /// `AssertName`.
+    public var name: String
+    /// `AssertType`, as created: modern (`PreventUserIdleDisplaySleep`) or legacy (`NoDisplaySleepAssertion`).
+    public var type: String
+    /// `AssertionId`. A native call app creates a new one per call.
+    public var id: Int
+
+    public init(app: MeetingApp, name: String, type: String, id: Int) {
+        self.app = app
+        self.name = name
+        self.type = type
+        self.id = id
     }
 }
 

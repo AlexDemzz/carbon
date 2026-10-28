@@ -37,6 +37,8 @@ final class AppModel {
         didSet { meetingLanguagesChanged(from: oldValue) }
     }
     let languageAssets = MeetingLanguageAssets()
+    /// The last "Switch to <app>" offer posted, which its banner's action refers to.
+    @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
@@ -129,6 +131,9 @@ final class AppModel {
             notifier.withdrawOffer()
         case .transcriptReady(let id, let title, _):
             notifier.postReady(meetingID: id, title: title)
+        case .switchOffered(let offer):
+            switchOffer = offer
+            notifier.postSwitchOffer(offer)
         }
     }
 
@@ -162,6 +167,19 @@ final class AppModel {
             saveIgnoredApps()
         case .show(let meetingID):
             showMeeting(meetingID)
+        case .switchTo(let app, let meetingID):
+            // An offer outlives its Meeting in Notification Center: only the Meeting it named can switch.
+            guard let offer = switchOffer, offer.app.bundleID == app, offer.meeting.id == meetingID,
+                case .live(let meeting) = recorder.state, meeting.id == meetingID
+            else { return }
+            switchOffer = nil
+            Task {
+                do {
+                    try await recorder.switchMeeting(to: offer.app)
+                } catch {
+                    present(error, title: "Carbon couldn't switch Meetings")
+                }
+            }
         }
     }
 

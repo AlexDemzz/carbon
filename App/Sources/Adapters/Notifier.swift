@@ -13,6 +13,8 @@ final class Notifier: NSObject {
         case decline(app: String)
         case never(app: String)
         case show(meetingID: UUID)
+        /// "Switch to <app>" on the overlap banner, about the Meeting live when it was posted.
+        case switchTo(app: String, meetingID: UUID)
     }
 
     /// Called on the main actor for each action the person takes.
@@ -34,7 +36,8 @@ final class Notifier: NSObject {
         static let show = "show"
         static let never = "never"
         static let transcribePrefix = "transcribe."
-        static let switchPrefix = "switch."
+        static let switchLanguagePrefix = "switchLanguage."
+        static let switchTo = "switch"
     }
 
     fileprivate enum Key {
@@ -64,7 +67,7 @@ final class Notifier: NSObject {
             [UNNotificationAction(identifier: Action.stop, title: "Stop", options: [.destructive])]
             + others.map {
                 UNNotificationAction(
-                    identifier: Action.switchPrefix + $0.identifier(.bcp47),
+                    identifier: Action.switchLanguagePrefix + $0.identifier(.bcp47),
                     title: "Switch to \(Self.name(of: $0, in: languages))", options: [])
             }
         let category = (["start"] + others.map { $0.identifier(.bcp47) }).joined(separator: ".")
@@ -101,6 +104,21 @@ final class Notifier: NSObject {
         content.categoryIdentifier = category
         content.userInfo = [Key.app: offer.app.bundleID]
         add(ID.offer, content)
+    }
+
+    /// "<Provider> is using the microphone.", "Carbon is still transcribing “<title>”.", with Switch to <Provider>.
+    func postSwitchOffer(_ offer: Recorder.SwitchOffer) {
+        let category = "switch." + offer.provider
+        register(UNNotificationCategory(
+            identifier: category,
+            actions: [UNNotificationAction(identifier: Action.switchTo, title: "Switch to \(offer.provider)")],
+            intentIdentifiers: []))
+        let content = UNMutableNotificationContent()
+        content.title = "\(offer.provider) is using the microphone."
+        content.body = "Carbon is still transcribing “\(offer.meeting.title)”."
+        content.categoryIdentifier = category
+        content.userInfo = [Key.meetingID: offer.meeting.id.uuidString, Key.app: offer.app.bundleID]
+        add(UUID().uuidString, content)
     }
 
     func withdrawOffer() {
@@ -177,12 +195,13 @@ final class Notifier: NSObject {
             case Action.stop: meetingID.map { .stop(meetingID: $0) }
             case Action.show, UNNotificationDefaultActionIdentifier: meetingID.map { .show(meetingID: $0) }
             case Action.never: app.map { .never(app: $0) }
+            case Action.switchTo: app.flatMap { app in meetingID.map { .switchTo(app: app, meetingID: $0) } }
             case UNNotificationDismissActionIdentifier: app.map { .decline(app: $0) }
             case let action where action.hasPrefix(Action.transcribePrefix):
                 app.map { .transcribe(app: $0, language: Self.language(action, after: Action.transcribePrefix)) }
-            case let action where action.hasPrefix(Action.switchPrefix):
+            case let action where action.hasPrefix(Action.switchLanguagePrefix):
                 meetingID.map {
-                    .switchLanguage(meetingID: $0, language: Self.language(action, after: Action.switchPrefix))
+                    .switchLanguage(meetingID: $0, language: Self.language(action, after: Action.switchLanguagePrefix))
                 }
             default: nil
             }

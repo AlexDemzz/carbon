@@ -12,6 +12,46 @@ public struct VendorTable: Sendable, Decodable {
     /// Conference link host → Provider, tried in order. A link counts only if its path matches `path`, whose first
     /// capture group, when it has one, is the Provider's meeting code.
     public var links: [LinkRule]
+    /// Native call assertions: one means a call is live in that app.
+    public var callAssertions: [AssertionMatcher]
+    /// Chromium's WebRTC assertion: logged only, it never starts anything.
+    public var webRTCAssertions: [AssertionMatcher]
+
+    /// Matches an assertion on its owning app, its name and its type. A field left out matches anything.
+    public struct AssertionMatcher: Sendable, Decodable {
+        public var apps: Set<String>?
+        public var name: String?
+        /// Modern type names; their legacy spellings match too.
+        public var types: Set<String>?
+
+        func matches(_ assertion: PowerAssertion) -> Bool {
+            (apps?.contains(assertion.app.bundleID) ?? true)
+                && (name.map { $0.caseInsensitiveCompare(assertion.name) == .orderedSame } ?? true)
+                && (types?.contains(VendorTable.modernType(assertion.type)) ?? true)
+        }
+    }
+
+    public enum AssertionKind: Equatable, Sendable {
+        case call
+        case webRTC
+    }
+
+    /// Legacy assertion types, as Chromium and older apps still create them, to their modern names.
+    static let legacyTypes = [
+        "NoDisplaySleepAssertion": "PreventUserIdleDisplaySleep",
+        "NoIdleSleepAssertion": "PreventUserIdleSystemSleep",
+    ]
+
+    static func modernType(_ type: String) -> String {
+        legacyTypes[type] ?? type
+    }
+
+    /// Whether `assertion` is a native call, Chromium's WebRTC assertion, or neither.
+    public func kind(of assertion: PowerAssertion) -> AssertionKind? {
+        if callAssertions.contains(where: { $0.matches(assertion) }) { return .call }
+        if webRTCAssertions.contains(where: { $0.matches(assertion) }) { return .webRTC }
+        return nil
+    }
 
     public struct LinkRule: Sendable, Decodable {
         /// Matches this host and its subdomains (`zoom.us` matches `us02web.zoom.us`).
