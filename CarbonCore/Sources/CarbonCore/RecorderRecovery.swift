@@ -18,9 +18,9 @@ extension Recorder {
     /// Call once at launch. It runs beside Detection: a Meeting that starts meanwhile is never mistaken for an
     /// interrupted one. A folder whose recovery fails stays for the next launch.
     public func recover() async -> [Recovery] {
-        let live = recording?.folder.folder.lastPathComponent
+        let live = liveCapture?.meeting.id
         var recoveries: [Recovery] = []
-        for folder in InProgressMeeting.interrupted(in: inProgressRoot) where folder.folder.lastPathComponent != live {
+        for folder in InProgressMeeting.interrupted(in: inProgressRoot) where folder.meetingID != live {
             if let recovery = await recover(folder) { recoveries.append(recovery) }
         }
         return recoveries

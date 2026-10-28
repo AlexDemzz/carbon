@@ -34,9 +34,10 @@ struct RecorderTests {
         let meetingID = meetingID
         let library = makeLibrary(trash: trash)
         library.recognizesVoices = recognizesVoices
+        let them = systemAudio ?? FakeAudioSource(seconds: seconds)
         return Recorder(
             microphone: microphone ?? FakeAudioSource(seconds: seconds),
-            systemAudio: systemAudio ?? FakeAudioSource(seconds: seconds),
+            systemAudio: { _ in them },
             systemAudioPermission: { systemAudioPermission },
             transcriber: transcriber,
             diarizer: diarizer,

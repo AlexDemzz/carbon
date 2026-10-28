@@ -21,7 +21,7 @@ struct RecoveryTests {
         let meetingID = meetingID
         return Recorder(
             microphone: FakeAudioSource(seconds: me),
-            systemAudio: FakeAudioSource(seconds: them),
+            systemAudio: { _ in FakeAudioSource(seconds: them) },
             systemAudioPermission: { .granted },
             transcriber: transcriber,
             diarizer: ScriptedDiarizer([.fail, .fail]),

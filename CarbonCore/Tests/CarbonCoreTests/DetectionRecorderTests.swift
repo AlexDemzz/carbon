@@ -150,21 +150,21 @@ struct DetectionRecorderTests {
 
     // MARK: What the person is told
 
-    func recordEvents(of recorder: Recorder) -> Events {
-        let events = Events()
-        recorder.onEvent = { events.list.append($0) }
-        return events
+    func recordNotices(of recorder: Recorder) -> Notices {
+        let notices = Notices()
+        recorder.onNotice = { notices.list.append($0) }
+        return notices
     }
 
     var meetingID: UUID { UUID(uuidString: "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")! }
 
     @Test func aMeetingDetectionStartsIsAnnouncedWithItsTitleProviderAndLanguage() async throws {
         let recorder = try makeRecorder()
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
 
-        #expect(events.list == [
+        #expect(notices.list == [
             .started(LiveMeeting(
                 id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: start + 15,
                 language: Locale(identifier: "en_US"), app: zoom, provider: "Zoom")),
@@ -174,12 +174,12 @@ struct DetectionRecorderTests {
 
     @Test func aWrittenTranscriptIsAnnouncedWithItsFile() async throws {
         let recorder = try makeRecorder()
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
         try await recorder.start(language: Locale(identifier: "en_US"))
 
         try await recorder.stop()
 
-        #expect(events.list == [
+        #expect(notices.list == [
             .transcriptReady(
                 id: meetingID, title: "Meeting Oct 23, 9:15 AM",
                 file: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")),
@@ -189,11 +189,11 @@ struct DetectionRecorderTests {
     @Test func withAutoTranscribeOffDetectionOffersAMeetingAndStartsNothing() async throws {
         let recorder = try makeRecorder()
         recorder.autoTranscribe = false
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...100, [zoom])]))
 
-        #expect(events.list == [
+        #expect(notices.list == [
             .offered(.init(app: zoom, title: "Meeting Oct 23, 9:15 AM", provider: "Zoom", language: Locale(identifier: "en_US"))),
             .offerWithdrawn(zoom),
         ])
@@ -203,7 +203,7 @@ struct DetectionRecorderTests {
     @Test func transcribingAnOfferStartsTheMeetingInTheChosenLanguage() async throws {
         let recorder = try makeRecorder()
         recorder.autoTranscribe = false
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
         try await recorder.acceptOffer(language: Locale(identifier: "fr_FR"))
@@ -214,21 +214,21 @@ struct DetectionRecorderTests {
         }
         #expect(meeting.app == zoom)
         #expect(meeting.language == Locale(identifier: "fr_FR"))
-        #expect(events.list.count == 1, "an accepted offer is not announced again")
+        #expect(notices.list.count == 1, "an accepted offer is not announced again")
         await recorder.discard()
     }
 
     @Test func neverAddsTheOfferedAppToIgnoredApps() async throws {
         let recorder = try makeRecorder()
         recorder.autoTranscribe = false
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
         recorder.neverOffer()
         await recorder.runDetection(ScriptedSignalSource(clock, from: start + 21, [(0...9, []), (10...1_500, [zoom])]))
 
         #expect(recorder.ignoredApps == ["us.zoom.xos"])
-        #expect(events.list.count == 1, "no offer after Never, even once the mute is over")
+        #expect(notices.list.count == 1, "no offer after Never, even once the mute is over")
     }
 
     // MARK: Call assertions, back-to-back and overlap
@@ -286,14 +286,14 @@ struct DetectionRecorderTests {
 
     @Test func aSecondCallAppOffersASwitchAndSwitchingFilesTheFirstMeeting() async throws {
         let recorder = try makeRecorder()
-        let events = recordEvents(of: recorder)
+        let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [
             (0...100, [chrome], []),
             (101...130, [chrome, zoom], [zoomCall(1)]),
         ]))
         guard case .live(let chromeMeeting) = recorder.state else { Issue.record("no live Meeting"); return }
-        #expect(events.list.dropFirst() == [
+        #expect(notices.list.dropFirst() == [
             .switchOffered(.init(app: zoom, provider: "Zoom", meeting: chromeMeeting)),
         ])
         #expect(chromeMeeting.provider == "Google Chrome")
@@ -328,6 +328,6 @@ final class WaitingDiarizer: Diarizer {
 }
 
 @MainActor
-final class Events {
-    var list: [Recorder.Event] = []
+final class Notices {
+    var list: [Recorder.Notice] = []
 }

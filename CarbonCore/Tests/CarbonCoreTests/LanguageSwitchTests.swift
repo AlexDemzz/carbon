@@ -31,9 +31,10 @@ struct LanguageSwitchTests {
     func makeRecorder(transcriber: any Transcriber) -> Recorder {
         let clock = clock
         let meetingID = meetingID
+        let systemAudio = systemAudio
         return Recorder(
             microphone: microphone,
-            systemAudio: systemAudio,
+            systemAudio: { _ in systemAudio },
             systemAudioPermission: { .granted },
             transcriber: transcriber,
             diarizer: ScriptedDiarizer([.fail, .fail]),

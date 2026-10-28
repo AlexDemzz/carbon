@@ -75,7 +75,7 @@ final class AppModel {
         recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
         recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
-        recorder.onEvent = { [weak self] event in self?.announce(event) }
+        recorder.onNotice = { [weak self] notice in self?.announce(notice) }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
         let notifier = notifier
         Task {
@@ -124,8 +124,8 @@ final class AppModel {
         }
     }
 
-    private func announce(_ event: Recorder.Event) {
-        switch event {
+    private func announce(_ notice: Recorder.Notice) {
+        switch notice {
         case .started(let meeting):
             notifier.postStarted(meeting, languages: meetingLanguages)
         case .offered(let offer):
@@ -140,15 +140,21 @@ final class AppModel {
         }
     }
 
+    /// Whether `meetingID` is the live Meeting: a notification can outlive the Meeting it was about.
+    private func isLive(_ meetingID: UUID) -> Bool {
+        guard case .live(let meeting) = recorder.state else { return false }
+        return meeting.id == meetingID
+    }
+
     private func respond(to response: Notifier.Response) {
         switch response {
         case .stop(let meetingID):
             notifier.removeStarted(meetingID)
             // A banner left over from an earlier Meeting never discards the current one.
-            guard case .live(let meeting) = recorder.state, meeting.id == meetingID else { return }
+            guard isLive(meetingID) else { return }
             discard()
         case .switchLanguage(let meetingID, let language):
-            guard case .live(let meeting) = recorder.state, meeting.id == meetingID else { return }
+            guard isLive(meetingID) else { return }
             switchLanguage(to: language)
         case .transcribe(let app, let language):
             guard recorder.pendingOffer?.bundleID == app else { return }
@@ -173,7 +179,7 @@ final class AppModel {
         case .switchTo(let app, let meetingID):
             // An offer outlives its Meeting in Notification Center: only the Meeting it named can switch.
             guard let offer = switchOffer, offer.app.bundleID == app, offer.meeting.id == meetingID,
-                case .live(let meeting) = recorder.state, meeting.id == meetingID
+                isLive(meetingID)
             else { return }
             switchOffer = nil
             Task {

@@ -20,6 +20,9 @@ struct InProgressMeeting {
 
     let folder: URL
 
+    /// The Meeting the folder records, named after its ID.
+    var meetingID: UUID? { UUID(uuidString: folder.lastPathComponent) }
+
     var stateFile: URL { folder.appending(path: "state.json") }
     var meAudio: URL { folder.appending(path: "me.caf") }
     var themAudio: URL { folder.appending(path: "them.caf") }
