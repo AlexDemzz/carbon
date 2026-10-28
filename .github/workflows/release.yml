@@ -146,7 +146,7 @@ jobs:
           npm test
           npm run check-types
 
-      # 4. DMG with the app and an Applications symlink
+      # 4. DMG with the install window: app, Applications symlink, background, volume icon
       - name: Make the DMG
         env:
           DMG: ${{ steps.mode.outputs.dmg }}
