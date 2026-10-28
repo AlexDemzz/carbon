@@ -7,6 +7,9 @@ options:
 packages:
   CarbonCore:
     path: CarbonCore
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -24,6 +27,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: CarbonCore
+      - package: Sparkle
     info:
       path: App/Info.plist
       properties:
@@ -35,6 +39,9 @@ targets:
         NSHumanReadableCopyright: "© 2026 Alexandre Joly"
         NSMicrophoneUsageDescription: Carbon transcribes your side of a Meeting from the microphone, on this Mac.
         NSAudioCaptureUsageDescription: Carbon transcribes the other participants of a Meeting from the call's audio, on this Mac.
+        SUFeedURL: https://carbon.alexandrejoly.me/appcast.xml
+        SUPublicEDKey: DmKfoKmWRW4yVkZNN0nq1w3x4uu6e/qkz5YXE1zN+ZE=
+        SUEnableAutomaticChecks: true
         NSCalendarsFullAccessUsageDescription: Carbon takes a Meeting's title and participants from its calendar event.
     entitlements:
       path: App/Carbon.entitlements

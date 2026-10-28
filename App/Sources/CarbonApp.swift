@@ -6,14 +6,19 @@ import SwiftUI
 struct CarbonApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var model = AppModel()
+    @State private var updater = Updater()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuBarMenu(model: model)
+            MenuBarMenu(model: model, updater: updater)
         } label: {
             MenuBarGlyph(isLive: model.isLive)
         }
         .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView(updater: updater)
+        }
     }
 }
 
