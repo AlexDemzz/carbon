@@ -1,0 +1,21 @@
+{"meeting": "summre-021a_EARD",
+ "top5": [
+  "Nelly: des influenceurs (Instagram, TikTok, Facebook, Snapchat) s'intéressent à l'association et ont été contactés pour en faire la promotion auprès des jeunes",
+  "Bastien (Me): l'IA est partout; l'autonomie totale est risquée (exemple du drone armé), le sujet doit être débattu par la société",
+  "Jean-Marc: la transition numérique pour les membres âgés qui ont du mal avec internet (un marché à aider), mais ils rejettent les réseaux sociaux; l'association fait du chiffre d'affaires sans bénéfice",
+  "Véronique: l'impact écologique des livraisons Amazon (camionnettes, camions à moitié vides, livraison en 24 h, retours, emballages surdimensionnés); désaccord sur un partenariat avec Amazon et sur la pollution; les cartons sur mesure ne sont pas rentables",
+  "Prochain reporting: utiliser les réseaux sociaux pour analyser les commandes et les retours, puis l'IA pour proposer de réduire les colis; inciter les consommateurs à accepter des délais plus longs"
+ ],
+ "X": {"usefulness": 2, "coverage": "2 / 5",
+  "wrong": [
+   "'Amazon génère des pertes de mémoire parmi les membres de l'association': Me se moquait des pertes de mémoire des membres, sans rapport avec Amazon",
+   "Next step 'Développer une intelligence artificielle pour retranscrire immédiatement les paroles': remarque ironique, pas un engagement",
+   "Next step 'Explorer un partenariat avec Amazon': proposé par Jean-Marc, contesté par Véronique et jamais décidé; la suite retenue va dans l'autre sens"
+  ],
+  "next_steps": 1, "language": "yes", "noise": 2,
+  "comment": "Contient une affirmation absurde (Amazon et les pertes de mémoire), deux points en double sur la machine à cartons, ignore les influenceurs et les risques de l'IA, et ses next steps sont inventés ou contraires à la réunion."},
+ "Y": {"usefulness": 3, "coverage": "2 / 5",
+  "wrong": [],
+  "next_steps": 4, "language": "yes", "noise": 0,
+  "comment": "Exact et fidèle aux actions proposées pour le prochain reporting, mais trop maigre: rien sur les influenceurs, les personnes âgées ou les risques de l'IA."}
+}

@@ -1,0 +1,35 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 18.52541666666667,
+  "keyPoints" : [
+    "La réunion est fixée au 8 mai.",
+    "La formation de l'ehpad sur la transition pourrait être intégrée.",
+    "L'utilisation de la réalité virtuelle est proposée pour les personnes âgées."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-021b_EADD",
+  "nextSteps" : [
+
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6479,
+      "kind" : "map 1",
+      "seconds" : 22.76842498779297
+    },
+    {
+      "inputTokens" : 1131,
+      "kind" : "map 2",
+      "seconds" : 3.5586628913879395
+    },
+    {
+      "inputTokens" : 466,
+      "kind" : "reduce 1.1",
+      "seconds" : 1.5821110010147095
+    }
+  ],
+  "totalSeconds" : 44.73354399204254,
+  "transcriptChars" : 28435,
+  "transcriptTokens" : 7504,
+  "variant" : "mapreduce"
+}

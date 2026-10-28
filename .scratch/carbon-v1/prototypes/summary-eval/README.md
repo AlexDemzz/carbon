@@ -31,4 +31,4 @@ ROUGE against the AMI/ICSI abstractive and QMSum references is reported next to 
 
 ## Status (2026-10-28)
 
-Not run yet. On this Mac `SystemLanguageModel.default.availability` stayed `unavailable(.modelNotReady)` for 90 minutes overnight (polled every minute) and a request failed with `ModelManagerError 1019`, although Apple Intelligence is enabled (`com.apple.gms.availability` reports it available, en-US, on AC power). The harness compiles against the macOS 27 SDK; it needs the on-device model downloaded to run.
+Run on all 18 Meetings, both variants, with an 8,192-token context. Verdict: **drop the Summary from v1**. Mean usefulness is 2.7 in English for both variants, and 2.1 (rolling) and 2.9 (map-reduce) in French. That is under 3 in both languages, with 1.4–2.4 wrong items per Summary. Speed passes at ≤ 174 s per hour of audio. Full numbers and examples are in the ticket's Answer. The judge scores are in `results/judge/`, with `key.json` mapping X/Y to variants.

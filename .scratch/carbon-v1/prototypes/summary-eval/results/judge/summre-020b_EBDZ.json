@@ -1,0 +1,23 @@
+{"meeting": "summre-020b_EBDZ",
+ "top5": [
+  "Thèmes retenus: comédie (pas romantique) et super-héros; documentaire et horreur écartés",
+  "Lieu: le cinéma classique est d'abord choisi puis remplacé par le cinéma drive (grande capacité, original, moins cher, sans restrictions sanitaires, convivial en famille; mais peu d'interaction)",
+  "Dix films: Babysitting, Les Bronzés font du ski, Les Profs, Le Père Noël est une ordure, Qu'est-ce qu'on a fait au bon Dieu; Iron Man, Deadpool, Suicide Squad, Captain America, Hancock",
+  "Tête d'affiche: Deadpool (comédie et super-héros), placé en clôture; Babysitting en ouverture",
+  "Public familial (idée 'l'été en famille'); projections en alternance et festival sur plusieurs jours évoqués, ordre laissé en l'état pour l'instant"
+ ],
+ "X": {"usefulness": 3, "coverage": "4 / 5",
+  "wrong": [
+   "'dans un cinéma classique en plein air': le cinéma classique a été abandonné pour le drive, et le plein air n'a jamais été retenu (contradiction avec le point sur le drive)"
+  ],
+  "next_steps": 3, "language": "yes", "noise": 0,
+  "comment": "Résumé court qui retient les thèmes, le drive, Deadpool en clôture et l'alternance, mais il se contredit sur le lieu et ne donne presque aucun titre de film."},
+ "Y": {"usefulness": 2, "coverage": "3 / 5",
+  "wrong": [
+   "'Le cinéma classique est choisi comme lieu principal, avec la possibilité d'un drive': c'est l'inverse, le drive a été retenu au final",
+   "Next step 'Confirmer la position de Deadpool, soit au début, soit à la fin': il a été décidé de le placer à la fin",
+   "Next step 'Explorer les options de cinéma en plein air et de cinéma drive à Aix et Marseille': inventé, Me citait seulement ce qui existe localement"
+  ],
+  "next_steps": 2, "language": "yes", "noise": 3,
+  "comment": "Se trompe sur le lieu, rouvre une décision déjà prise sur Deadpool et accumule les anecdotes sur les cinémas locaux (Pavillon Vendôme, Aix/Marseille), avec des next steps inventés en double."}
+}

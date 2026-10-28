@@ -1,0 +1,31 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 26.354483333333334,
+  "keyPoints" : [
+    "The target group for the remote should be teenagers and young professionals.",
+    "The company must incorporate its corporate image, using silver and gold\/yellow colors.",
+    "Teletext is outdated due to internet popularity, so it should be removed from the list.",
+    "The remote should be used only for television, not for extra internet-dependent features."
+  ],
+  "language" : "en",
+  "meeting" : "ami-ES2011b",
+  "nextSteps" : [
+    "Think about the need for a button to switch between TV, DVD, and VCR functions."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 4493,
+      "kind" : "chunk 1",
+      "seconds" : 10.919409990310669
+    },
+    {
+      "inputTokens" : 1892,
+      "kind" : "chunk 2",
+      "seconds" : 3.420477032661438
+    }
+  ],
+  "totalSeconds" : 28.932348012924194,
+  "transcriptChars" : 24525,
+  "transcriptTokens" : 6099,
+  "variant" : "rolling"
+}

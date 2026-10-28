@@ -45,7 +45,7 @@ The remembered signature of a named Speaker's voice, used to recognize them in l
 _Avoid_: Embedding, voice profile
 
 **Summary**:
-A short recap of a Meeting: key points and next steps.
+A short recap of a Meeting: key points and next steps. Not written in v1: "On-device summary quality" dropped it, so the Transcript is the whole product.
 _Avoid_: Notes, minutes, recap
 
 **Library**:
