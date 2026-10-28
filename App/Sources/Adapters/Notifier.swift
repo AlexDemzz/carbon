@@ -7,6 +7,7 @@ import UserNotifications
 final class Notifier: NSObject {
     enum Response {
         case stop(meetingID: UUID)
+        case switchLanguage(meetingID: UUID, language: Locale)
         case transcribe(app: String, language: Locale)
         /// The offer was dismissed.
         case decline(app: String)
@@ -18,8 +19,10 @@ final class Notifier: NSObject {
     var onResponse: ((Response) -> Void)?
 
     private let center = UNUserNotificationCenter.current()
-    /// Categories by identifier: offers get one per set of language actions.
+    /// Categories by identifier: start banners and offers get one per set of language actions.
     private var categories: [String: UNNotificationCategory] = [:]
+    /// The Meetings whose start banner is up.
+    private var started: Set<UUID> = []
 
     private enum ID {
         static let offer = "offer"
@@ -31,6 +34,7 @@ final class Notifier: NSObject {
         static let show = "show"
         static let never = "never"
         static let transcribePrefix = "transcribe."
+        static let switchPrefix = "switch."
     }
 
     fileprivate enum Key {
@@ -42,10 +46,6 @@ final class Notifier: NSObject {
         super.init()
         center.delegate = self
         register(UNNotificationCategory(
-            identifier: "start",
-            actions: [UNNotificationAction(identifier: Action.stop, title: "Stop", options: [.destructive])],
-            intentIdentifiers: []))
-        register(UNNotificationCategory(
             identifier: "ready",
             actions: [UNNotificationAction(identifier: Action.show, title: "Show", options: [.foreground])],
             intentIdentifiers: []))
@@ -56,22 +56,41 @@ final class Notifier: NSObject {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
     }
 
-    /// "Transcribing in <language>", "<title> · <Provider>", with Stop.
-    func postStarted(_ meeting: LiveMeeting) {
+    /// "Transcribing in <language>", "<title> · <Provider>", with Stop and one "Switch to <language>" per other
+    /// Meeting Language.
+    func postStarted(_ meeting: LiveMeeting, languages: MeetingLanguages?) {
+        let others = languages?.others(than: meeting.language) ?? []
+        let actions =
+            [UNNotificationAction(identifier: Action.stop, title: "Stop", options: [.destructive])]
+            + others.map {
+                UNNotificationAction(
+                    identifier: Action.switchPrefix + $0.identifier(.bcp47),
+                    title: "Switch to \(Self.name(of: $0, in: languages))", options: [])
+            }
+        let category = (["start"] + others.map { $0.identifier(.bcp47) }).joined(separator: ".")
+        register(UNNotificationCategory(identifier: category, actions: actions, intentIdentifiers: []))
         let content = UNMutableNotificationContent()
-        content.title = "Transcribing in \(Self.languageName(meeting.language))"
+        content.title = "Transcribing in \(Self.name(of: meeting.language, in: languages))"
         content.body = "\(meeting.title) \u{00B7} \(meeting.provider)"
-        content.categoryIdentifier = "start"
+        content.categoryIdentifier = category
         content.userInfo = [Key.meetingID: meeting.id.uuidString]
+        started.insert(meeting.id)
         add(ID.start(meeting.id), content)
+    }
+
+    /// Replaces the start banner, if it is still up, after the Meeting changed language.
+    func restateStarted(_ meeting: LiveMeeting, languages: MeetingLanguages?) {
+        guard started.contains(meeting.id) else { return }
+        postStarted(meeting, languages: languages)
     }
 
     /// "<title>", "<Provider> is using the microphone.", with Transcribe, Transcribe in <language> and Never.
     /// Dismissing it declines.
-    func postOffer(_ offer: Recorder.Offer, otherLanguages: [Locale]) {
+    func postOffer(_ offer: Recorder.Offer, languages: MeetingLanguages?) {
+        let otherLanguages = languages?.others(than: offer.language) ?? []
         let actions =
             [Self.transcribe(offer.language, title: "Transcribe")]
-            + otherLanguages.map { Self.transcribe($0, title: "Transcribe in \(Self.languageName($0))") }
+            + otherLanguages.map { Self.transcribe($0, title: "Transcribe in \(Self.name(of: $0, in: languages))") }
             + [UNNotificationAction(identifier: Action.never, title: "Never", options: [])]
         let category = "offer." + ([offer.language] + otherLanguages).map { $0.identifier(.bcp47) }.joined(separator: ",")
         register(UNNotificationCategory(
@@ -90,7 +109,7 @@ final class Notifier: NSObject {
 
     /// "<title>", "Transcript ready.", with Show. Takes the start banner away.
     func postReady(meetingID: UUID, title: String) {
-        remove(ID.start(meetingID))
+        removeStarted(meetingID)
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = "Transcript ready."
@@ -100,6 +119,7 @@ final class Notifier: NSObject {
     }
 
     func removeStarted(_ meetingID: UUID) {
+        started.remove(meetingID)
         remove(ID.start(meetingID))
     }
 
@@ -142,6 +162,14 @@ final class Notifier: NSObject {
         return Locale.current.localizedString(forLanguageCode: code) ?? code
     }
 
+    private static func name(of language: Locale, in languages: MeetingLanguages?) -> String {
+        languages?.name(of: language) ?? languageName(language)
+    }
+
+    private static func language(_ action: String, after prefix: String) -> Locale {
+        Locale(identifier: Locale.identifier(.icu, from: String(action.dropFirst(prefix.count))))
+    }
+
     fileprivate func handle(action: String, meetingID: String?, app: String?) {
         let meetingID = meetingID.flatMap(UUID.init(uuidString:))
         let response: Response? =
@@ -151,12 +179,10 @@ final class Notifier: NSObject {
             case Action.never: app.map { .never(app: $0) }
             case UNNotificationDismissActionIdentifier: app.map { .decline(app: $0) }
             case let action where action.hasPrefix(Action.transcribePrefix):
-                app.map {
-                    .transcribe(
-                        app: $0,
-                        language: Locale(
-                            identifier: Locale.identifier(
-                                .icu, from: String(action.dropFirst(Action.transcribePrefix.count)))))
+                app.map { .transcribe(app: $0, language: Self.language(action, after: Action.transcribePrefix)) }
+            case let action where action.hasPrefix(Action.switchPrefix):
+                meetingID.map {
+                    .switchLanguage(meetingID: $0, language: Self.language(action, after: Action.switchPrefix))
                 }
             default: nil
             }

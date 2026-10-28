@@ -11,11 +11,17 @@ final class StreamRecorder: Sendable {
         var file: AVAudioFile
         var pending: AVAudioPCMBuffer
         var converter: AVAudioConverter?
+        var session: any TranscriptionSession
+        /// Converts the file's format to the session's, for a session that wants another one.
+        var sessionConverter: AVAudioConverter?
+        /// While a new session catches up on the file, the audio that arrives meanwhile, in the file's format.
+        var backlog: [AVAudioPCMBuffer]?
         var error: (any Error)?
         var closed = false
     }
 
-    private let session: any TranscriptionSession
+    private let url: URL
+    private let fileFormat: AVAudioFormat
     private let state: Mutex<State>
 
     init(session: any TranscriptionSession, cafFile url: URL) throws {
@@ -27,21 +33,100 @@ final class StreamRecorder: Sendable {
         guard let pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
             throw CocoaError(.featureUnsupported)
         }
-        self.session = session
-        state = Mutex(State(file: file, pending: pending))
+        self.url = url
+        fileFormat = format
+        state = Mutex(State(file: file, pending: pending, session: session))
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
         state.withLock { state in
             guard !state.closed, state.error == nil else { return }
             do {
-                let converted = try Self.convert(buffer, to: session.audioFormat, with: &state.converter)
-                session.append(converted)
+                let converted = try Self.convert(buffer, to: fileFormat, with: &state.converter)
+                if state.backlog != nil {
+                    state.backlog?.append(try Self.copy(converted))
+                } else {
+                    try Self.feed(converted, to: &state)
+                }
                 try Self.enqueue(converted, into: &state)
             } catch {
                 state.error = error
             }
         }
+    }
+
+    /// Hands the stream to `session` from now on. It first hears everything recorded so far, read back from the
+    /// file, then the audio that arrived meanwhile, then the live audio: no gap. Returns the session it replaces.
+    /// On failure the old session keeps the stream. Reads the whole file, so keep it off the main actor.
+    func hand(to session: any TranscriptionSession) throws -> any TranscriptionSession {
+        let (old, recorded) = try state.withLock { state in
+            if state.closed { throw CocoaError(.fileWriteUnknown) }
+            if let error = state.error { throw error }
+            try Self.flush(&state)
+            let old = state.session
+            state.session = session
+            state.sessionConverter = nil
+            state.backlog = []
+            return (old, state.file.length)
+        }
+        do {
+            try replay(recorded, to: session)
+        } catch {
+            state.withLock { state in
+                state.session = old
+                state.sessionConverter = nil
+                Self.drainBacklog(&state)
+            }
+            throw error
+        }
+        state.withLock { Self.drainBacklog(&$0) }
+        return old
+    }
+
+    /// Hands the stream back to a session that heard it before, without replaying anything.
+    func giveBack(_ session: any TranscriptionSession) {
+        state.withLock { state in
+            state.session = session
+            state.sessionConverter = nil
+        }
+    }
+
+    private func replay(_ frames: AVAudioFramePosition, to session: any TranscriptionSession) throws {
+        let file = try AVAudioFile(
+            forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        let chunk = AVAudioFrameCount(fileFormat.sampleRate)
+        var converter: AVAudioConverter?
+        while file.framePosition < frames {
+            let count = min(chunk, AVAudioFrameCount(frames - file.framePosition))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count) else {
+                throw CocoaError(.featureUnsupported)
+            }
+            try file.read(into: buffer, frameCount: count)
+            if buffer.frameLength == 0 { break }
+            session.append(try Self.convert(buffer, to: session.audioFormat, with: &converter))
+        }
+    }
+
+    private static func drainBacklog(_ state: inout State) {
+        let backlog = state.backlog ?? []
+        state.backlog = nil
+        do {
+            for buffer in backlog { try feed(buffer, to: &state) }
+        } catch {
+            state.error = error
+        }
+    }
+
+    private static func feed(_ buffer: AVAudioPCMBuffer, to state: inout State) throws {
+        state.session.append(try convert(buffer, to: state.session.audioFormat, with: &state.sessionConverter))
+    }
+
+    private static func copy(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+            throw CocoaError(.featureUnsupported)
+        }
+        Self.copy(buffer.frameLength, framesFrom: buffer, at: 0, to: copy)
+        return copy
     }
 
     /// Writes what is left and closes the file. Throws the first error met while recording.

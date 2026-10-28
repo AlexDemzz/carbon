@@ -4,11 +4,18 @@
 
 **Blocked by:** 04 (Start notification, offer mode and the Settings window).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The Languages tab lists the locales SpeechTranscriber supports, with English and French variants first. A checkbox per language, a "Default language" picker, and a download state per row ("Downloading…" / "Ready").
-- [ ] Carbon calls `AssetInventory.reserve` for every checked locale. It checks the asset status when a Meeting starts and downloads the asset again if needed.
-- [ ] Switching mid-Meeting starts a new analyzer pair that first takes the recorded CAF files in batch, then continues live. The file has no gap and no text in the old language.
-- [ ] The start notification shows one "Switch to <language>" per other checked language.
-- [ ] The menu bar's Meeting Language submenu marks the current language with a check.
-- [ ] Recorder test: a language switch with a replayed Transcriber produces a file written entirely from the new-language words.
+- [x] The Languages tab lists the locales SpeechTranscriber supports, with English and French variants first. A checkbox per language, a "Default language" picker, and a download state per row ("Downloading…" / "Ready").
+- [x] Carbon calls `AssetInventory.reserve` for every checked locale. It checks the asset status when a Meeting starts and downloads the asset again if needed.
+- [x] Switching mid-Meeting starts a new analyzer pair that first takes the recorded CAF files in batch, then continues live. The file has no gap and no text in the old language.
+- [x] The start notification shows one "Switch to <language>" per other checked language.
+- [x] The menu bar's Meeting Language submenu marks the current language with a check.
+- [x] Recorder test: a language switch with a replayed Transcriber produces a file written entirely from the new-language words.
+
+**Notes:**
+
+- First launch checks only the system's language (en-US when SpeechTranscriber lacks it), so nothing else is downloaded until the person checks more languages.
+- A row whose download failed says "Couldn't download"; reservations beyond `AssetInventory.maximumReservedLocales` are logged to the diagnostic log, and those languages are still downloaded at Meeting start.
+- Not verified on a real Meeting: the switch with live SpeechAnalyzer sessions, the AssetInventory reserve/download flow, and the notification actions were built and smoke-launched only. The Settings tab was never looked at.
+- The Languages tab lists every supported locale (English and French first), as this ticket says, not only English and French plus the system's languages as the spec words it.

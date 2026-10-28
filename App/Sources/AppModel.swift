@@ -31,8 +31,12 @@ final class AppModel {
     @ObservationIgnored var openEditor: ((UUID) -> Void)?
     @ObservationIgnored private var showCarbonHotKey: GlobalHotKey?
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
-    @ObservationIgnored private let notifier = Notifier()
-    @ObservationIgnored private var otherMeetingLanguages: [Locale] = []
+    @ObservationIgnored let notifier = Notifier()
+    /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
+    var meetingLanguages: MeetingLanguages? {
+        didSet { meetingLanguagesChanged(from: oldValue) }
+    }
+    let languageAssets = MeetingLanguageAssets()
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
@@ -48,6 +52,8 @@ final class AppModel {
         library = Library(folder: libraryFolder, supportFolder: support)
         showCarbonShortcut = UserDefaults.standard.data(forKey: SettingsKey.showCarbonShortcut)
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .showCarbon
+        meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
+            .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
         recorder = Recorder(
             microphone: MicrophoneSource(),
             systemAudio: { app in SystemAudioTap(app: app) },
@@ -116,9 +122,9 @@ final class AppModel {
     private func announce(_ event: Recorder.Event) {
         switch event {
         case .started(let meeting):
-            notifier.postStarted(meeting)
+            notifier.postStarted(meeting, languages: meetingLanguages)
         case .offered(let offer):
-            notifier.postOffer(offer, otherLanguages: otherMeetingLanguages.filter { !$0.sameLanguage(as: offer.language) })
+            notifier.postOffer(offer, languages: meetingLanguages)
         case .offerWithdrawn:
             notifier.withdrawOffer()
         case .transcriptReady(let id, let title, _):
@@ -133,6 +139,9 @@ final class AppModel {
             // A banner left over from an earlier Meeting never discards the current one.
             guard case .live(let meeting) = recorder.state, meeting.id == meetingID else { return }
             discard()
+        case .switchLanguage(let meetingID, let language):
+            guard case .live(let meeting) = recorder.state, meeting.id == meetingID else { return }
+            switchLanguage(to: language)
         case .transcribe(let app, let language):
             guard recorder.pendingOffer?.bundleID == app else { return }
             Task {
@@ -187,23 +196,8 @@ final class AppModel {
             DiagnosticLog.shared.write("Detection is off: no microphone access")
             return
         }
-        let language = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
-        recorder.detectionLanguage = language
-        otherMeetingLanguages = await Self.otherLanguages(than: language)
+        await loadMeetingLanguages()
         await recorder.runDetection(SignalSampler())
-    }
-
-    /// The offer's "Transcribe in <language>" choices. Until Settings › Languages (ticket 12) lists the person's
-    /// Meeting Languages, they are English and French, the US-first launch languages, as SpeechTranscriber has them.
-    private static func otherLanguages(than language: Locale?) async -> [Locale] {
-        var others: [Locale] = []
-        for candidate in [Locale(identifier: "en_US"), Locale(identifier: "fr_FR")] {
-            guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: candidate),
-                language.map({ !supported.sameLanguage(as: $0) }) ?? true
-            else { continue }
-            others.append(supported)
-        }
-        return others
     }
 
     /// Show Carbon: brings the main window forward, or hides Carbon when it is already in front.
@@ -316,7 +310,7 @@ final class AppModel {
                 guard await MicrophoneSource.requestAccess() else {
                     throw AppError.microphoneDenied
                 }
-                guard let language = await SpeechTranscriber.supportedLocale(equivalentTo: .current) else {
+                guard let language = await nextMeetingLanguage() else {
                     throw AppError.languageUnsupported(Locale.current)
                 }
                 try await recorder.start(language: language)
@@ -367,12 +361,8 @@ enum SettingsKey {
     static let libraryFolder = "libraryFolder"
     /// Show Carbon's shortcut, a JSON `Shortcut`.
     static let showCarbonShortcut = "showCarbonShortcut"
-}
-
-extension Locale {
-    func sameLanguage(as other: Locale) -> Bool {
-        language.languageCode == other.language.languageCode
-    }
+    /// Settings › Languages, a JSON `MeetingLanguages`.
+    static let meetingLanguages = "meetingLanguages"
 }
 
 enum AppError: LocalizedError {
