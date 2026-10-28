@@ -476,6 +476,20 @@ struct RecorderTests {
         #expect(entry["audio"] == nil)
     }
 
+    @Test func whenTheMicStreamFailsToCloseTheCallsCaptureStillStopsAndTheRecorderIsIdle() async throws {
+        let them = StopSpyAudioSource()
+        let recorder = makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"), microphone: UnconvertibleAudioSource(), systemAudio: them)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        await #expect(throws: (any Error).self) { try await recorder.stop() }
+
+        #expect(them.stopped)
+        #expect(recorder.state == .idle)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        #expect(recorder.state != .idle, "a failed close leaves nothing that blocks the next Meeting")
+    }
+
     func rms(_ buffer: AVAudioPCMBuffer, channel: Int) -> Float {
         let samples = UnsafeBufferPointer(start: buffer.floatChannelData![channel], count: Int(buffer.frameLength))
         return (samples.reduce(0) { $0 + $1 * $1 } / Float(max(1, samples.count))).squareRoot()

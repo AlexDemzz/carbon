@@ -478,12 +478,15 @@ public final class Recorder {
         let end = now()
         state = .finishing(meeting)
         self.recording = nil
-        do {
-            try recording.me.close()
-            try recording.them.close()
-        } catch {
+        // Both captures stop whatever happens to the other: a failed Me must not leave the call's tap running.
+        var failure: (any Error)?
+        for stream in [recording.me, recording.them] {
+            do { try stream.close() } catch { failure = failure ?? error }
+        }
+        if let failure {
+            detector.meetingStopped()
             state = .idle
-            throw error
+            throw failure
         }
         let (me, them) = (recording.me.session, recording.them.session)
         return (meeting, {

@@ -34,6 +34,30 @@ final class FakeAudioSource: AudioSource {
     func stop() {}
 }
 
+/// Captures nothing and notes whether capture was stopped.
+final class StopSpyAudioSource: AudioSource {
+    private let isStopped = Mutex(false)
+    var stopped: Bool { isStopped.withLock { $0 } }
+
+    func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {}
+
+    func stop() {
+        isStopped.withLock { $0 = true }
+    }
+}
+
+/// Pushes one buffer at 1 Hz, which no converter turns into the analyzer format, so its stream fails to close.
+final class UnconvertibleAudioSource: AudioSource {
+    func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat64, sampleRate: 1, channels: 1, interleaved: false)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4)!
+        buffer.frameLength = 4
+        onBuffer(buffer)
+    }
+
+    func stop() {}
+}
+
 /// Plays a WAV fixture as one captured stream, in 100 ms buffers, as soon as capture starts.
 final class WAVAudioSource: AudioSource {
     let url: URL
