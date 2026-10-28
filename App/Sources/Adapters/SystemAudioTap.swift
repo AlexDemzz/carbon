@@ -23,6 +23,8 @@ final class SystemAudioTap: AudioSource {
     }
 
     static let silentTapTimeout: TimeInterval = 5
+    /// The name of Carbon's private aggregate device, which other adapters leave out of the Mac's devices.
+    static let aggregateName = "Carbon Them"
 
     private enum Target: Equatable {
         case app([AudioObjectID])
@@ -153,7 +155,7 @@ final class SystemAudioTap: AudioSource {
         }
 
         let aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Carbon Them",
+            kAudioAggregateDeviceNameKey: Self.aggregateName,
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceTapAutoStartKey: true,

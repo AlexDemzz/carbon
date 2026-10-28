@@ -54,6 +54,7 @@ final class AppModel {
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
             library: library,
+            outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)

@@ -13,7 +13,7 @@ struct VoicePrintsSettings: View {
                 Toggle("Recognize voices", isOn: $model.recognizesVoices)
             } footer: {
                 Text(
-                    "When you name a Speaker, Carbon remembers their voice and recognizes it in later Meetings. It learns your own voice from Meetings where you're alone at the mic, to tell you apart from others in a meeting room. Voice Prints are stored only on this Mac, and Carbon never sends them anywhere."
+                    "When you name a Speaker, Carbon remembers their voice and recognizes it in later Meetings. It learns your own voice from Meetings where the call plays through your headphones, to tell you apart from others in a meeting room. Voice Prints are stored only on this Mac, and Carbon never sends them anywhere."
                 )
                 .foregroundStyle(.secondary)
             }
