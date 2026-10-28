@@ -13,7 +13,7 @@ public struct Participant: Equatable, Sendable, Codable {
 
 /// A Meeting that has ended, with everything the Library needs to file it.
 public struct FinishedMeeting: Equatable, Sendable {
-    public enum TranscriptKind: String, Sendable {
+    public enum TranscriptKind: String, Equatable, Sendable, Codable {
         case speakers
         case fallback
     }

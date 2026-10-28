@@ -22,7 +22,7 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
         public var calendarEventId: String?
         public var participants: [Participant]
         public var speakers: [Speaker]
-        public var transcript: String
+        public var transcript: FinishedMeeting.TranscriptKind
         public var summary: String
         public var color: String?
         public var audio: String?
@@ -37,7 +37,7 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
             id: UUID, file: String, title: String, start: String, end: String, language: String,
             provider: String, providerMeetingId: String? = nil, meetingApp: String? = nil,
             calendarEventId: String? = nil, participants: [Participant], speakers: [Speaker] = [],
-            transcript: String, summary: String, color: String? = nil, audio: String? = nil, writtenHash: String
+            transcript: FinishedMeeting.TranscriptKind, summary: String, color: String? = nil, audio: String? = nil, writtenHash: String
         ) {
             self.id = id
             self.file = file
@@ -81,11 +81,21 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
     }
 
     public struct Speaker: Equatable, Sendable, Codable {
+        /// How the Speaker got its name.
+        public enum Match: String, Equatable, Sendable, Codable {
+            /// Recognized by a Voice Print.
+            case auto
+            /// The other attendee of a 1:1 Event.
+            case attendee1to1
+            /// Named by the person.
+            case user
+        }
+
         public var label: String
         public var cluster: String
         public var name: String?
         public var voicePrintId: UUID?
-        public var match: String?
+        public var match: Match?
         public var distance: Double?
         public var speechSeconds: Double
         /// The cluster's L2-normalized centroid embedding, base64 of little-endian Float32s, kept to enroll a
@@ -93,7 +103,7 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
         public var centroid: String?
 
         public init(
-            label: String, cluster: String, name: String? = nil, voicePrintId: UUID? = nil, match: String? = nil,
+            label: String, cluster: String, name: String? = nil, voicePrintId: UUID? = nil, match: Match? = nil,
             distance: Double? = nil, speechSeconds: Double, centroid: String? = nil
         ) {
             self.label = label

@@ -109,7 +109,7 @@ struct VoicePrintTests {
 
         #expect(!FileManager.default.fileExists(atPath: printsFile.path))
         #expect(try speakers(library) == [MeetingIndex.Speaker(
-            label: "Dana Park", cluster: "A", name: "Dana Park", match: "user", speechSeconds: 9.5, centroid: voice)])
+            label: "Dana Park", cluster: "A", name: "Dana Park", match: .user, speechSeconds: 9.5, centroid: voice)])
         #expect(library.meetings[0].tooLittleSpeechToRemember("Dana Park"))
     }
 
@@ -132,13 +132,13 @@ struct VoicePrintTests {
         try rememberSam()
         let library = makeLibrary()
         try createMeeting(library, speaker: MeetingIndex.Speaker(
-            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: "auto",
+            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: .auto,
             distance: 0.12, speechSeconds: 12.5, centroid: voice))
 
         try library.renameSpeaker(id, label: "Sam Rivera", name: "Dana Park")
 
         #expect(try speakers(library) == [MeetingIndex.Speaker(
-            label: "Dana Park", cluster: "A", name: "Dana Park", voicePrintId: newPrint, match: "user",
+            label: "Dana Park", cluster: "A", name: "Dana Park", voicePrintId: newPrint, match: .user,
             distance: 0.12, speechSeconds: 12.5, centroid: voice)])
         let prints = library.voicePrints.prints.map { "\($0.name) \($0.meetings)" }
         #expect(prints.sorted() == ["Dana Park 1", "Sam Rivera 1"])
@@ -157,7 +157,7 @@ struct VoicePrintTests {
             """.utf8).write(to: printsFile)
         let library = makeLibrary()
         try createMeeting(library, speaker: MeetingIndex.Speaker(
-            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: "auto",
+            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: .auto,
             distance: 0.3, speechSeconds: 4, centroid: "AACAPwAAAAA="))
 
         try library.renameSpeaker(id, label: "Sam Rivera", name: "Dana Park")
@@ -172,7 +172,7 @@ struct VoicePrintTests {
         try rememberSam()
         let library = makeLibrary()
         let sam = MeetingIndex.Speaker(
-            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: "auto",
+            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: .auto,
             speechSeconds: 12.5)
         let first = try createMeeting(library, speaker: sam)
         try createMeeting(library, otherID, speaker: sam)

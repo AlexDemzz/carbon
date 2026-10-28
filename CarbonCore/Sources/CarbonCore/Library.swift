@@ -72,7 +72,7 @@ public final class Library {
             calendarEventId: meeting.calendarEventId,
             participants: meeting.participants,
             speakers: meeting.speakers,
-            transcript: meeting.transcriptKind.rawValue,
+            transcript: meeting.transcriptKind,
             summary: "off",
             writtenHash: Self.sha256(data))
         index.meetings.append(entry)

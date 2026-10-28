@@ -15,7 +15,7 @@ public struct LiveMeeting: Equatable, Sendable {
     public var event: CalendarEvent?
 
     public init(
-        id: UUID, title: String, start: Date, language: Locale, app: MeetingApp? = nil, provider: String = "Unknown",
+        id: UUID, title: String, start: Date, language: Locale, app: MeetingApp? = nil, provider: String = Provider.unknown,
         event: CalendarEvent? = nil
     ) {
         self.id = id
@@ -530,7 +530,7 @@ public final class Recorder {
             labels[speakers[0].cluster] = attendee
             speakers[0].label = attendee
             speakers[0].name = attendee
-            speakers[0].match = "attendee1to1"
+            speakers[0].match = .attendee1to1
         }
         var turns = TranscriptBuilder.turns(me: me, them: them, diarization: split, labels: labels)
         if let attendee, split == nil, turns.contains(where: { $0.speaker == TranscriptBuilder.them }) {
@@ -541,7 +541,7 @@ public final class Recorder {
             }
             // As `renameSpeaker` records a named Them, so the label reads as a Speaker named after the attendee.
             speakers = [MeetingIndex.Speaker(
-                label: attendee, cluster: TranscriptBuilder.them, name: attendee, match: "attendee1to1",
+                label: attendee, cluster: TranscriptBuilder.them, name: attendee, match: .attendee1to1,
                 speechSeconds: 0)]
         }
         let transcript = TranscriptBuilder.body(turns)
@@ -587,7 +587,7 @@ public final class Recorder {
             speakers[position].label = print.name
             speakers[position].name = print.name
             speakers[position].voicePrintId = print.id
-            speakers[position].match = "auto"
+            speakers[position].match = .auto
             labels[letter] = print.name
             heard.append((print.id, cluster.centroid))
             if !participants.contains(where: { $0.name.caseInsensitiveCompare(print.name) == .orderedSame }) {

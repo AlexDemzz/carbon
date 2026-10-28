@@ -1,5 +1,11 @@
 import Foundation
 
+/// The Providers Carbon names itself. Every other one comes from the vendor table or the Meeting App's name.
+public enum Provider {
+    /// A Meeting with no native app, no Event link and no Meeting App to name its Provider after.
+    public static let unknown = "Unknown"
+}
+
 /// The vendor strings Detection depends on, shipped as data in each release (`Resources/VendorTable.json`).
 /// The person's own additions live in Settings, never here.
 public struct VendorTable: Sendable, Decodable {
@@ -80,7 +86,7 @@ public struct VendorTable: Sendable, Decodable {
     /// display name. `Unknown` when there is none of these.
     public func provider(for app: MeetingApp?, link: ConferenceLink?) -> String {
         if let app, let native = providers[app.bundleID] { return native }
-        return link?.provider ?? app?.name ?? "Unknown"
+        return link?.provider ?? app?.name ?? Provider.unknown
     }
 
     /// Whether the table says anything about `bundleID`. A mic holder it doesn't know goes to the diagnostic log.

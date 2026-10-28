@@ -15,14 +15,14 @@ extension Library {
             isNewParticipant = !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
             if isNewParticipant { entry.participants.append(Participant(name: name)) }
             // A fallback file has one Them stream and no `speakers` yet: its first naming records it as cluster `Them`.
-            if entry.transcript == FinishedMeeting.TranscriptKind.fallback.rawValue,
+            if entry.transcript == .fallback,
                !entry.speakers.contains(where: { $0.label == label }) {
                 entry.speakers.append(MeetingIndex.Speaker(label: label, cluster: TranscriptBuilder.them, speechSeconds: 0))
             }
             for position in entry.speakers.indices where entry.speakers[position].label == label {
                 entry.speakers[position].label = name
                 entry.speakers[position].name = name
-                entry.speakers[position].match = "user"
+                entry.speakers[position].match = .user
                 entry.speakers[position].voicePrintId = links[entry.speakers[position].cluster] ?? nil
             }
         }) { markdown in

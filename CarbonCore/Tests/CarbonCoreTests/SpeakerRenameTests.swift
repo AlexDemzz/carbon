@@ -72,7 +72,7 @@ struct SpeakerRenameTests {
         #expect(try read(url) == frontmatter + body(ofFixture: "ami-ES2004a-renamed"))
         #expect(try entry(library).speakers == [
             speaker("A"),
-            MeetingIndex.Speaker(label: "Sam Rivera", cluster: "B", name: "Sam Rivera", match: "user", speechSeconds: 60),
+            MeetingIndex.Speaker(label: "Sam Rivera", cluster: "B", name: "Sam Rivera", match: .user, speechSeconds: 60),
             speaker("C"),
         ])
         #expect(try entry(library).participants == [Participant(name: "Sam Rivera", email: "sam@example.com")])
@@ -199,7 +199,7 @@ extension SpeakerRenameTests {
 
         #expect(try read(url).contains("\n**Speaker A** [0:24] Hello.\n\n**Jordan Lee** [0:30] Thanks.\n"))
         #expect(try entry(library).speakers[1] == MeetingIndex.Speaker(
-            label: "Jordan Lee", cluster: "B", name: "Jordan Lee", match: "user", speechSeconds: 60))
+            label: "Jordan Lee", cluster: "B", name: "Jordan Lee", match: .user, speechSeconds: 60))
         #expect(try entry(library).participants.map(\.name) == ["Sam Rivera", "Jordan Lee"])
     }
 
@@ -226,7 +226,7 @@ extension SpeakerRenameTests {
 
         #expect(try read(url).hasSuffix("## Transcript\n\n**Me** [0:10] Hi.\n\n**Sam Rivera** [0:12] Hello.\n"))
         #expect(try entry(library).speakers == [MeetingIndex.Speaker(
-            label: "Sam Rivera", cluster: "Them", name: "Sam Rivera", match: "user", speechSeconds: 0)])
+            label: "Sam Rivera", cluster: "Them", name: "Sam Rivera", match: .user, speechSeconds: 0)])
     }
 
     @Test func inAOneToOneFallbackFileTheAttendeeLabelIsTheThemSpeaker() throws {
@@ -239,7 +239,7 @@ extension SpeakerRenameTests {
         try library.renameSpeaker(id, label: "Samuel Rivera", name: "Sam R")
 
         #expect(try entry(library).speakers == [MeetingIndex.Speaker(
-            label: "Sam R", cluster: "Them", name: "Sam R", match: "user", speechSeconds: 0)])
+            label: "Sam R", cluster: "Them", name: "Sam R", match: .user, speechSeconds: 0)])
     }
 
     @Test func aSpeakerIsUnnamedUntilSomeoneNamesIt() throws {
