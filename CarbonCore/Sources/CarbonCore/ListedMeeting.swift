@@ -12,6 +12,8 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
     public var provider: String
     public var participants: [Participant]
     public var color: String?
+    /// The `meetings.json` Speakers: who each Turn header label stands for.
+    public var speakers: [MeetingIndex.Speaker]
     /// The whole Markdown file, frontmatter included.
     public let markdown: String
     /// The body's text lines, Turn headers shown as "Speaker: ", built once for Search.
@@ -33,8 +35,14 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         provider = entry.provider
         participants = entry.participants
         color = entry.color
+        speakers = entry.speakers
         self.markdown = markdown
         searchLines = Self.searchLines(markdown)
+    }
+
+    /// True for a Them Speaker no one has named yet: `Them`, or a label whose Speaker has no name.
+    public func isUnnamedSpeaker(_ label: String) -> Bool {
+        label == TranscriptBuilder.them || speakers.contains { $0.label == label && $0.name == nil }
     }
 
     private static func searchLines(_ markdown: String) -> [String] {

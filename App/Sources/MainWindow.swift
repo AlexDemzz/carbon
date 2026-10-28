@@ -133,7 +133,7 @@ struct MeetingPanel: View {
                     .font(.title3.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 ForEach(Array(TranscriptBuilder.turns(inMarkdown: meeting.markdown).enumerated()), id: \.offset) {
-                    TurnView(turn: $0.element)
+                    TurnView(model: model, meeting: meeting, turn: $0.element)
                 }
             }
             .frame(maxWidth: 520, alignment: .leading)
@@ -162,12 +162,14 @@ struct MeetingPanel: View {
 
 /// "Speaker · 0:19" above the Turn's text.
 struct TurnView: View {
+    let model: AppModel
+    let meeting: ListedMeeting
     let turn: Turn
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(turn.speaker).fontWeight(.semibold)
+                SpeakerMenu(model: model, meeting: meeting, label: turn.speaker).fontWeight(.semibold)
                 Text("·").accessibilityHidden(true)
                 Text(turn.elapsed).monospacedDigit()
             }
@@ -175,6 +177,6 @@ struct TurnView: View {
             .foregroundStyle(.secondary)
             Text(turn.text).textSelection(.enabled)
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }

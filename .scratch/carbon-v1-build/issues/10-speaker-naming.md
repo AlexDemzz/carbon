@@ -4,10 +4,17 @@
 
 **Blocked by:** 06 (Calendar Event matching, Provider and participants), 07 (Speaker A/B/C from offline diarization, with the Me / Them fallback), 09 (Meeting actions, the editor window, Local Edits and reconcile).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The rename rewrites only the header lines that match the anchored pattern for that Speaker's current label. Text is never touched and Turns are never re-grouped, even on a file with Local Edits.
-- [ ] Names drop `*`, `[`, `]` and line breaks. `Me` and `Them` are refused.
-- [ ] A name not yet in `participants` is added to the frontmatter and to `meetings.json`.
-- [ ] The `speakers` entry gets `name`, `label` and `match: "user"`.
-- [ ] Golden test against the prototype's renamed sample.
+- [x] The rename rewrites only the header lines that match the anchored pattern for that Speaker's current label. Text is never touched and Turns are never re-grouped, even on a file with Local Edits.
+- [x] Names drop `*`, `[`, `]` and line breaks. `Me` and `Them` are refused.
+- [x] A name not yet in `participants` is added to the frontmatter and to `meetings.json`.
+- [x] The `speakers` entry gets `name`, `label` and `match: "user"`.
+- [x] Golden test against the prototype's renamed sample.
+
+Notes (ticket/10):
+- Core: `Library.renameSpeaker(_:label:name:)` in `LibrarySpeakers.swift`, through `writeSurgically`. `LibraryError.invalidSpeakerName` for `Me` / `Them` / empty names and for renaming Me.
+- A label shared by two merged Speakers renames both: the file can't tell them apart.
+- Fallback files: the first naming of `Them` (or the 1:1 attendee label) adds a `speakers` entry with `cluster: "Them"`, `speechSeconds: 0`.
+- Editor chips rename only while the editor has no unsaved changes, then reload from disk.
+- Deferred to 11: Voice Print enroll on rename and the "Not enough speech to remember this voice." note. The menus were built but not clicked through in the running app (smoke launch only).

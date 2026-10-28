@@ -2,10 +2,13 @@ import Foundation
 
 public enum LibraryError: LocalizedError, Equatable {
     case unknownMeeting(UUID)
+    /// The name is empty once `*`, `[`, `]` and line breaks are dropped, or is `Me` / `Them`, or names Me.
+    case invalidSpeakerName
 
     public var errorDescription: String? {
         switch self {
         case .unknownMeeting: "This Meeting is no longer in the Library."
+        case .invalidSpeakerName: "“Me” and “Them” are reserved. Choose another name."
         }
     }
 }
