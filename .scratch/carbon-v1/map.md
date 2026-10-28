@@ -34,6 +34,7 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - [Real meeting test set](issues/06-real-meeting-test-set.md): 28 public-corpus Meetings in `~/Datasets/carbon-test-set` (AMI ES2004/ES2011 series, ICSI Bed016 + Bmr006, SUMM-RE dev incl. Zoom, Simsamu) as aligned Me/Them WAVs + RTTM/words/summary references; no live-call replay.
 - [Power assertions as a Detection signal](issues/17-power-assertions-as-detection-signal.md): Zoom/Teams/Webex call assertions join the mic as start signals (each alone auto-starts) and end a Meeting on release; browser WebRTC assertion is diagnostic only; 15 s / 3 s×2 confirm, 15 s grace + 30 s silence, 5 s back-to-back gap, 4 h cap; ~40 Ignored Apps.
 - [Diarization and Voice Print quality on real calls](issues/07-diarization-quality-on-real-calls.md): ship Speaker A/B/C and Voice Prints in v1. Them DER 21.5 % EN / 12.8 % FR / 14.4 % FR phone, mostly missed overlap. Clustering threshold stays 0.6, merge per word. Voice Prints auto-match below 0.30 cosine distance with a 0.10 margin, from ≥ 10 s of speech. The pass runs under a watchdog, falling back to Me/Them.
+- [Transcription engine quality on real calls](issues/14-transcription-engine-on-real-calls.md): SpeechTranscriber only, no Parakeet post-pass. Ultra is only 10–14 % better than SpeechTranscriber, short of the 15 % bar. No phantom text on silence. Two live streams cost ~6 % of one core with ~2 s final lag. Meeting Language stays chosen. No name boosting: `contextualStrings` is inert and CTC floods the text. Phone-band audio is the weak case.
 
 ## Not yet specified
 
@@ -47,5 +48,5 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - Hand-recorded Meetings and hand-run Detection checks ([Detection and auto-stop rules on real usage](issues/09-detection-and-auto-stop-tuning.md), hand part of [Real meeting test set](issues/06-real-meeting-test-set.md)): the author won't run them; real-usage tuning comes from dogfooding the built app.
 
 - Implementation itself: the release pipeline (Developer ID, notarization, Sparkle keys, Cloudflare Worker + R2, GitHub Action) and the app build start after this map.
-- Later versions (v1.1+): automatic language switching mid-Meeting, echo cancellation, participant names via Accessibility or a browser extension, syncing official Provider transcripts and Gemini summaries, multiple accounts.
+- Later versions (v1.1+): a Parakeet Ultra post-pass for phone-band audio and attendee-name boosting (see "Transcription engine quality on real calls"), automatic language switching mid-Meeting, echo cancellation, participant names via Accessibility or a browser extension, syncing official Provider transcripts and Gemini summaries, multiple accounts.
 - Google Drive / Meet API sync with OAuth, superseded by local capture (`docs/adr/0001-drive-scope-with-unverified-launch.md`).

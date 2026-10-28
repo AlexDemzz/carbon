@@ -212,6 +212,8 @@ Sources: GitHub API for [whisper.cpp](https://api.github.com/repos/ggml-org/whis
 
 ## Open questions for the prototype ticket (need real Meetings)
 
+> Answered on the public test set in "Transcription engine quality on real calls" (`.scratch/carbon-v1/issues/14-transcription-engine-on-real-calls.md`): SpeechTranscriber only in v1. Not covered: Whisper as a reference point, a base M1/M2, battery drain, Intel, asset survival over weeks.
+
 Test set: about 10 real Meetings per language (EN, FR, plus a few mixed), each with both streams recorded separately (mic far-field, VoIP app audio) and a hand-corrected reference.
 
 1. **WER per stream and per language** for SpeechTranscriber (en_US / fr_FR) vs Parakeet v3 vs Parakeet Ultra, with Whisper large-v3-turbo as a reference point only. Use the same normalizer for all.
