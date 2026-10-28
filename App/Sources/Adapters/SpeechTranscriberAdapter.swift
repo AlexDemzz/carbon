@@ -1,0 +1,103 @@
+@preconcurrency import AVFoundation
+import CarbonCore
+import Speech
+import Synchronization
+
+/// Transcribes one stream live with SpeechAnalyzer + SpeechTranscriber, with volatile results and word timings.
+final class SpeechTranscriberAdapter: Transcriber {
+    enum Failure: LocalizedError {
+        case noAudioFormat(Locale)
+
+        var errorDescription: String? {
+            switch self {
+            case .noAudioFormat(let locale): "No audio format is available to transcribe \(locale.identifier)."
+            }
+        }
+    }
+
+    func start(locale: Locale) async throws -> any TranscriptionSession {
+        let transcriber = SpeechTranscriber(
+            locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
+            attributeOptions: [.audioTimeRange])
+        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            try await request.downloadAndInstall()
+        }
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            throw Failure.noAudioFormat(locale)
+        }
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        try await analyzer.prepareToAnalyze(in: format)
+        let (input, continuation) = AsyncStream<AnalyzerInput>.makeStream()
+        let collecting = Task {
+            var words = WordBuilder()
+            for try await result in transcriber.results where result.isFinal {
+                words.append(result.text)
+            }
+            return words.finish()
+        }
+        try await analyzer.start(inputSequence: input)
+        return Session(audioFormat: format, analyzer: analyzer, input: continuation, collecting: collecting)
+    }
+
+    final class Session: TranscriptionSession {
+        let audioFormat: AVAudioFormat
+        private let analyzer: SpeechAnalyzer
+        private let input: AsyncStream<AnalyzerInput>.Continuation
+        private let collecting: Task<[TranscribedWord], any Error>
+
+        init(
+            audioFormat: AVAudioFormat, analyzer: SpeechAnalyzer, input: AsyncStream<AnalyzerInput>.Continuation,
+            collecting: Task<[TranscribedWord], any Error>
+        ) {
+            self.audioFormat = audioFormat
+            self.analyzer = analyzer
+            self.input = input
+            self.collecting = collecting
+        }
+
+        func append(_ buffer: AVAudioPCMBuffer) {
+            input.yield(AnalyzerInput(buffer: buffer))
+        }
+
+        func finish() async throws -> [TranscribedWord] {
+            input.finish()
+            try await analyzer.finalizeAndFinishThroughEndOfInput()
+            return try await collecting.value
+        }
+    }
+}
+
+/// Splits SpeechTranscriber's timed text runs into whitespace-separated words, each spanning its first to last timed run.
+private struct WordBuilder {
+    private var words: [TranscribedWord] = []
+    private var text = ""
+    private var start: TimeInterval?
+    private var end: TimeInterval = 0
+
+    mutating func append(_ result: AttributedString) {
+        for run in result.runs {
+            let range = run[AttributeScopes.SpeechAttributes.TimeRangeAttribute.self]
+            for character in result[run.range].characters {
+                if character.isWhitespace {
+                    flush()
+                } else {
+                    text.append(character)
+                    if start == nil { start = range?.start.seconds ?? end }
+                    end = range?.end.seconds ?? end
+                }
+            }
+        }
+        flush()
+    }
+
+    mutating func finish() -> [TranscribedWord] {
+        flush()
+        return words
+    }
+
+    private mutating func flush() {
+        if let start, !text.isEmpty { words.append(TranscribedWord(text: text, start: start, end: end)) }
+        text = ""
+        start = nil
+    }
+}
