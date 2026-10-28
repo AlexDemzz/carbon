@@ -192,7 +192,7 @@ final class AppModel {
             switch recovery {
             case .recovered(let title, let file):
                 notifier.post(
-                    title: title, "Recovered after Carbon quit unexpectedly. Transcript ready.",
+                    "Recovered “\(title)” after Carbon quit unexpectedly.",
                     meetingID: library.meetings.first { $0.file.standardizedFileURL == file.standardizedFileURL }?.id)
             case .discarded(let title):
                 notifier.post("Carbon couldn't read the audio of “\(title)”, so it was discarded.")
