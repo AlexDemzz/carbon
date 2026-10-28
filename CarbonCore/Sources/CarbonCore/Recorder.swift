@@ -38,6 +38,8 @@ public final class Recorder {
     private let systemAudio: any AudioSource
     private let systemAudioPermission: @Sendable () -> SystemAudioPermission
     private let transcriber: any Transcriber
+    private let diarizer: any Diarizer
+    private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let library: Library
     private let inProgressRoot: URL
     private let timeZone: TimeZone
@@ -68,6 +70,8 @@ public final class Recorder {
         systemAudio: any AudioSource,
         systemAudioPermission: @escaping @Sendable () -> SystemAudioPermission,
         transcriber: any Transcriber,
+        diarizer: any Diarizer,
+        diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
         inProgressFolder: URL,
         timeZone: TimeZone = .current,
@@ -78,6 +82,8 @@ public final class Recorder {
         self.systemAudio = systemAudio
         self.systemAudioPermission = systemAudioPermission
         self.transcriber = transcriber
+        self.diarizer = diarizer
+        self.diarizationTimeout = diarizationTimeout
         self.library = library
         inProgressRoot = inProgressFolder
         self.timeZone = timeZone
@@ -131,13 +137,21 @@ public final class Recorder {
         }
         try recording.me.close()
         try recording.them.close()
-        async let me = recording.me.session.finish()
-        async let them = recording.them.session.finish()
-        let transcript = TranscriptBuilder.body(TranscriptBuilder.turns(me: try await me, them: try await them))
+        async let meWords = recording.me.session.finish()
+        async let themWords = recording.them.session.finish()
+        async let diarized = Self.diarize(
+            recording.folder.themAudio, with: diarizer,
+            timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
+        let (me, them, diarization) = (try await meWords, try await themWords, await diarized)
+        let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
+        // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
+        let split = letters.isEmpty ? nil : diarization
+        let transcript = TranscriptBuilder.body(TranscriptBuilder.turns(me: me, them: them, diarization: split))
         let file = try library.create(
             FinishedMeeting(
                 id: meeting.id, title: meeting.title, start: meeting.start, end: end, timeZone: timeZone,
-                language: meeting.language, provider: "Unknown", transcriptKind: .fallback),
+                language: meeting.language, provider: "Unknown", transcriptKind: split == nil ? .fallback : .speakers,
+                speakers: split.map { Self.speakers($0, letters: letters) } ?? []),
             transcript: transcript)
         recording.folder.remove()
         return file
@@ -153,6 +167,44 @@ public final class Recorder {
         recording.folder.remove()
         self.recording = nil
         state = .idle
+    }
+
+    /// The diarization watchdog's limit for one attempt: 2 min plus 10 s per minute of audio.
+    public nonisolated static func diarizationTimeout(forAudio seconds: TimeInterval) -> Duration {
+        .seconds(120) + .seconds(10) * (seconds / 60)
+    }
+
+    struct DiarizationTimedOut: Error {}
+
+    /// Diarizes the Them audio under the watchdog: one retry after a failure or a timeout, then nil (Me / Them).
+    private nonisolated static func diarize(
+        _ audio: URL, with diarizer: any Diarizer, timeout: Duration
+    ) async -> Diarization? {
+        for _ in 1...2 {
+            let attempt = try? await withThrowingTaskGroup(of: Diarization?.self) { group in
+                group.addTask { try await diarizer.diarize(audio) }
+                group.addTask {
+                    try await Task.sleep(for: timeout)
+                    return nil
+                }
+                defer { group.cancelAll() }
+                guard let first = try await group.next(), let diarization = first else { throw DiarizationTimedOut() }
+                return diarization
+            }
+            if let attempt { return attempt }
+        }
+        return nil
+    }
+
+    private static func speakers(_ diarization: Diarization, letters: [String: String]) -> [MeetingIndex.Speaker] {
+        diarization.clusters.compactMap { cluster in
+            letters[cluster.id].map { letter in
+                MeetingIndex.Speaker(
+                    label: "Speaker \(letter)", cluster: letter, speechSeconds: cluster.speechSeconds,
+                    centroid: MeetingIndex.Speaker.encode(centroid: cluster.centroid))
+            }
+        }
+        .sorted { ($0.cluster.count, $0.cluster) < ($1.cluster.count, $1.cluster) }
     }
 
     private func open(

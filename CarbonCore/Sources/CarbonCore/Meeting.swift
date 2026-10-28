@@ -28,12 +28,15 @@ public struct FinishedMeeting: Equatable, Sendable {
     public var meetingApp: String?
     public var participants: [Participant]
     public var transcriptKind: TranscriptKind
+    /// The diarized Speakers, lettered as in the Transcript. Empty for the Me / Them fallback.
+    public var speakers: [MeetingIndex.Speaker]
 
     public init(
         id: UUID, title: String, start: Date, end: Date, timeZone: TimeZone, language: Locale,
         provider: String, meetingApp: String? = nil, participants: [Participant] = [],
-        transcriptKind: TranscriptKind
+        transcriptKind: TranscriptKind, speakers: [MeetingIndex.Speaker] = []
     ) {
+        self.speakers = speakers
         self.id = id
         self.title = title
         self.start = start

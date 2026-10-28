@@ -41,6 +41,12 @@ public protocol Transcriber: Sendable {
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession
 }
 
+/// Offline speaker diarization of a recorded Them stream, such as FluidAudio in a helper process.
+public protocol Diarizer: Sendable {
+    /// Diarizes the audio file. Each call starts afresh (a new process); cancelling the call must stop it.
+    func diarize(_ audio: URL) async throws -> Diarization
+}
+
 /// One stream being transcribed live.
 public protocol TranscriptionSession: AnyObject, Sendable {
     /// The format `append` expects (the analyzer format).

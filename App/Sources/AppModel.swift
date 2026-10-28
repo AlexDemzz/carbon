@@ -28,6 +28,7 @@ final class AppModel {
             systemAudio: SystemAudioTap(),
             systemAudioPermission: SystemAudioRecordingPermission.current,
             transcriber: SpeechTranscriberAdapter(),
+            diarizer: HelperProcessDiarizer(),
             library: library,
             inProgressFolder: support.appending(path: "InProgress"))
         do {

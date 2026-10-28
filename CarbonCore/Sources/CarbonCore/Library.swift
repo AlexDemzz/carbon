@@ -49,6 +49,7 @@ public final class Library {
             provider: meeting.provider,
             meetingApp: meeting.meetingApp,
             participants: meeting.participants,
+            speakers: meeting.speakers,
             transcript: meeting.transcriptKind.rawValue,
             summary: "off",
             writtenHash: Self.sha256(data))

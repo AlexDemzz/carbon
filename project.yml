@@ -10,6 +10,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.1
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    exactVersion: 0.17.7
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -28,6 +31,11 @@ targets:
     dependencies:
       - package: CarbonCore
       - package: Sparkle
+      - target: CarbonDiarizer
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
     info:
       path: App/Info.plist
       properties:
@@ -59,4 +67,22 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+        DEAD_CODE_STRIPPING: YES
+  # FluidAudio diarization of the Them stream, run by the app in a fresh process per attempt.
+  CarbonDiarizer:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Diarizer
+    dependencies:
+      - package: CarbonCore
+      - package: FluidAudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.alexandrejoly.carbon.diarizer
+        PRODUCT_NAME: CarbonDiarizer
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        SKIP_INSTALL: YES
         DEAD_CODE_STRIPPING: YES

@@ -14,7 +14,8 @@ struct RecorderTests {
     func makeRecorder(
         transcriber: ReplayTranscriber, seconds: Double = 3,
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
-        systemAudioPermission: SystemAudioPermission = .granted
+        systemAudioPermission: SystemAudioPermission = .granted,
+        diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail])
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
@@ -23,6 +24,8 @@ struct RecorderTests {
             systemAudio: systemAudio ?? FakeAudioSource(seconds: seconds),
             systemAudioPermission: { systemAudioPermission },
             transcriber: transcriber,
+            diarizer: diarizer,
+            diarizationTimeout: { _ in .milliseconds(100) },
             library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }),
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
@@ -164,6 +167,104 @@ struct RecorderTests {
             **Them** [0:31] Right, both of them. Okay.
 
             """))
+    }
+
+    static let twoVoices = Diarization(
+        segments: [
+            .init(start: 2, end: 4, cluster: "S2"),
+            .init(start: 20, end: 23, cluster: "S1"),
+        ],
+        clusters: [
+            .init(id: "S1", centroid: [1, 0], speechSeconds: 3),
+            .init(id: "S2", centroid: [0.6, 0.8], speechSeconds: 12.5),
+        ])
+
+    static let groupCall: [AudioStream: [TranscribedWord]] = [
+        .me: [TranscribedWord(text: "Hi.", start: 1, end: 1.4)],
+        .them: [
+            TranscribedWord(text: "Hello", start: 2, end: 2.5),
+            TranscribedWord(text: "all.", start: 2.6, end: 3),
+            TranscribedWord(text: "Morning.", start: 20.5, end: 21),
+        ],
+    ]
+
+    @Test func theCallsAudioIsSplitIntoSpeakersLetteredByTheirFirstWord() async throws {
+        let diarizer = ScriptedDiarizer([.replay(Self.twoVoices)])
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: diarizer)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(diarizer.audioHeard.map(\.lastPathComponent) == ["them.caf"])
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Speaker A** [0:02] Hello all.
+
+            **Speaker B** [0:20] Morning.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["transcript"] as? String == "speakers")
+        #expect(entry["speakers"] as? NSArray == [
+            [
+                "label": "Speaker A", "cluster": "A", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "speechSeconds": 12.5, "centroid": "mpkZP83MTD8=",
+            ],
+            [
+                "label": "Speaker B", "cluster": "B", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "speechSeconds": 3, "centroid": "AACAPwAAAAA=",
+            ],
+        ] as NSArray)
+    }
+
+    @Test(arguments: [ScriptedDiarizer.Outcome.fail, .hang])
+    func whenDiarizationFailsTwiceTheFileFallsBackToMeAndThem(outcome: ScriptedDiarizer.Outcome) async throws {
+        let diarizer = ScriptedDiarizer([outcome, outcome])
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: diarizer)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(diarizer.audioHeard.count == 2, "one retry")
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Them** [0:02] Hello all.
+
+            **Them** [0:20] Morning.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["transcript"] as? String == "fallback")
+        #expect(entry["speakers"] as? NSArray == [])
+    }
+
+    @Test func aRetryAfterAHangStillGivesSpeakers() async throws {
+        let diarizer = ScriptedDiarizer([.hang, .replay(Self.twoVoices)])
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: diarizer)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker B** [0:20] Morning."))
+    }
+
+    @Test func theWatchdogAllowsTwoMinutesPlusTenSecondsPerAudioMinute() {
+        #expect(Recorder.diarizationTimeout(forAudio: 0) == .seconds(120))
+        #expect(Recorder.diarizationTimeout(forAudio: 30 * 60) == .seconds(420))
+        #expect(Recorder.diarizationTimeout(forAudio: 90) == .seconds(135))
     }
 
     @Test func withoutSystemAudioRecordingPermissionNoMeetingStarts() async throws {
