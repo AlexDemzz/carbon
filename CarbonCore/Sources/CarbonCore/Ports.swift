@@ -47,11 +47,34 @@ public struct MicSnapshot: Equatable, Sendable {
     public var micHolders: [MeetingApp]
     /// The calendar events around `time`, reduced to plain values.
     public var events: [CalendarEvent]
+    /// The power assertions, when they were polled at this snapshot (every 3 s at most); nil between polls.
+    public var assertions: [PowerAssertion]?
 
-    public init(time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = []) {
+    public init(
+        time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = [], assertions: [PowerAssertion]? = nil
+    ) {
         self.time = time
         self.micHolders = micHolders
         self.events = events
+        self.assertions = assertions
+    }
+}
+
+/// One entry of `IOPMCopyAssertionsByProcess()`, with its process resolved to its owning app.
+public struct PowerAssertion: Equatable, Sendable {
+    public var app: MeetingApp
+    /// `AssertName`.
+    public var name: String
+    /// `AssertType`, as created: modern (`PreventUserIdleDisplaySleep`) or legacy (`NoDisplaySleepAssertion`).
+    public var type: String
+    /// `AssertionId`. A native call app creates a new one per call.
+    public var id: Int
+
+    public init(app: MeetingApp, name: String, type: String, id: Int) {
+        self.app = app
+        self.name = name
+        self.type = type
+        self.id = id
     }
 }
 
@@ -64,6 +87,30 @@ public protocol SignalSource: Sendable {
 public protocol Diarizer: Sendable {
     /// Diarizes the audio file. Each call starts afresh (a new process); cancelling the call must stop it.
     func diarize(_ audio: URL) async throws -> Diarization
+}
+
+/// A Meeting's recap: what was said and what comes next.
+public struct Summary: Equatable, Sendable {
+    public var keyPoints: [String]
+    public var nextSteps: [String]
+
+    public init(keyPoints: [String], nextSteps: [String]) {
+        self.keyPoints = keyPoints
+        self.nextSteps = nextSteps
+    }
+}
+
+/// Summarizes a Meeting's Transcript once its file is on disk.
+public protocol Summarizer: Sendable {
+    /// `transcript` is the `## Transcript` section as written. Nil when summarizing is off.
+    func summarize(transcript: String, language: Locale) async throws -> Summary?
+}
+
+/// v1's Summarizer: "On-device summary quality" dropped the Summary, so every Meeting keeps `summary: "off"`.
+public struct NoSummarizer: Summarizer {
+    public init() {}
+
+    public func summarize(transcript: String, language: Locale) async throws -> Summary? { nil }
 }
 
 /// One stream being transcribed live.

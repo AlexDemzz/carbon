@@ -281,7 +281,7 @@ Each module is deep: a small interface over a lot of behavior.
 
 **Verdict of issues/10: drop.** Apple Foundation Models has an 8,192-token context on macOS 27. On the 18 AMI, ICSI and SUMM-RE Meetings it scored a mean usefulness of 2.7 in English and 2.1–2.9 in French, against a bar of 3. Each Summary carried 1.4–2.4 wrong or unsupported items, mostly invented next steps, and 1 Meeting in 18 hit a guardrail false positive. Speed passed (≤ 3 min per hour of audio).
 
-**v1:** the Summarizer port gets a no-op adapter and `summary` is `off` for every Meeting. `## Summary` is never written, and the Meeting panel shows no notes section. Nothing else changes: the port, the `summary` field and `insertSummary` stay, so a later model can be plugged in.
+**v1:** the Summarizer port gets a no-op adapter and `summary` is `off` for every Meeting. `## Summary` is never written, and the Meeting panel shows no notes section. Nothing else changes: the port and the `summary` field stay, so a later model can be plugged in. As built (ticket 18): `Summarizer.summarize(transcript:language:) async throws -> Summary?` in `CarbonCore/Ports.swift`, where nil means off. `NoSummarizer` always answers nil. The Recorder calls it after `library.create`, so the file is already on disk, and ignores both its answer and any error it throws. `Library.insertSummary`, the rendering and the retry are not built; they land with the v1.1 adapter, on `writeSurgically`.
 
 The design below is kept as the starting point for v1.1+, when the summary-eval harness passes on a newer model. Map-reduce was the better variant: fewer wrong items, and less noise in French.
 

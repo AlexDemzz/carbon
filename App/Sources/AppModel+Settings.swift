@@ -4,7 +4,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 enum SettingsTab: Hashable {
-    case general, ignoredApps, permissions, voicePrints, about
+    case general, languages, ignoredApps, permissions, voicePrints, about
 }
 
 extension AppModel {

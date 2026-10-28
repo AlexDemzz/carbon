@@ -28,7 +28,8 @@ public struct EventMatcher: Sendable {
             .min { rank($0) < rank($1) }
     }
 
-    static func isCandidate(_ event: CalendarEvent, at time: Date) -> Bool {
+    /// Whether `event` is in its matching window at `time` and the person is going.
+    public static func isCandidate(_ event: CalendarEvent, at time: Date) -> Bool {
         !event.isAllDay && !event.isCanceled
             && !event.attendees.contains { $0.isCurrentUser && $0.declined }
             && event.start.addingTimeInterval(-beforeStart) <= time && time <= event.end.addingTimeInterval(afterEnd)

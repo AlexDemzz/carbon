@@ -66,6 +66,12 @@ enum AudioProcesses {
         return MeetingApp(bundleID: bundleID, name: name)
     }
 
+    /// The app that owns any process, such as a power assertion's: its responsible process's outermost `.app`.
+    static func owner(ofPID pid: pid_t) -> MeetingApp? {
+        if let responsible = responsiblePID(pid), let app = outermostApp(of: responsible) { return app }
+        return outermostApp(of: pid)
+    }
+
     private typealias ResponsiblePID = @convention(c) (pid_t) -> pid_t
 
     /// The private `responsibility_get_pid_responsible_for_pid`, loaded through `dlsym`. Nil if the OS drops it.

@@ -193,3 +193,33 @@ func words(fixture name: String) throws -> [TranscribedWord] {
     let recorded = try JSONDecoder().decode([Recorded].self, from: Data(contentsOf: fixtureURL(name, extension: "json")))
     return recorded.map { TranscribedWord(text: $0.w, start: $0.s, end: $0.e) }
 }
+
+/// A Summarizer that writes nothing, like v1's no-op, or throws. It notes what each call got and what was on disk then.
+final class SpySummarizer: Summarizer {
+    struct Call: Equatable {
+        var transcript: String
+        var language: Locale
+        var fileWasOnDisk: Bool
+    }
+
+    struct Failed: Error {}
+
+    private let fails: Bool
+    private let file: URL
+    private let heard = Mutex<[Call]>([])
+
+    /// `file` is where the Meeting's Markdown file is expected once the Transcript is final.
+    init(file: URL, fails: Bool = false) {
+        self.file = file
+        self.fails = fails
+    }
+
+    var calls: [Call] { heard.withLock { $0 } }
+
+    func summarize(transcript: String, language: Locale) async throws -> Summary? {
+        let onDisk = FileManager.default.fileExists(atPath: file.path)
+        heard.withLock { $0.append(Call(transcript: transcript, language: language, fileWasOnDisk: onDisk)) }
+        if fails { throw Failed() }
+        return nil
+    }
+}

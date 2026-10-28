@@ -15,10 +15,16 @@ final class SpeechTranscriberAdapter: Transcriber {
         }
     }
 
-    func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
-        let transcriber = SpeechTranscriber(
+    /// The module every session runs, which is also the one whose assets Carbon reserves.
+    static func module(for locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(
             locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
             attributeOptions: [.audioTimeRange])
+    }
+
+    /// Downloads the language's assets again first, when they are missing.
+    func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
+        let transcriber = Self.module(for: locale)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }

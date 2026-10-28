@@ -71,5 +71,13 @@
     { "host": "teams.live.com", "provider": "Microsoft Teams", "path": "^/(?:l/meetup-join/|meet/([0-9]+))" },
     { "host": "webex.com", "provider": "Webex", "path": "^/(?:meet/|join/|[a-z0-9-]+/j\\.php)" },
     { "host": "facetime.apple.com", "provider": "FaceTime", "path": "^/join" }
+  ],
+  "callAssertions": [
+    { "apps": ["us.zoom.xos"], "types": ["PreventUserIdleDisplaySleep"] },
+    { "apps": ["com.microsoft.teams2", "com.microsoft.teams"], "name": "call in progress" },
+    { "apps": ["com.cisco.webexmeetingsapp", "Cisco-Systems.Spark"], "name": "On a call" }
+  ],
+  "webRTCAssertions": [
+    { "name": "WebRTC has active PeerConnections" }
   ]
 }
