@@ -59,9 +59,6 @@ private struct GeneralSettings: View {
                             .disabled(model.recorder.state != .idle)
                     }
                 }
-                LabeledContent("Show Carbon") {
-                    ShortcutRecorder(shortcut: $model.showCarbonShortcut)
-                }
             }
             Section {
                 Toggle("Launch at login", isOn: $launchesAtLogin)
@@ -281,51 +278,4 @@ private enum AboutLinks {
     static let ccBy = URL(string: "https://creativecommons.org/licenses/by/4.0/")!
     static let privacy = URL(string: "https://carbon.alexandrejoly.me/privacy")!
     static let website = URL(string: "https://carbon.alexandrejoly.me")!
-}
-
-/// Click, then press the new shortcut. Escape cancels; a key without ⌘, ⌃ or ⌥ is refused with a beep.
-private struct ShortcutRecorder: View {
-    @Binding var shortcut: Shortcut
-    @State private var monitor: Any?
-
-    var body: some View {
-        Button(monitor == nil ? shortcut.description : "Type Shortcut\u{2026}") {
-            monitor == nil ? startRecording() : stopRecording()
-        }
-        .monospaced()
-        .accessibilityLabel("Show Carbon shortcut")
-        .accessibilityValue(monitor == nil ? shortcut.description : "Recording")
-        .onDisappear(perform: stopRecording)
-    }
-
-    private func startRecording() {
-        AccessibilityNotification.Announcement("Type the new shortcut, or press Escape to cancel.").post()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 {  // Escape
-                stopRecording()
-                return nil
-            }
-            var modifiers: Shortcut.Modifiers = []
-            let flags = event.modifierFlags
-            if flags.contains(.control) { modifiers.insert(.control) }
-            if flags.contains(.option) { modifiers.insert(.option) }
-            if flags.contains(.shift) { modifiers.insert(.shift) }
-            if flags.contains(.command) { modifiers.insert(.command) }
-            guard let key = event.charactersIgnoringModifiers, !key.isEmpty,
-                let recorded = Shortcut(keyCode: Int(event.keyCode), key: key, modifiers: modifiers)
-            else {
-                NSSound.beep()
-                return nil
-            }
-            shortcut = recorded
-            stopRecording()
-            AccessibilityNotification.Announcement("Show Carbon shortcut set to \(recorded.description)").post()
-            return nil
-        }
-    }
-
-    private func stopRecording() {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-    }
 }
