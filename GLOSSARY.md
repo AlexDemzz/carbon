@@ -36,6 +36,10 @@ _Avoid_: Locale, transcription language
 A distinct voice in a Transcript: the person themself ("Me") or another participant, unnamed ("Speaker A") until named.
 _Avoid_: Participant, attendee, voice
 
+**Participant**:
+A person listed as taking part in a Meeting, in its frontmatter: the Event's attendees and anyone a Speaker was named after. Unlike a Speaker, a Participant may never have spoken.
+_Avoid_: Attendee, member, guest
+
 **Turn**:
 One stretch of a Transcript attributed to a single Speaker, stamped with the time it starts.
 _Avoid_: Segment, utterance, line
