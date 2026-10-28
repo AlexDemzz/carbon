@@ -9,7 +9,7 @@ public final class Library {
     static let backupsKept = 14
     static let backupInterval: TimeInterval = 24 * 60 * 60
 
-    public let folder: URL
+    public internal(set) var folder: URL
     let indexFile: URL
     let backupsFolder: URL
     @ObservationIgnored let now: @Sendable () -> Date

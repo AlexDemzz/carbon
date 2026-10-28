@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import CarbonCore
 
 /// A system-wide shortcut through `RegisterEventHotKey`, which needs no Accessibility permission.
 @MainActor
@@ -23,6 +24,16 @@ final class GlobalHotKey {
         RegisterEventHotKey(
             UInt32(keyCode), UInt32(modifiers), EventHotKeyID(signature: OSType(0x4352_424E), id: 1),
             GetApplicationEventTarget(), 0, &hotKey)
+    }
+
+    convenience init(_ shortcut: Shortcut, action: @escaping @MainActor () -> Void) {
+        let modifiers: [(Shortcut.Modifiers, Int)] = [
+            (.control, controlKey), (.option, optionKey), (.shift, shiftKey), (.command, cmdKey),
+        ]
+        self.init(
+            keyCode: shortcut.keyCode,
+            modifiers: modifiers.filter { shortcut.modifiers.contains($0.0) }.reduce(0) { $0 | $1.1 },
+            action: action)
     }
 
     isolated deinit {
