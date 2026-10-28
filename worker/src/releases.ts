@@ -94,14 +94,10 @@ const dmg = async (name: string, request: Request, bucket: ReleasesBucket) => {
   return new Response(object.body, { headers, status: 206 });
 };
 
-/** Answers the release routes from R2, or `undefined` to pass the request on to the landing Worker. */
-export const releaseResponse = (
+const routeResponse = (
   request: Request,
   bucket: ReleasesBucket
 ): Promise<Response> | undefined => {
-  if (request.method !== "GET") {
-    return undefined;
-  }
   const { pathname } = new URL(request.url);
   if (pathname === "/download") {
     return download(bucket);
@@ -112,6 +108,27 @@ export const releaseResponse = (
   const name = DMG_PATH.exec(pathname)?.groups?.name;
   if (name) {
     return dmg(name, request, bucket);
+  }
+  return undefined;
+};
+
+const withoutBody = async (response: Promise<Response>) => {
+  const { body, headers, status } = await response;
+  await body?.cancel();
+  return new Response(null, { headers, status });
+};
+
+/** Answers the release routes from R2, or `undefined` to pass the request on to the landing Worker. HEAD gets GET's status and headers. */
+export const releaseResponse = (
+  request: Request,
+  bucket: ReleasesBucket
+): Promise<Response> | undefined => {
+  if (request.method === "GET") {
+    return routeResponse(request, bucket);
+  }
+  if (request.method === "HEAD") {
+    const response = routeResponse(request, bucket);
+    return response && withoutBody(response);
   }
   return undefined;
 };
