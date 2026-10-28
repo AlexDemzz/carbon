@@ -140,6 +140,8 @@ private struct LanguageRow: View {
             Toggle(name, isOn: $isChosen)
                 .toggleStyle(.checkbox)
                 .disabled(!canUncheck)
+                .help(canUncheck ? "" : "At least one language stays checked.")
+                .accessibilityHint(canUncheck ? "" : "At least one language stays checked.")
             Spacer()
             if isChosen, let state {
                 switch state {
@@ -148,10 +150,13 @@ private struct LanguageRow: View {
                 case .ready:
                     Text("Ready").foregroundStyle(.secondary)
                 case .failed:
-                    Text("Couldn\u{2019}t download").foregroundStyle(.red)
+                    Label("Couldn\u{2019}t download", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
                 }
             }
         }
+        // One element: "English (United States), Ready", checkbox.
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -222,12 +227,12 @@ private struct PermissionsSettings: View {
                     case .notAllowed:
                         HStack {
                             Text("Not allowed").foregroundStyle(.secondary)
-                            Button("Open System Settings") { PermissionsReader.openSystemSettings(for: permission) }
+                            OpenSystemSettingsButton(permission: permission)
                         }
                     case .unknown:
                         HStack {
                             Text("Unknown").foregroundStyle(.secondary)
-                            Button("Open System Settings") { PermissionsReader.openSystemSettings(for: permission) }
+                            OpenSystemSettingsButton(permission: permission)
                         }
                     }
                 }
@@ -235,6 +240,16 @@ private struct PermissionsSettings: View {
         }
         .formStyle(.grouped)
         .task { await model.refreshPermissions() }
+    }
+}
+
+/// Each row has one, so the accessible name says which permission it opens.
+private struct OpenSystemSettingsButton: View {
+    let permission: Permission
+
+    var body: some View {
+        Button("Open System Settings") { PermissionsReader.openSystemSettings(for: permission) }
+            .accessibilityLabel("Open System Settings for \(permission.name)")
     }
 }
 
@@ -282,6 +297,7 @@ private struct ShortcutRecorder: View {
     }
 
     private func startRecording() {
+        AccessibilityNotification.Announcement("Type the new shortcut, or press Escape to cancel.").post()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {  // Escape
                 stopRecording()
@@ -301,6 +317,7 @@ private struct ShortcutRecorder: View {
             }
             shortcut = recorded
             stopRecording()
+            AccessibilityNotification.Announcement("Show Carbon shortcut set to \(recorded.description)").post()
             return nil
         }
     }

@@ -38,4 +38,22 @@ extension Turn {
     public var elapsed: String {
         MeetingFormat.clock(start)
     }
+
+    /// The Turn's start for VoiceOver, which reads `1:02` as a time of day: "1 minute, 2 seconds".
+    public func spokenElapsed(locale: Locale = .current) -> String {
+        let total = max(0, Int(start.rounded(.down)))
+        let (hours, minutes, seconds) = (total / 3600, total / 60 % 60, total % 60)
+        var components = DateComponents()
+        components.hour = hours
+        components.minute = minutes
+        components.second = seconds
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        let formatter = DateComponentsFormatter()
+        formatter.calendar = calendar
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.zeroFormattingBehavior = total == 0 ? .dropLeading : .dropAll
+        return formatter.string(from: components) ?? elapsed
+    }
 }

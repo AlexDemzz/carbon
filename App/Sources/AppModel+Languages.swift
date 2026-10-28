@@ -1,6 +1,7 @@
 import CarbonCore
 import Foundation
 import Speech
+import SwiftUI
 
 extension AppModel {
     /// At launch: the saved Meeting Languages, or, the first time, the system's language (en-US when
@@ -65,6 +66,7 @@ extension AppModel {
                 try await recorder.switchLanguage(to: language)
                 if case .live(let meeting) = recorder.state {
                     notifier.restateStarted(meeting, languages: meetingLanguages)
+                    AccessibilityNotification.Announcement("Transcribing in \(languageName(language))").post()
                 }
             } catch {
                 present(error, title: "Carbon couldn't switch to \(languageName(language))")

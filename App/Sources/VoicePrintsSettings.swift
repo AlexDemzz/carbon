@@ -19,7 +19,10 @@ struct VoicePrintsSettings: View {
             }
             Section {
                 List(prints) { print in
-                    VoicePrintRow(print: print) { model.deleteVoicePrint(print) }
+                    VoicePrintRow(print: print) {
+                        model.deleteVoicePrint(print)
+                        AccessibilityNotification.Announcement("Deleted \(print.name)\u{2019}s Voice Print").post()
+                    }
                 }
                 .frame(minHeight: 180)
                 .overlay {
@@ -54,6 +57,7 @@ private struct VoicePrintRow: View {
                 Text(print.name)
                 Text(details).font(.caption).foregroundStyle(.secondary)
             }
+            .accessibilityElement(children: .combine)
             Spacer()
             Button("Delete \(print.name)", systemImage: "trash", role: .destructive, action: delete)
                 .labelStyle(.iconOnly)

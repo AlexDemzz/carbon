@@ -5,6 +5,7 @@ import SwiftUI
 struct MainWindow: View {
     @Bindable var model: AppModel
     @State private var query = ""
+    @FocusState private var isSearchFocused: Bool
 
     private var library: Library { model.library }
     private var selected: ListedMeeting? { library.meetings.first { $0.id == model.selection } }
@@ -33,6 +34,7 @@ struct MainWindow: View {
             }
             .onDeleteCommand { model.pendingDelete = selected }
             .searchable(text: $query, placement: .sidebar, prompt: "Search Meetings")
+            .searchFocused($isSearchFocused)
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
             .overlay {
                 if hits.isEmpty { EmptyLibrary(query: query) }
@@ -52,6 +54,12 @@ struct MainWindow: View {
             Button("Copy Path") { selected.map(model.copyPath) }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(selected == nil)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            // Carbon has no menu bar of its own (LSUIElement), so no Find menu item brings ⌘F.
+            Button("Search") { isSearchFocused = true }
+                .keyboardShortcut("f")
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
@@ -98,6 +106,7 @@ struct MeetingRow: View {
         }
         .padding(.vertical, 3)
         .help(meeting.participantList)
+        .accessibilityElement(children: .combine)
         .accessibilityValue(meeting.color.map { "\($0.capitalized) tag" } ?? "")
     }
 }
@@ -172,11 +181,14 @@ struct TurnView: View {
                 SpeakerMenu(model: model, meeting: meeting, label: turn.speaker).fontWeight(.semibold)
                 Text("·").accessibilityHidden(true)
                 Text(turn.elapsed).monospacedDigit()
+                    .accessibilityLabel(turn.spokenElapsed())
             }
             .font(.callout)
             .foregroundStyle(.secondary)
             Text(turn.text).textSelection(.enabled)
         }
+        // VoiceOver reads the Turn in one go; interacting with it reaches the Speaker menu and the text.
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(turn.speaker), \(turn.spokenElapsed()), \(turn.text)")
     }
 }
