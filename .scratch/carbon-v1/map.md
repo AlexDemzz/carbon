@@ -18,6 +18,10 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - Website: https://carbon.alexandrejoly.me is live (alexandrejoly.me monorepo, `apps/carbon`, video in `apps/carbon-video` via Remotion). Its "Download Carbon for Mac" button points to `https://carbon.alexandrejoly.me/download`: the release pipeline must serve the latest DMG there (or change `DOWNLOAD_URL` in `apps/carbon/src/lib/site.ts`).
 - Tracker: local markdown. Tickets in `issues/`; research findings land in `docs/research/` on `main`. The repo is git, private on GitHub (`AlexDemzz/carbon`, open-sourced later): commit and push each resolved ticket to `main`; keep corpora and large downloads outside the repo.
 
+## Spec
+
+- [Carbon v1 spec](issues/19-carbon-v1-spec.md) (`ready-for-agent`): the whole of v1 synthesized from the decisions below, including the release pipeline; Summary pending issues/10.
+
 ## Decisions so far
 
 - [Carbon v1 product design](issues/01-carbon-v1-product-design.md): local capture on any Provider, auto-transcribe by default, Me/Them + FluidAudio Speakers and Voice Prints, Foundation Models Summary, Markdown Library + JSON index, Copper-style menu bar UI, Sparkle + Cloudflare distribution.
@@ -39,10 +43,7 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 
 ## Not yet specified
 
-- `meetings.json` schema and Voice Print storage (where, how deletable, privacy wording). A print is a 256-d centroid plus the embedding model id; the per-Meeting Speaker letter → name / Voice Print link lives here, not in the Markdown file; the matching rules are in "Diarization and Voice Print quality on real calls".
-- Behaviour around overlapping Meetings (two call apps at once) and app crashes mid-Meeting (partial Transcript recovery: whether anything is written to the file before the Meeting ends); back-to-back splitting is decided in "Power assertions as a Detection signal".
-- Landing page and privacy page content for `carbon.alexandrejoly.me`.
-- Settings: final layout and copy (the mock only roughs it out), plus a VoiceOver / keyboard / light-mode pass over the whole UI.
+- Nothing beyond the open ticket [On-device summary quality](issues/10-on-device-summary-quality.md), blocked on the Apple Intelligence model downloading; its verdict (ship / adjust format / drop) updates the Summary section of the spec. `meetings.json` schema, Voice Print storage, overlapping Meetings, crash recovery, Settings layout and the accessibility pass are decided in [Carbon v1 spec](issues/19-carbon-v1-spec.md). Privacy page content is drafted there; the landing page is live.
 
 ## Out of scope
 
