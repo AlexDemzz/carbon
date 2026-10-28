@@ -13,7 +13,7 @@ struct VoicePrintsSettings: View {
                 Toggle("Recognize voices", isOn: $model.recognizesVoices)
             } footer: {
                 Text(
-                    "When you name a Speaker, Carbon remembers their voice and recognizes it in later Meetings. Voice Prints are stored only on this Mac, and Carbon never sends them anywhere."
+                    "When you name a Speaker, Carbon remembers their voice and recognizes it in later Meetings. It learns your own voice from Meetings where you're alone at the mic, to tell you apart from others in a meeting room. Voice Prints are stored only on this Mac, and Carbon never sends them anywhere."
                 )
                 .foregroundStyle(.secondary)
             }
@@ -21,7 +21,9 @@ struct VoicePrintsSettings: View {
                 List(prints) { print in
                     VoicePrintRow(print: print) {
                         model.deleteVoicePrint(print)
-                        AccessibilityNotification.Announcement("Deleted \(print.name)\u{2019}s Voice Print").post()
+                        AccessibilityNotification.Announcement(
+                            print.owner ? "Deleted your Voice Print" : "Deleted \(print.name)\u{2019}s Voice Print"
+                        ).post()
                     }
                 }
                 .frame(minHeight: 180)
@@ -45,6 +47,8 @@ private struct VoicePrintRow: View {
     let print: VoicePrint
     let delete: () -> Void
 
+    private var name: String { print.owner ? "You" : print.name }
+
     private var details: String {
         let meetings = print.meetings == 1 ? "1 Meeting" : "\(print.meetings) Meetings"
         let last = print.lastHeardAt.formatted(.dateTime.month(.abbreviated).day())
@@ -54,12 +58,12 @@ private struct VoicePrintRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text(print.name)
+                Text(name)
                 Text(details).font(.caption).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .combine)
             Spacer()
-            Button("Delete \(print.name)", systemImage: "trash", role: .destructive, action: delete)
+            Button("Delete \(name)", systemImage: "trash", role: .destructive, action: delete)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .help("Delete Voice Print")

@@ -143,7 +143,7 @@ struct EventRecorderTests {
 
             """))
         #expect(try entries().first?["speakers"] as? [NSDictionary] == [[
-            "label": "Sam Rivera", "cluster": "Them", "name": "Sam Rivera", "voicePrintId": NSNull(),
+            "label": "Sam Rivera", "cluster": "Them", "stream": "them", "name": "Sam Rivera", "voicePrintId": NSNull(),
             "match": "attendee1to1", "speechSeconds": 0,
         ]])
     }

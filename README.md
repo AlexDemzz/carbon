@@ -16,7 +16,7 @@ I wanted the transcript without the bot, as a plain file I could hand to an AI a
 
 - **It starts on its own.** When Zoom, Google Meet, Teams, Webex, FaceTime or any other meeting app starts using your microphone, Carbon starts transcribing. A notification says so, and the dot in its menu bar icon stays red for the whole meeting. Stop on that notification discards everything.
 - **It hears both sides.** Carbon records your microphone as "Me" and the call's audio as the other participants, and transcribes both on your Mac with Apple's SpeechTranscriber.
-- **It tells voices apart.** The other participants become Speaker A, Speaker B, Speaker C. Name a speaker once and Carbon remembers their Voice Print, so it names them in later meetings. When it can't tell the voices apart, it falls back to Me and Them.
+- **It tells voices apart.** The other participants become Speaker A, Speaker B, Speaker C. Name a speaker once and Carbon remembers their Voice Print, so it names them in later meetings. In a meeting room, where several people share your Mac's microphone, each voice in the room becomes its own Speaker too, and Carbon recognizes yours from the voice it learnt when you were alone at the mic. When it can't tell the voices apart, it falls back to Me and Them.
 - **It names the meeting.** With calendar access, Carbon takes the title and participants from the matching event.
 - **It files a Markdown file.** When the call ends, each meeting becomes one file in `~/Documents/Carbon`, organized by year. Press <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> to copy its path and paste it into Claude Code, Codex or whatever you use.
 
@@ -35,6 +35,7 @@ flowchart LR
     end
     mic --> stt
     them --> stt
+    mic -- "after the call" --> diar
     them -- "after the call" --> diar
     stt -- "words" --> file
     diar -- "Speaker A, B, C" --> file
@@ -42,7 +43,7 @@ flowchart LR
     cal -. "title, participants" .-> file
 ```
 
-Apple's SpeechTranscriber, built into macOS 26, writes the words as people speak. When the call ends, a small helper app inside Carbon, CarbonDiarizer, splits the other side's recorded audio into Speakers. It uses [FluidAudio](https://github.com/FluidInference/FluidAudio), an open-source Swift library by Fluid Inference that runs speaker diarization models with Core ML. Those models were first published on Hugging Face under CC BY 4.0 and now ship inside Carbon, so diarization downloads nothing and your audio never leaves your Mac. For the little network traffic Carbon does make, see [Privacy](#privacy).
+Apple's SpeechTranscriber, built into macOS 26, writes the words as people speak. When the call ends, a small helper app inside Carbon, CarbonDiarizer, splits the other side's recorded audio into Speakers, and your microphone's too when several people in the room shared it. It uses [FluidAudio](https://github.com/FluidInference/FluidAudio), an open-source Swift library by Fluid Inference that runs speaker diarization models with Core ML. Those models were first published on Hugging Face under CC BY 4.0 and now ship inside Carbon, so diarization downloads nothing and your audio never leaves your Mac. For the little network traffic Carbon does make, see [Privacy](#privacy).
 
 A meeting file looks like this:
 

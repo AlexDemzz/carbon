@@ -130,7 +130,8 @@ final class ReplayTranscriber: Transcriber {
     }
 }
 
-/// Stands in for the diarization helper process: each call plays the next scripted outcome.
+/// Stands in for the diarization helper process: each call plays the next outcome scripted for its file's stream
+/// (`me.caf` or `them.caf`). A stream with no outcome left fails.
 final class ScriptedDiarizer: Diarizer {
     enum Outcome: Sendable {
         /// Returns recorded FluidAudio segments and embeddings.
@@ -142,18 +143,22 @@ final class ScriptedDiarizer: Diarizer {
 
     struct Failed: Error {}
 
-    private let outcomes: Mutex<[Outcome]>
+    private let outcomes: Mutex<[String: [Outcome]]>
     private let heard = Mutex<[URL]>([])
 
-    init(_ outcomes: [Outcome]) {
-        self.outcomes = Mutex(outcomes)
+    /// `them` scripts the call's audio, `me` the mic's.
+    init(_ them: [Outcome], me: [Outcome] = []) {
+        outcomes = Mutex(["them.caf": them, "me.caf": me])
     }
 
     var audioHeard: [URL] { heard.withLock { $0 } }
 
     func diarize(_ audio: URL) async throws -> Diarization {
         heard.withLock { $0.append(audio) }
-        let outcome = outcomes.withLock { $0.isEmpty ? .fail : $0.removeFirst() }
+        let outcome = outcomes.withLock { outcomes in
+            outcomes[audio.lastPathComponent, default: []].isEmpty
+                ? .fail : outcomes[audio.lastPathComponent]!.removeFirst()
+        }
         switch outcome {
         case .replay(let diarization):
             return diarization

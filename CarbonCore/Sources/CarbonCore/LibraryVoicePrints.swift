@@ -24,6 +24,20 @@ extension Library {
         }
     }
 
+    /// Updates the owner's print with the mic voice of a solo Meeting, or enrolls it from that voice.
+    func hearOwner(_ embedding: [Float], at date: Date) throws {
+        guard recognizesVoices else { return }
+        try voicePrints.update { prints in
+            if let position = prints.firstIndex(where: { $0.owner && $0.model == voicePrintModel }) {
+                prints[position].hear(embedding, at: date)
+            } else {
+                prints.append(VoicePrint(
+                    id: makeVoicePrintID(), name: TranscriptBuilder.me, model: voicePrintModel,
+                    centroid: VoicePrint.normalized(embedding), createdAt: now(), lastHeardAt: date, owner: true))
+            }
+        }
+    }
+
     private func unlinkVoicePrints(where isForgotten: (UUID) -> Bool) throws {
         var index = try loadIndex()
         var changed: [MeetingIndex.Entry] = []

@@ -15,7 +15,7 @@ public struct TranscribedWord: Equatable, Sendable, Codable {
 }
 
 /// The two streams of a Meeting: the microphone (Me) and the call's audio (Them).
-public enum AudioStream: Hashable, Sendable {
+public enum AudioStream: String, Hashable, Sendable, Codable {
     case me
     case them
 }
@@ -83,7 +83,7 @@ public protocol SignalSource: Sendable {
     func micSnapshots() -> AsyncStream<MicSnapshot>
 }
 
-/// Offline speaker diarization of a recorded Them stream, such as FluidAudio in a helper process.
+/// Offline speaker diarization of one recorded stream, such as FluidAudio in a helper process.
 public protocol Diarizer: Sendable {
     /// Diarizes the audio file. Each call starts afresh (a new process); cancelling the call must stop it.
     func diarize(_ audio: URL) async throws -> Diarization

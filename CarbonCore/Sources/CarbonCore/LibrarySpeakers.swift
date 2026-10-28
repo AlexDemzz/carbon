@@ -14,8 +14,9 @@ extension Library {
         try writeSurgically(id, updating: { entry in
             isNewParticipant = !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
             if isNewParticipant { entry.participants.append(Participant(name: name)) }
-            // A fallback file has one Them stream and no `speakers` yet: its first naming records it as cluster `Them`.
-            if entry.transcript == .fallback,
+            // A Them stream that isn't split has no `speakers` entry yet: its first naming records it as cluster `Them`.
+            // That is every fallback Speaker, and Them in a meeting room whose call couldn't be diarized.
+            if entry.transcript == .fallback || label == TranscriptBuilder.them,
                !entry.speakers.contains(where: { $0.label == label }) {
                 entry.speakers.append(MeetingIndex.Speaker(label: label, cluster: TranscriptBuilder.them, speechSeconds: 0))
             }

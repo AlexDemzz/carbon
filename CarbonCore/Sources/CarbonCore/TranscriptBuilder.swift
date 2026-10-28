@@ -27,35 +27,66 @@ public enum TranscriptBuilder {
     static let escaped: Set<Character> = ["\\", "`", "*", "_", "[", "]", "<", ">"]
 
     private struct Word {
+        var stream: AudioStream
         var speaker: String
         var word: TranscribedWord
     }
 
-    /// The Me / Them Turns of a Meeting from both streams' words, each timed from the start of the Meeting.
-    public static func turns(me: [TranscribedWord], them: [TranscribedWord]) -> [Turn] {
-        turns(me: me, them: them, diarization: nil)
+    /// A cluster of one stream's diarization. Each run numbers its clusters afresh, so ids are kept per stream.
+    public struct StreamCluster: Hashable, Sendable {
+        public var stream: AudioStream
+        public var id: String
+
+        public init(_ stream: AudioStream, _ id: String) {
+            self.stream = stream
+            self.id = id
+        }
     }
 
-    /// The Turns of a Meeting with the Them words split by Speaker: `Speaker A`, `Speaker B`… unless `labels`
-    /// names a cluster letter. Without a diarization, the Me / Them fallback.
+    /// How a Meeting's streams are split into Speakers. A stream with no diarization is written `Me` or `Them`.
+    public struct Split: Equatable, Sendable {
+        public var me: Diarization?
+        public var them: Diarization?
+        /// Me clusters left out with their words: the call heard back through the mic.
+        public var echo: Set<String>
+
+        public init(me: Diarization? = nil, them: Diarization? = nil, echo: Set<String> = []) {
+            self.me = me
+            self.them = them
+            self.echo = echo
+        }
+    }
+
+    /// The Me / Them Turns of a Meeting from both streams' words, each timed from the start of the Meeting.
+    public static func turns(me: [TranscribedWord], them: [TranscribedWord]) -> [Turn] {
+        turns(me: me, them: them, split: Split())
+    }
+
+    /// The Turns of a Meeting with the Them words split by Speaker. Without a diarization, the Me / Them fallback.
     public static func turns(
         me: [TranscribedWord], them: [TranscribedWord], diarization: Diarization?, labels: [String: String] = [:]
     ) -> [Turn] {
-        let themWords: [Word]
-        if let diarization, let clusters = clusters(of: them, in: diarization.segments) {
-            let letters = letters(ofClustersInOrder: clusters)
-            themWords = zip(them, clusters).map { word, cluster in
-                let letter = letters[cluster]!
-                return Word(speaker: labels[letter] ?? "Speaker \(letter)", word: word)
+        turns(me: me, them: them, split: Split(them: diarization), labels: labels)
+    }
+
+    /// The Turns of a Meeting with each diarized stream split by Speaker: `Speaker A`, `Speaker B`… lettered
+    /// across both streams, unless `labels` names a letter.
+    public static func turns(
+        me: [TranscribedWord], them: [TranscribedWord], split: Split, labels: [String: String] = [:]
+    ) -> [Turn] {
+        let heard = attributed(me: me, them: them, split: split)
+        let letters = letters(of: heard)
+        func words(_ stream: AudioStream, fallback: String) -> [Word] {
+            heard[stream, default: []].map { word, cluster in
+                let speaker = cluster.map { letters[StreamCluster(stream, $0)]! }.map { labels[$0] ?? "Speaker \($0)" }
+                return Word(stream: stream, speaker: speaker ?? fallback, word: word)
             }
-        } else {
-            themWords = them.map { Word(speaker: Self.them, word: $0) }
         }
-        let sentences = sentences(me.map { Word(speaker: Self.me, word: $0) }) + sentences(themWords)
+        let sentences = sentences(words(.me, fallback: Self.me)) + sentences(words(.them, fallback: Self.them))
         let ordered = sentences.enumerated().sorted { lhs, rhs in
             let (left, right) = (lhs.element[0], rhs.element[0])
             if left.word.start != right.word.start { return left.word.start < right.word.start }
-            if (left.speaker == Self.me) != (right.speaker == Self.me) { return left.speaker == Self.me }
+            if left.stream != right.stream { return left.stream == .me }
             return lhs.offset < rhs.offset
         }.map(\.element)
 
@@ -95,7 +126,50 @@ public enum TranscriptBuilder {
     /// The letter (`A`, `B`…) of each diarization cluster heard in the Them words, in order of its first word.
     /// Empty when no word could be attributed.
     public static func clusterLetters(them: [TranscribedWord], diarization: Diarization) -> [String: String] {
-        clusters(of: them, in: diarization.segments).map(letters(ofClustersInOrder:)) ?? [:]
+        Dictionary(uniqueKeysWithValues: clusterLetters(me: [], them: them, split: Split(them: diarization)).map {
+            ($0.key.id, $0.value)
+        })
+    }
+
+    /// The letter of each cluster heard in either stream's words, in order of its first word across the Meeting.
+    /// Echo clusters have none.
+    public static func clusterLetters(
+        me: [TranscribedWord], them: [TranscribedWord], split: Split
+    ) -> [StreamCluster: String] {
+        letters(of: attributed(me: me, them: them, split: split))
+    }
+
+    /// Each stream's words with their cluster, nil for a stream that is not split. Echo words are left out.
+    private static func attributed(
+        me: [TranscribedWord], them: [TranscribedWord], split: Split
+    ) -> [AudioStream: [(word: TranscribedWord, cluster: String?)]] {
+        func attributed(_ words: [TranscribedWord], _ diarization: Diarization?, echo: Set<String>)
+            -> [(word: TranscribedWord, cluster: String?)]
+        {
+            guard let diarization, let clusters = clusters(of: words, in: diarization.segments) else {
+                return words.map { ($0, nil) }
+            }
+            return zip(words, clusters).filter { !echo.contains($0.1) }.map { ($0, $1) }
+        }
+        return [.me: attributed(me, split.me, echo: split.echo), .them: attributed(them, split.them, echo: [])]
+    }
+
+    /// Letters in order of each cluster's first word, Me first on a tie.
+    private static func letters(
+        of heard: [AudioStream: [(word: TranscribedWord, cluster: String?)]]
+    ) -> [StreamCluster: String] {
+        let firsts = [AudioStream.me, .them].flatMap { stream in
+            heard[stream, default: []].compactMap { word, cluster in
+                cluster.map { (cluster: StreamCluster(stream, $0), start: word.start) }
+            }
+        }
+        var letters: [StreamCluster: String] = [:]
+        for first in firsts.enumerated().sorted(by: { lhs, rhs in
+            lhs.element.start != rhs.element.start ? lhs.element.start < rhs.element.start : lhs.offset < rhs.offset
+        }).map(\.element) where letters[first.cluster] == nil {
+            letters[first.cluster] = letter(letters.count)
+        }
+        return letters
     }
 
     /// Each word's cluster: the most-overlapping segment, else the nearest one within 1 s of the word's middle,
@@ -124,14 +198,6 @@ public enum TranscriptBuilder {
         guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= nearestSegment
         else { return nil }
         return nearest.cluster
-    }
-
-    private static func letters(ofClustersInOrder clusters: [String]) -> [String: String] {
-        var letters: [String: String] = [:]
-        for cluster in clusters where letters[cluster] == nil {
-            letters[cluster] = letter(letters.count)
-        }
-        return letters
     }
 
     /// `A`…`Z`, then `AA`, `AB`…
