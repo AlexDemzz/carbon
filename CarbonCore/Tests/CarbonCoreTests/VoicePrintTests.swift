@@ -145,6 +145,30 @@ struct VoicePrintTests {
         #expect(prints.sorted() == ["Dana Park 1", "Sam Rivera 1"])
     }
 
+    @Test func renamingAnAutoMatchedSpeakerTakesItsVoiceBackOutOfThePrint() throws {
+        // Sam as `rememberSam` leaves him, after this Meeting auto-matched a voice of [1, 0] to him: the centroid
+        // became the normalized sum of [0.6, 0.8], [0.6, 0.8] and [1, 0], [0.80874, 0.58817].
+        try Data("""
+            {"version": 1, "prints": [{
+              "id": "11111111-1111-4111-8111-111111111111", "name": "Sam Rivera", "email": "sam@example.com",
+              "model": "fluidaudio/community-1@0.17.7", "centroid": "VAlPP2ySFj8=",
+              "recent": ["\(voice)", "AACAPwAAAAA="],
+              "meetings": 3, "createdAt": "2026-10-01T10:00:00Z", "lastHeardAt": "2026-10-27T14:00:00Z"
+            }]}
+            """.utf8).write(to: printsFile)
+        let library = makeLibrary()
+        try createMeeting(library, speaker: MeetingIndex.Speaker(
+            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: "auto",
+            distance: 0.3, speechSeconds: 4, centroid: "AACAPwAAAAA="))
+
+        try library.renameSpeaker(id, label: "Sam Rivera", name: "Dana Park")
+
+        let sam = try #require(library.voicePrints.prints.first { $0.id == samPrint })
+        #expect(sam.meetings == 2)
+        #expect(sam.recent == [[0.6, 0.8]])
+        #expect(abs(sam.centroid[0] - 0.6) < 1e-5 && abs(sam.centroid[1] - 0.8) < 1e-5)
+    }
+
     @Test func deletingAVoicePrintUnlinksEveryMeetingAndKeepsTheNamesInTheFiles() throws {
         try rememberSam()
         let library = makeLibrary()

@@ -61,6 +61,8 @@ extension Library {
                         counted.insert(old)
                         continue
                     }
+                    // Only auto-matched or person-confirmed Speakers update a print: this one no longer is.
+                    if let embedding = speaker.embedding { prints[position].unhear(embedding) }
                     prints[position].meetings -= 1
                     if prints[position].meetings <= 0 { prints.remove(at: position) }
                 }

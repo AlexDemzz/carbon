@@ -46,6 +46,22 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
         lastHeardAt = max(lastHeardAt, date)
     }
 
+    /// Takes back an embedding `hear` added, once the Speaker it came from turns out to be someone else.
+    ///
+    /// `hear` made the centroid the normalized sum of the unit centroid before it and the recent ones up to the
+    /// embedding, so that centroid is the one point at distance 1 along it: exact while no later embedding was heard,
+    /// close otherwise. An embedding no longer among the recent ones is left in: it is diluted already.
+    mutating func unhear(_ embedding: [Float]) {
+        guard embedding.count == centroid.count, let position = recent.lastIndex(of: embedding) else { return }
+        let sum = (0..<centroid.count).map { dimension in recent[...position].reduce(0) { $0 + $1[dimension] } }
+        recent.remove(at: position)
+        let along = zip(centroid, sum).reduce(0) { $0 + $1.0 * $1.1 }
+        let discriminant = along * along - sum.reduce(0) { $0 + $1 * $1 } + 1
+        guard discriminant >= 0 else { return }
+        let scale = along + discriminant.squareRoot()
+        centroid = Self.normalized(zip(centroid, sum).map { scale * $0 - $1 })
+    }
+
     static func normalized(_ vector: [Float]) -> [Float] {
         let norm = vector.reduce(0) { $0 + $1 * $1 }.squareRoot()
         return norm > 0 ? vector.map { $0 / norm } : vector
