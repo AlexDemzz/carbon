@@ -1,0 +1,4 @@
+{"meeting": "ami-ES2011d",
+ "X": {"usefulness": 2, "coverage": "4 / 10", "wrong": ["'worst evaluation scores were 3.1, 4.1, and 4.2': these are criterion numbers, not scores"], "next_steps": 2, "language": "yes", "noise": 1, "comment": "Focuses on the evaluation mechanics and the shape discussion. It misses the prototype presentation, the 11.9 cost, the overall satisfied verdict and the team retrospective, and says there are no next steps although final reports were mentioned."},
+ "Y": {"usefulness": 3, "coverage": "4 / 10", "wrong": ["Next step 'Clarify battery placement options, including side or back placement' presents as open a point settled in the meeting (side hatch)"], "next_steps": 2, "language": "yes", "noise": 3, "comment": "Gets the 11.9 cost, the satisfied/on-budget verdict, the shape discussion and a final-report mention. It misses the prototype presentation and the team retrospective, and pads the next steps with discussion restated as tasks."}
+}

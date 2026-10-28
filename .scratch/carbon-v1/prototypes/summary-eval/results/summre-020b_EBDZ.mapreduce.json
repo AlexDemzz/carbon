@@ -1,0 +1,33 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 18.352449999999997,
+  "keyPoints" : [
+    "Le thème du festival est comédie et super-héros dans un cinéma classique en plein air.",
+    "Les films sélectionnés incluent des comédies anciennes et des films Marvel.",
+    "Un film phare (Deadpool) sera projeté en fin de festival.",
+    "Le format principal est le cinéma drive, moins cher et convivial pour la famille."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-020b_EBDZ",
+  "nextSteps" : [
+    "Proposer un ordre de projection alterné (comédie, super-héros) pour éviter la saturation.",
+    "Déterminer si le festival se déroulera sur plusieurs jours avec des journées dédiées à chaque genre.",
+    "Confirmer la présence du film phare (Deadpool) en fin de festival et son intégration dans l'ordre des films."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 5602,
+      "kind" : "map 1",
+      "seconds" : 14.322504997253418
+    },
+    {
+      "inputTokens" : 226,
+      "kind" : "reduce 1.1",
+      "seconds" : 3.169996976852417
+    }
+  ],
+  "totalSeconds" : 27.088525891304016,
+  "transcriptChars" : 20007,
+  "transcriptTokens" : 5549,
+  "variant" : "mapreduce"
+}

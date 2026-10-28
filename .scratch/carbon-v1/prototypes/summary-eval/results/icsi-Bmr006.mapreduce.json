@@ -1,0 +1,57 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 78.58466666666666,
+  "keyPoints" : [
+    "The new procedural change includes digit recordings at the end to reduce time pressure for participants.",
+    "The idea is to have random, scattered meetings with many different speakers to capture diverse acoustic cues.",
+    "Speaker D proposes using supervised clustering and linear discriminant analysis for overlapping zones.",
+    "The first step for detecting overlaps is to use simple features like energy and harmonicity rather than complex ones."
+  ],
+  "language" : "en",
+  "meeting" : "icsi-Bmr006",
+  "nextSteps" : [
+    "Explore the possibility of using a phonology lab for recording meetings.",
+    "Consider using portable equipment for recording instead of a full ICSI setup.",
+    "Evaluate the free lunch offer as an incentive for participants.",
+    "Discuss the timing of CD distribution after transcript screening.",
+    "Assess the feasibility of giving participants a music CD of their meeting instead of a physical one.",
+    "Explore sensitivity analyses for neural network inputs with normalized data.",
+    "Consider building a Markov model or context window for temporal structure.",
+    "Visualize residual energy and transition areas (silence to overlap vs. silence to speech).",
+    "Begin with simple classifiers using a few MFCC or PLP features before complex models.",
+    "Delay the anonymization discussion until next week.",
+    "Proceed with anonymizing the speaker identifier and the name in the transcript.",
+    "Build a classifier using simple features in pairs across frames."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6518,
+      "kind" : "map 1",
+      "seconds" : 18.935413002967834
+    },
+    {
+      "inputTokens" : 6408,
+      "kind" : "map 2",
+      "seconds" : 17.676295042037964
+    },
+    {
+      "inputTokens" : 6462,
+      "kind" : "map 3",
+      "seconds" : 17.668334007263184
+    },
+    {
+      "inputTokens" : 5265,
+      "kind" : "map 4",
+      "seconds" : 13.080626010894775
+    },
+    {
+      "inputTokens" : 691,
+      "kind" : "reduce 1.1",
+      "seconds" : 5.720157980918884
+    }
+  ],
+  "totalSeconds" : 129.5130249261856,
+  "transcriptChars" : 98560,
+  "transcriptTokens" : 24441,
+  "variant" : "mapreduce"
+}

@@ -1,0 +1,47 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 39.09155,
+  "keyPoints" : [
+    "The product must be accessible to all age groups with a fashionable, trendy aesthetic.",
+    "The control should be uncluttered, easy to find, and not easily lost with low-cost cues.",
+    "A flip-open design with an electronic panel is proposed to reduce size and add features.",
+    "The control is limited to TV and video, not combined controls, to simplify use and cost.",
+    "Ergonomics must adapt to different country sizes with potential for larger or smaller controls.",
+    "A touch-screen interface is considered as a wear-resistant alternative for younger, office users.",
+    "The remote should avoid generic designs and have a unique, ergonomic shape like a banana or boat curve.",
+    "The manual should be user-friendly, avoiding dense text and frequent searching."
+  ],
+  "language" : "en",
+  "meeting" : "ami-ES2004b",
+  "nextSteps" : [
+    "Focus on one product design with consistent internal engineering and body shape variations.",
+    "Consider a touch-screen interface as a wear-resistant alternative, appealing to younger, office-based users.",
+    "Explore low-cost audio or visual cues to help users find the remote and avoid losing it.",
+    "Evaluate the feasibility of a free help service for mobile phones in retail outlets, considering contract obligations and cost.",
+    "Determine how to address the R_S_I_ issue with repetitive strain from small screen movements.",
+    "Email the person if more questions arise, even if not answered directly.",
+    "Explore five to six design concepts for the remote, with the most appealing chosen as the common design.",
+    "Consider incorporating the company logo into the remote's shell-like design instead of a sea shell motif."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6639,
+      "kind" : "map 1",
+      "seconds" : 26.49823498725891
+    },
+    {
+      "inputTokens" : 2418,
+      "kind" : "map 2",
+      "seconds" : 10.247905015945435
+    },
+    {
+      "inputTokens" : 643,
+      "kind" : "reduce 1.1",
+      "seconds" : 7.276401042938232
+    }
+  ],
+  "totalSeconds" : 55.57871699333191,
+  "transcriptChars" : 37797,
+  "transcriptTokens" : 8951,
+  "variant" : "mapreduce"
+}

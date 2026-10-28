@@ -1,0 +1,32 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 18.77305,
+  "keyPoints" : [
+    "La réunion porte sur la transition numérique, les réseaux sociaux et l'impact d'Amazon.",
+    "Un débat a eu lieu sur la réduction des déchets liés aux livraisons d'Amazon.",
+    "L'intelligence artificielle est mentionnée pour optimiser les processus et réduire les coûts."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-021a_EARD",
+  "nextSteps" : [
+    "Analyser les retours de colis pour comprendre les motifs de retour.",
+    "Utiliser les réseaux sociaux pour collecter des données sur les commandes.",
+    "Explorer l'utilisation de l'intelligence artificielle pour proposer des solutions de réduction des colis."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 5522,
+      "kind" : "map 1",
+      "seconds" : 12.608264923095703
+    },
+    {
+      "inputTokens" : 186,
+      "kind" : "reduce 1.1",
+      "seconds" : 2.5740039348602295
+    }
+  ],
+  "totalSeconds" : 23.736664056777954,
+  "transcriptChars" : 21953,
+  "transcriptTokens" : 5469,
+  "variant" : "mapreduce"
+}

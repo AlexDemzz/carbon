@@ -1,0 +1,35 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 26.354483333333334,
+  "keyPoints" : [
+    "User habits show customers dislike remote control appearance and use only 10% of buttons.",
+    "Channel selection is used 160 times per hour, with teletext, volume, and power as key functions.",
+    "Settings buttons are used less than 0.8–0.5 times per hour.",
+    "Target group is teenagers and young professionals; speech recognition and screen features may be costly and less appealing to older demographics.",
+    "The team must decide whether to include VCR capabilities, with DVD being the current standard.",
+    "A separate sender for location signals may be needed.",
+    "A buzzer on the TV may be sufficient for location finding, as a light might not be visible under furniture."
+  ],
+  "language" : "en",
+  "meeting" : "ami-ES2011b",
+  "nextSteps" : [
+    "Finish questionnaires and return to the meeting after lunch.",
+    "Conduct thirty minutes of individual work to generate new ideas for the next meeting."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6152,
+      "kind" : "map 1",
+      "seconds" : 20.67020809650421
+    },
+    {
+      "inputTokens" : 294,
+      "kind" : "reduce 1.1",
+      "seconds" : 3.6381529569625854
+    }
+  ],
+  "totalSeconds" : 33.522680044174194,
+  "transcriptChars" : 24525,
+  "transcriptTokens" : 6099,
+  "variant" : "mapreduce"
+}

@@ -1,0 +1,34 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 19.679100000000002,
+  "keyPoints" : [
+    "Amazon a des impacts positifs et négatifs sur la vie quotidienne.",
+    "La transition numérique entraîne une dépendance aux écrans avec des effets négatifs.",
+    "La domotique et les téléphones posent des défis de prévention.",
+    "Les conditions de travail dans les chaînes de production sont critiquées."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-032a_EARH",
+  "nextSteps" : [
+    "Développer une formation concrète sur la prévention de l'utilisation excessive des téléphones et des réseaux sociaux.",
+    "Mettre en place une sensibilisation sur les risques liés à l'usage des téléphones, notamment pour les jeunes et les parents.",
+    "Explorer une approche de prévention pour les impacts environnementaux liés à la fabrication et au recyclage des téléphones.",
+    "Identifier les points négatifs spécifiques des conditions de travail dans les secteurs touchés par la transition numérique."
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6106,
+      "kind" : "map 1",
+      "seconds" : 18.34438693523407
+    },
+    {
+      "inputTokens" : 293,
+      "kind" : "reduce 1.1",
+      "seconds" : 3.6400740146636963
+    }
+  ],
+  "totalSeconds" : 28.378034949302673,
+  "transcriptChars" : 24184,
+  "transcriptTokens" : 6053,
+  "variant" : "mapreduce"
+}

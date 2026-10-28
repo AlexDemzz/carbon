@@ -1,0 +1,38 @@
+{
+  "contextSize" : 8192,
+  "durationMinutes" : 21.96193333333333,
+  "keyPoints" : [
+    "L'utilisation des réseaux sociaux est liée à la publication d'informations et à la visibilité professionnelle.",
+    "Le numérique est essentiel pour gagner du temps dans la recherche, notamment en littérature.",
+    "L'open source rend la recherche accessible, mais pose des défis de rémunération.",
+    "La politique de confidentialité et la personnalisation des appareils influencent l'expérience numérique."
+  ],
+  "language" : "fr",
+  "meeting" : "summre-018a_EARZ",
+  "nextSteps" : [
+    "Explorer les options de personnalisation des appareils pour éviter les restrictions.",
+    "Évaluer les avantages et inconvénients de l'utilisation de l'open source dans la recherche.",
+    "Identifier les stratégies pour améliorer la gestion des contacts sur les plateformes numériques"
+  ],
+  "passes" : [
+    {
+      "inputTokens" : 6600,
+      "kind" : "map 1",
+      "seconds" : 15.224812984466553
+    },
+    {
+      "inputTokens" : 1222,
+      "kind" : "map 2",
+      "seconds" : 3.4128979444503784
+    },
+    {
+      "inputTokens" : 284,
+      "kind" : "reduce 1.1",
+      "seconds" : 2.8326709270477295
+    }
+  ],
+  "totalSeconds" : 35.32593810558319,
+  "transcriptChars" : 29048,
+  "transcriptTokens" : 7716,
+  "variant" : "mapreduce"
+}
