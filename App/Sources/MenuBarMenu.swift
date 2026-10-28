@@ -12,6 +12,8 @@ struct MenuBarGlyph: View {
 
 struct MenuBarMenu: View {
     let model: AppModel
+    let updater: Updater
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         switch model.recorder.state {
@@ -29,6 +31,12 @@ struct MenuBarMenu: View {
         Button("Show Carbon") { model.showMainWindow() }
             .keyboardShortcut("c", modifiers: [.option, .command])
         Button("Reveal in Finder") { model.revealLibrary() }
+        Button("Check for Updates\u{2026}") { updater.checkForUpdates() }
+        Button("Settings\u{2026}") {
+            NSApp.activate()
+            openSettings()
+        }
+        .keyboardShortcut(",")
         Divider()
         Button("Quit Carbon") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

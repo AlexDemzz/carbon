@@ -11,3 +11,4 @@ xcuserdata/
 Carbon.xcodeproj/
 App/Info.plist
 App/Carbon.entitlements
+__pycache__/
