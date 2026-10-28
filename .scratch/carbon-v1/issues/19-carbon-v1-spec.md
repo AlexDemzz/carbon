@@ -364,6 +364,8 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   8. upload `releases/Carbon-X.Y.Z.dmg`, then `appcast.xml`, then `latest.json` (`{ "version", "build", "file" }`) to the R2 bucket `carbon-releases` with `wrangler`.
 
   Uploading the DMG first means a half-failed release never points at a missing file.
+
+  **Dry run**: a run that is not on a `v*` tag (e.g. started by hand), or that is missing any signing secret, builds unsigned, runs the tests, builds the DMG and uploads it as an Action artifact. Every signing, notarization and upload step is skipped and reported.
 - **Secrets**:
   - `DEVELOPER_ID_P12` (base64) and `DEVELOPER_ID_P12_PASSWORD`;
   - `NOTARY_KEY_P8`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`;
@@ -435,6 +437,6 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   - Carbon has no account, no analytics and no server. The only network traffic is Sparkle checking `appcast.xml` and downloading updates, plus Apple's own model and speech-asset downloads.
   - The person is responsible for consent: some US states require all-party consent, and so does France (art. 226-1 du code pénal).
   - The author never receives any audio, Transcript or Voice Print. That is also why biometric-data collection rules aimed at services that hold such data don't apply to the author. The page should still say it plainly.
-- **Private API use**: `responsibility_get_pid_responsible_for_pid` and `TCCAccessPreflight` are loaded through `dlsym`, as shipped by FineTune, pasrom, AudioCap and Hyprnote. Both are fine for Developer ID distribution and both could break on an OS update. If the lookup is missing, capture falls back to the `.app` path, and permission falls back to showing "Unknown" in Settings › Permissions.
+- **Private API use**: `responsibility_get_pid_responsible_for_pid`, `TCCAccessPreflight` and `TCCAccessRequest` are loaded through `dlsym`, as shipped by FineTune, pasrom, AudioCap and Hyprnote. `TCCAccessRequest` shows the System Audio Recording prompt at first launch. All three are fine for Developer ID distribution and all could break on an OS update. If the lookup is missing, capture falls back to the `.app` path, permission falls back to showing "Unknown" in Settings › Permissions, and the prompt falls back to appearing with the first tap.
 - **Steps that need the author** are in the morning checklist: the Developer ID certificate, the App Store Connect API key and the GitHub secrets.
 - **Vocabulary**: this spec uses `GLOSSARY.md` terms throughout. No new domain terms; "in-progress folder" and "diagnostic log" are implementation words, not domain language.

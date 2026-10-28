@@ -22,7 +22,7 @@ Edits the person makes are kept as Local Edits and never overwritten. Files rena
   - a moved file is found again by its `id`;
   - a missing file becomes a Deleted Meeting;
   - Markdown files with an unknown `id` are ignored.
-- [ ] The "Transcript ready." notification's Show action now opens the Meeting in the window. Deferred to 04: that notification doesn't exist on `feat/carbon-v1` yet. `AppModel.showMeeting(_:)` selects the Meeting and shows the window, ready for its Show action.
+- [x] The "Transcript ready." notification's Show action now opens the Meeting in the window. Built with 04: `Notifier.postReady` posts it, and its Show action calls `AppModel.showMeeting(_:)`, which selects the Meeting and shows the window.
 - [x] Library tests cover reconcile, surgical writes on a Local Edit and slug collisions.
 
 **Notes (ticket 09):**
