@@ -130,7 +130,8 @@ final class ReplayTranscriber: Transcriber {
     }
 }
 
-/// Stands in for the diarization helper process: each call plays the next scripted outcome.
+/// Stands in for the diarization helper process: each call plays the next outcome scripted for its file's stream
+/// (`me.caf` or `them.caf`). A stream with no outcome left fails.
 final class ScriptedDiarizer: Diarizer {
     enum Outcome: Sendable {
         /// Returns recorded FluidAudio segments and embeddings.
@@ -142,18 +143,22 @@ final class ScriptedDiarizer: Diarizer {
 
     struct Failed: Error {}
 
-    private let outcomes: Mutex<[Outcome]>
+    private let outcomes: Mutex<[String: [Outcome]]>
     private let heard = Mutex<[URL]>([])
 
-    init(_ outcomes: [Outcome]) {
-        self.outcomes = Mutex(outcomes)
+    /// `them` scripts the call's audio, `me` the mic's.
+    init(_ them: [Outcome], me: [Outcome] = []) {
+        outcomes = Mutex(["them.caf": them, "me.caf": me])
     }
 
     var audioHeard: [URL] { heard.withLock { $0 } }
 
     func diarize(_ audio: URL) async throws -> Diarization {
         heard.withLock { $0.append(audio) }
-        let outcome = outcomes.withLock { $0.isEmpty ? .fail : $0.removeFirst() }
+        let outcome = outcomes.withLock { outcomes in
+            outcomes[audio.lastPathComponent, default: []].isEmpty
+                ? .fail : outcomes[audio.lastPathComponent]!.removeFirst()
+        }
         switch outcome {
         case .replay(let diarization):
             return diarization
@@ -163,6 +168,45 @@ final class ScriptedDiarizer: Diarizer {
             try await Task.sleep(for: .seconds(3600))
             throw Failed()
         }
+    }
+}
+
+/// Stands in for the output route watcher: each Meeting (each `routes()` call) hears the next script, then
+/// nothing more until the Recorder drops the stream. A Meeting with no script left hears nothing.
+final class ScriptedOutputRoute: OutputRouteSource {
+    private final class Box<Value: Sendable>: Sendable {
+        let value: Mutex<Value>
+
+        init(_ value: Value) {
+            self.value = Mutex(value)
+        }
+    }
+
+    private let scripts: Box<[[OutputRoute]]>
+    private let drained = Box(0)
+
+    init(_ scripts: [OutputRoute]...) {
+        self.scripts = Box(scripts)
+    }
+
+    func routes() -> AsyncStream<OutputRoute> {
+        let script = Box(scripts.value.withLock { $0.isEmpty ? [] : $0.removeFirst() })
+        let drained = drained
+        return AsyncStream {
+            if let route = script.value.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) { return route }
+            drained.value.withLock { $0 += 1 }
+            try? await Task.sleep(for: .seconds(3600))
+            return nil
+        }
+    }
+
+    /// Waits until the Recorder took in every route of the first `meetings` scripts.
+    func heard(meetings: Int = 1) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while drained.value.withLock({ $0 }) < meetings, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(drained.value.withLock { $0 } >= meetings, "the Recorder never took in its routes")
     }
 }
 

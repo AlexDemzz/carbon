@@ -19,17 +19,9 @@ final class AppModel {
     /// What Settings › Permissions and the menu bar menu show. Refreshed on launch, on activation and every minute.
     var permissions = Permissions(
         microphone: .allowed, systemAudioRecording: .allowed, calendar: .allowed, notifications: .allowed)
-    /// Show Carbon's global shortcut, ⌥⌘C unless the person recorded another.
-    var showCarbonShortcut: Shortcut {
-        didSet {
-            UserDefaults.standard.set(try? JSONEncoder().encode(showCarbonShortcut), forKey: SettingsKey.showCarbonShortcut)
-            registerShowCarbonShortcut()
-        }
-    }
-    /// Set by a view that can open SwiftUI windows, since the global shortcut fires outside SwiftUI.
+    /// Set by a view that can open SwiftUI windows, for the model's callers outside SwiftUI.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored var openEditor: ((UUID) -> Void)?
-    @ObservationIgnored private var showCarbonHotKey: GlobalHotKey?
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored let notifier = Notifier()
     /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
@@ -52,8 +44,6 @@ final class AppModel {
         let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
             .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
         library = Library(folder: libraryFolder, supportFolder: support)
-        showCarbonShortcut = UserDefaults.standard.data(forKey: SettingsKey.showCarbonShortcut)
-            .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .showCarbon
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
         recorder = Recorder(
@@ -64,12 +54,12 @@ final class AppModel {
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
             library: library,
+            outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
         watchLibrary()
-        registerShowCarbonShortcut()
         UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true])
         library.recognizesVoices = UserDefaults.standard.bool(forKey: SettingsKey.recognizeVoices)
         recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
@@ -107,12 +97,6 @@ final class AppModel {
             await refreshPermissions()
             try? await Task.sleep(for: .seconds(60))
         }
-    }
-
-    private func registerShowCarbonShortcut() {
-        // Released first, so re-recording the same shortcut doesn't collide with itself.
-        showCarbonHotKey = nil
-        showCarbonHotKey = GlobalHotKey(showCarbonShortcut) { [weak self] in self?.toggleMainWindow() }
     }
 
     /// "Transcribe Meetings automatically". Off, Detection only offers Meetings.
@@ -225,15 +209,6 @@ final class AppModel {
         }
         await loadMeetingLanguages()
         await recorder.runDetection(SignalSampler())
-    }
-
-    /// Show Carbon: brings the main window forward, or hides Carbon when it is already in front.
-    func toggleMainWindow() {
-        if NSApp.isActive, NSApp.keyWindow?.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true {
-            NSApp.hide(nil)
-        } else {
-            showMainWindow()
-        }
     }
 
     func showMainWindow() {
@@ -388,8 +363,6 @@ enum SettingsKey {
     static let ignoredApps = "ignoredApps"
     /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
     static let libraryFolder = "libraryFolder"
-    /// Show Carbon's shortcut, a JSON `Shortcut`.
-    static let showCarbonShortcut = "showCarbonShortcut"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"
     /// "Recognize voices", on by default.

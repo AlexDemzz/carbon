@@ -28,7 +28,7 @@ struct RecorderTests {
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
         keepAudio: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil,
-        recognizesVoices: Bool = true
+        recognizesVoices: Bool = true, outputRoute: (any OutputRouteSource)? = nil
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
@@ -44,6 +44,7 @@ struct RecorderTests {
             diarizationTimeout: { _ in .milliseconds(100) },
             summarizer: summarizer ?? NoSummarizer(),
             library: library,
+            outputRoute: outputRoute ?? UnknownOutputRoute(),
             keepAudio: { keepAudio },
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
@@ -266,7 +267,6 @@ struct RecorderTests {
         clock.advance(by: 30)
         let file = try await recorder.stop()
 
-        #expect(diarizer.audioHeard.map(\.lastPathComponent) == ["them.caf"])
         #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
             ---
 
@@ -283,14 +283,544 @@ struct RecorderTests {
         #expect(entry["transcript"] as? String == "speakers")
         #expect(entry["speakers"] as? NSArray == [
             [
-                "label": "Speaker A", "cluster": "A", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "label": "Speaker A", "cluster": "A", "stream": "them", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
                 "speechSeconds": 12.5, "centroid": "mpkZP83MTD8=",
             ],
             [
-                "label": "Speaker B", "cluster": "B", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "label": "Speaker B", "cluster": "B", "stream": "them", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
                 "speechSeconds": 3, "centroid": "AACAPwAAAAA=",
             ],
         ] as NSArray)
+    }
+
+    /// The owner alone on the mic: one voice, or two when the diarizer splits theirs.
+    nonisolated static let soloMic: [Diarization] = [
+        Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1")],
+            clusters: [.init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30)]),
+        Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+            clusters: [
+                .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
+                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 19.9),
+            ]),
+    ]
+
+    @Test(arguments: soloMic)
+    func onHeadphonesTheWholeMicIsOneSpeakerMe(mic: Diarization) async throws {
+        let diarizer = ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(mic)])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: diarizer, outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(diarizer.audioHeard.map(\.lastPathComponent) == ["them.caf", "me.caf"], "one helper at a time")
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Speaker A** [0:02] Hello all.
+
+            **Speaker B** [0:20] Morning.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect((entry["speakers"] as? [NSDictionary])?.map { $0["label"] as? String } == ["Speaker A", "Speaker B"])
+    }
+
+    /// A meeting room: four people at the mic, one remote attendee on the call.
+    static let room: [AudioStream: [TranscribedWord]] = [
+        .me: [
+            TranscribedWord(text: "Welcome.", start: 1, end: 1.5),
+            TranscribedWord(text: "Thanks.", start: 5, end: 5.5),
+            TranscribedWord(text: "Right.", start: 10, end: 10.5),
+            TranscribedWord(text: "Agreed.", start: 15, end: 15.5),
+        ],
+        .them: [TranscribedWord(text: "Hello from home.", start: 3, end: 4)],
+    ]
+
+    static let remoteVoice = Diarization(
+        segments: [.init(start: 3, end: 4, cluster: "S1")],
+        clusters: [.init(id: "S1", centroid: [1, 0, 0, 0, 0], speechSeconds: 25)])
+
+    /// FluidAudio numbers each run's clusters afresh: the room's S1 is not the call's S1.
+    static let fourInTheRoom = Diarization(
+        segments: [
+            .init(start: 1, end: 1.5, cluster: "S2"),
+            .init(start: 5, end: 5.5, cluster: "S1"),
+            .init(start: 10, end: 10.5, cluster: "S3"),
+            .init(start: 15, end: 15.5, cluster: "S4"),
+        ],
+        clusters: [
+            .init(id: "S1", centroid: [0, 1, 0, 0, 0], speechSeconds: 40),
+            .init(id: "S2", centroid: [0, 0, 1, 0, 0], speechSeconds: 30),
+            .init(id: "S3", centroid: [0, 0, 0, 1, 0], speechSeconds: 25),
+            .init(id: "S4", centroid: [0, 0, 0, 0, 1], speechSeconds: 20),
+        ])
+
+    func speakers() throws -> [String] {
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        return try #require(entry["speakers"] as? [NSDictionary]).map {
+            "\($0["label"] ?? "") \($0["cluster"] ?? "") \($0["stream"] ?? "")"
+        }
+    }
+
+    @Test func fourVoicesAtTheMicAndOneOnTheCallAreFiveSpeakersLetteredAcrossBothStreams() async throws {
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([.replay(Self.remoteVoice)], me: [.replay(Self.fourInTheRoom)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Speaker A** [0:01] Welcome.
+
+            **Speaker B** [0:03] Hello from home.
+
+            **Speaker C** [0:05] Thanks.
+
+            **Speaker D** [0:10] Right.
+
+            **Speaker E** [0:15] Agreed.
+
+            """))
+        #expect(try speakers() == [
+            "Speaker A A me", "Speaker B B them", "Speaker C C me", "Speaker D D me", "Speaker E E me",
+        ])
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path),
+                "a shared mic never enrolls the owner")
+    }
+
+    static let callOnSpeakers = Diarization(
+        segments: [.init(start: 2, end: 4, cluster: "S1"), .init(start: 20, end: 23, cluster: "S1")],
+        clusters: [.init(id: "S1", centroid: [1, 0, 0], speechSeconds: 30)])
+
+    /// The owner, and the call heard back through the speakers, with the echo word the mic transcribed.
+    nonisolated static let echoOnTheMic: [(mic: Diarization, echoWord: TranscribedWord)] = [
+        // A voice 0.2 from the call's.
+        (
+            Diarization(
+                segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 30, end: 31, cluster: "S2")],
+                clusters: [
+                    .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
+                    .init(id: "S2", centroid: [0.8, 0, 0.6], speechSeconds: 25),
+                ]),
+            TranscribedWord(text: "Morning.", start: 30.2, end: 30.6)
+        ),
+        // A voice unlike the call's, heard only while the call speaks.
+        (
+            Diarization(
+                segments: [
+                    .init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 2, end: 4, cluster: "S2"),
+                    .init(start: 20, end: 23, cluster: "S2"),
+                ],
+                clusters: [
+                    .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
+                    .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 25),
+                ]),
+            TranscribedWord(text: "Morning.", start: 20.6, end: 21)
+        ),
+    ]
+
+    @Test(arguments: echoOnTheMic)
+    func whereSoundIsNotKnownToPlayOnHeadphonesTheMicIsSharedLessTheCallsEcho(
+        mic: Diarization, echoWord: TranscribedWord
+    ) async throws {
+        var words = Self.groupCall
+        words[.me]?.append(echoWord)
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: words),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(mic)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 40)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Speaker A** [0:01] Hi.
+
+            **Speaker B** [0:02] Hello all.
+
+            **Speaker B** [0:20] Morning.
+
+            """))
+        #expect(try speakers() == ["Speaker A A me", "Speaker B B them"])
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path),
+                "a shared mic never enrolls the owner")
+    }
+
+    @Test func onSpeakersOneVoiceOnTheMicIsStillASpeakerOfItsOwn() async throws {
+        let route = ScriptedOutputRoute([.speakers])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(Self.soloMic[0])]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker A** [0:01] Hi."))
+        #expect(try speakers() == ["Speaker A A me", "Speaker B B them", "Speaker C C them"])
+    }
+
+    /// Writes `voiceprints.json` with these prints, each heard in 1 Meeting on Oct 1.
+    func remember(_ prints: [(id: String, name: String, centroid: [Float], owner: Bool)]) throws {
+        let entries = prints.map { print in
+            """
+            {"id": "\(print.id)", "name": "\(print.name)", "model": "fluidaudio/community-1@0.17.7",
+             "centroid": "\(MeetingIndex.Speaker.encode(centroid: print.centroid))", "recent": [], "meetings": 1,
+             "createdAt": "2026-10-01T10:00:00Z", "lastHeardAt": "2026-10-01T10:00:00Z"\(print.owner ? #", "owner": true"# : "")}
+            """
+        }
+        try Data(#"{"version": 1, "prints": [\#(entries.joined(separator: ", "))]}"#.utf8)
+            .write(to: support.url.appending(path: "voiceprints.json"))
+    }
+
+    func prints() throws -> [String: NSDictionary] {
+        let prints = try #require(try jsonObject(at: support.url.appending(path: "voiceprints.json"))["prints"] as? [NSDictionary])
+        return Dictionary(uniqueKeysWithValues: prints.map { ($0["name"] as! String, $0) })
+    }
+
+    static let owner = "22222222-2222-4222-8222-222222222222"
+    static let sam = "11111111-1111-4111-8111-111111111111"
+
+    @Test func inARoomTheOwnersPrintIsWrittenMeAndOtherVoicesTakeTheirPrintsNameOrStayLettered() async throws {
+        try remember([
+            (Self.owner, "Me", [0, 1, 0, 0, 0], true),
+            (Self.sam, "Sam Rivera", [0, 0, 1, 0, 0], false),
+        ])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([.replay(Self.remoteVoice)], me: [.replay(Self.fourInTheRoom)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        let markdown = try String(contentsOf: file, encoding: .utf8)
+        #expect(markdown.hasSuffix("""
+            participants:
+              - Sam Rivera
+            ---
+
+            ## Transcript
+
+            **Sam Rivera** [0:01] Welcome.
+
+            **Speaker B** [0:03] Hello from home.
+
+            **Me** [0:05] Thanks.
+
+            **Speaker D** [0:10] Right.
+
+            **Speaker E** [0:15] Agreed.
+
+            """))
+        #expect(try speakers() == [
+            "Sam Rivera A me", "Speaker B B them", "Me C me", "Speaker D D me", "Speaker E E me",
+        ])
+        let prints = try prints()
+        #expect(prints["Me"]?["meetings"] as? Int == 1, "a shared mic never updates the owner's print")
+        #expect(prints["Sam Rivera"]?["meetings"] as? Int == 2)
+    }
+
+    @Test func aPrintNamesOneClusterAcrossBothStreamsTheClosest() async throws {
+        try remember([(Self.sam, "Sam Rivera", [0, 0, 1, 0, 0], false)])
+        var remote = Self.remoteVoice
+        remote.clusters[0].centroid = [0.6, 0, 0.8, 0, 0]
+        var mic = Self.fourInTheRoom
+        mic.clusters[1].centroid = [0, 0, 0.9, 0, 0.43589]
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([.replay(remote)], me: [.replay(mic)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(try speakers() == [
+            "Sam Rivera A me", "Speaker B B them", "Speaker C C me", "Speaker D D me", "Speaker E E me",
+        ])
+    }
+
+    @Test func theOwnersPrintNeverNamesAVoiceOnTheCall() async throws {
+        try remember([(Self.owner, "Me", [1, 0, 0, 0, 0], true)])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([.replay(Self.remoteVoice)], me: [.replay(Self.fourInTheRoom)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(try speakers()[1] == "Speaker B B them")
+    }
+
+    @Test func onSpeakersTheOwnersPrintNamesTheirVoiceMeWithoutLearningFromIt() async throws {
+        try remember([(Self.owner, "Me", [0, 0, 1], true)])
+        let route = ScriptedOutputRoute([.speakers])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(Self.soloMic[0])]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Me** [0:01] Hi."))
+        #expect(try speakers() == ["Me A me", "Speaker B B them", "Speaker C C them"])
+        #expect(try prints()["Me"]?["meetings"] as? Int == 1)
+    }
+
+    /// The owner on headphones, split by the diarizer into two voices: 16 s at [0, 1, 0], 12 s at [0, 0, 1].
+    static let ownerSplitInTwo = Diarization(
+        segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+        clusters: [
+            .init(id: "S1", centroid: [0, 1, 0], speechSeconds: 16),
+            .init(id: "S2", centroid: [0, 0, 1], speechSeconds: 12),
+        ])
+
+    @Test func onHeadphonesEveryMicVoiceIsTheOwnerWhosePrintIsEnrolledFromAllOfThem() async throws {
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(Self.ownerSplitInTwo)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Speaker A** [0:02] Hello all.
+
+            **Speaker B** [0:20] Morning.
+
+            """))
+        #expect(try speakers() == ["Speaker A A them", "Speaker B B them"])
+        let owner = try #require(try prints()["Me"])
+        #expect(owner["owner"] as? Bool == true)
+        let encoded = try #require(owner["centroid"] as? String)
+        let centroid = try #require(MeetingIndex.Speaker.decode(centroid: encoded))
+        // 16 s of [0, 1, 0] and 12 s of [0, 0, 1] weigh in as [0, 16, 12], which is [0, 0.8, 0.6] at length 1.
+        #expect(zip(centroid, [0, 0.8, 0.6] as [Float]).allSatisfy { abs($0 - $1) < 1e-6 })
+        #expect(owner["meetings"] as? Int == 1)
+        #expect(owner["lastHeardAt"] as? String == "2026-10-23T13:15:00Z")
+    }
+
+    @Test func onHeadphonesTheMicUpdatesTheOwnersPrint() async throws {
+        try remember([(Self.owner, "Me", [0, 0.6, 0.8], true)])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.soloMic[0])]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        let prints = try prints()
+        #expect(prints.count == 1)
+        #expect(prints["Me"]?["meetings"] as? Int == 2)
+        #expect(prints["Me"]?["recent"] as? [String] == [MeetingIndex.Speaker.encode(centroid: [0, 0, 1])])
+    }
+
+    @Test func onHeadphonesAVoiceFarFromTheOwnersPrintLeavesItAsItWas() async throws {
+        try remember([(Self.owner, "Me", [0, 1, 0], true)])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.soloMic[0])]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(try prints()["Me"]?["meetings"] as? Int == 1)
+    }
+
+    @Test func oneRouteOtherThanHeadphonesSharesTheMicForTheWholeMeetingAndNeverEnrollsTheOwner() async throws {
+        let route = ScriptedOutputRoute([.headphones, .speakers, .headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(Self.ownerSplitInTwo)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker A** [0:01] Hi."))
+        #expect(try speakers() == ["Speaker A A me", "Speaker B B them", "Speaker C C them"])
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test func aMeetingBegunOnSpeakersStaysSharedOnceHeadphonesAreOnAndNeverEnrollsTheOwner() async throws {
+        let route = ScriptedOutputRoute([.speakers, .headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(Self.ownerSplitInTwo)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker A** [0:01] Hi."))
+        #expect(try speakers() == ["Speaker A A me", "Speaker B B them", "Speaker C C them"])
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test func onHeadphonesAMicVoiceOfAnotherLengthIsLeftOutOfTheOwnersPrint() async throws {
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+            clusters: [
+                .init(id: "S1", centroid: [0, 0, 1, 0], speechSeconds: 12),
+                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 16),
+            ])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(mic)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        let encoded = try #require(try prints()["Me"]?["centroid"] as? String)
+        #expect(MeetingIndex.Speaker.decode(centroid: encoded) == [0, 1, 0])
+    }
+
+    @Test func eachMeetingHearsItsOwnRoute() async throws {
+        let route = ScriptedOutputRoute([.speakers], [.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer(
+                [.replay(Self.twoVoices), .replay(Self.twoVoices)],
+                me: [.replay(Self.soloMic[0]), .replay(Self.soloMic[0])]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard(meetings: 1)
+        clock.advance(by: 30)
+        let shared = try await recorder.stop()
+        clock.advance(by: 60)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard(meetings: 2)
+        clock.advance(by: 30)
+        let isolated = try await recorder.stop()
+
+        #expect(try String(contentsOf: shared, encoding: .utf8).contains("**Speaker A** [0:01] Hi."))
+        #expect(try String(contentsOf: isolated, encoding: .utf8).contains("**Me** [0:01] Hi."))
+        #expect(try prints()["Me"]?["meetings"] as? Int == 1)
+    }
+
+    @Test func onHeadphonesUnderTenSecondsOfMicSpeechInAllLeavesTheOwnerUnenrolled() async throws {
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+            clusters: [
+                .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 6),
+                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 3.9),
+            ])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(mic)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test(arguments: [ScriptedDiarizer.Outcome.fail, .hang])
+    func whenTheMicsDiarizationFailsMeStaysMeAndTheCallsSplitIsKept(outcome: ScriptedDiarizer.Outcome) async throws {
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([.replay(Self.remoteVoice)], me: [outcome, outcome]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("""
+            **Me** [0:01] Welcome.
+
+            **Speaker A** [0:03] Hello from home.
+
+            **Me** [0:05] Thanks.
+            """))
+        #expect(try speakers() == ["Speaker A A them"])
+    }
+
+    @Test(arguments: [ScriptedDiarizer.Outcome.fail, .hang])
+    func whenTheCallsDiarizationFailsThemStaysThemAndTheRoomIsKept(outcome: ScriptedDiarizer.Outcome) async throws {
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.room),
+            diarizer: ScriptedDiarizer([outcome, outcome], me: [.replay(Self.fourInTheRoom)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Speaker A** [0:01] Welcome.
+
+            **Them** [0:03] Hello from home.
+
+            **Speaker B** [0:05] Thanks.
+
+            **Speaker C** [0:10] Right.
+
+            **Speaker D** [0:15] Agreed.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["transcript"] as? String == "speakers")
+        #expect(try speakers() == ["Speaker A A me", "Speaker B B me", "Speaker C C me", "Speaker D D me"])
     }
 
     /// Sam was named in an earlier Meeting with the voice of cluster S2, [0.6, 0.8].
@@ -332,12 +862,12 @@ struct RecorderTests {
         let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
         #expect(entry["speakers"] as? NSArray == [
             [
-                "label": "Sam Rivera", "cluster": "A", "name": "Sam Rivera",
+                "label": "Sam Rivera", "cluster": "A", "stream": "them", "name": "Sam Rivera",
                 "voicePrintId": "11111111-1111-4111-8111-111111111111", "match": "auto", "distance": 0,
                 "speechSeconds": 12.5, "centroid": "mpkZP83MTD8=",
             ],
             [
-                "label": "Speaker B", "cluster": "B", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
+                "label": "Speaker B", "cluster": "B", "stream": "them", "name": NSNull(), "voicePrintId": NSNull(), "match": NSNull(),
                 "speechSeconds": 3, "centroid": "AACAPwAAAAA=",
             ],
         ] as NSArray)
@@ -372,7 +902,7 @@ struct RecorderTests {
         clock.advance(by: 30)
         let file = try await recorder.stop()
 
-        #expect(diarizer.audioHeard.count == 2, "one retry")
+        #expect(diarizer.audioHeard.filter { $0.lastPathComponent == "them.caf" }.count == 2, "one retry")
         #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
             ---
 

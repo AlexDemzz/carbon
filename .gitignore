@@ -7,7 +7,7 @@ xcuserdata/
 .swiftpm/
 .env
 .env.*
-.scratch/carbon-v1/prototypes/audio-capture-probe/probe
+.scratch/
 Carbon.xcodeproj/
 App/Info.plist
 App/Carbon.entitlements

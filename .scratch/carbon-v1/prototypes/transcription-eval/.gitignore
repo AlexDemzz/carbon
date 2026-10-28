@@ -1,6 +1,0 @@
-clean/
-hyp/
-hyp-*/
-logs/
-logs-*.txt
-.build/

@@ -19,10 +19,12 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
     public var meetings: Int
     public var createdAt: Date
     public var lastHeardAt: Date
+    /// The person's own voice, learnt from the mic of their Meetings on headphones and written as `Me`.
+    public var owner: Bool
 
     public init(
         id: UUID, name: String, email: String? = nil, model: String, centroid: [Float], recent: [[Float]] = [],
-        meetings: Int = 1, createdAt: Date, lastHeardAt: Date? = nil
+        meetings: Int = 1, createdAt: Date, lastHeardAt: Date? = nil, owner: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -33,6 +35,7 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
         self.meetings = meetings
         self.createdAt = createdAt
         self.lastHeardAt = lastHeardAt ?? createdAt
+        self.owner = owner
     }
 
     /// Adds a newly heard embedding: the centroid becomes the normalized mean of itself and the recent ones.
@@ -68,7 +71,7 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, email, model, centroid, recent, meetings, createdAt, lastHeardAt
+        case id, name, email, model, centroid, recent, meetings, createdAt, lastHeardAt, owner
     }
 
     public init(from decoder: any Decoder) throws {
@@ -84,6 +87,7 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
         meetings = try container.decode(Int.self, forKey: .meetings)
         createdAt = try Date(container.decode(String.self, forKey: .createdAt), strategy: .iso8601)
         lastHeardAt = try Date(container.decode(String.self, forKey: .lastHeardAt), strategy: .iso8601)
+        owner = try container.decodeIfPresent(Bool.self, forKey: .owner) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -97,6 +101,7 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
         try container.encode(meetings, forKey: .meetings)
         try container.encode(createdAt.formatted(.iso8601), forKey: .createdAt)
         try container.encode(lastHeardAt.formatted(.iso8601), forKey: .lastHeardAt)
+        if owner { try container.encode(owner, forKey: .owner) }
     }
 
     private static func decodeEmbedding(

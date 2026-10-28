@@ -39,7 +39,6 @@ struct MenuBarMenu: View {
         }
         Divider()
         Button("Show Carbon") { model.showMainWindow() }
-            .keyboardShortcut(model.showCarbonShortcut.keyboardShortcut)
         Button("Reveal in Finder") { model.revealLibrary() }
         MeetingLanguageMenu(model: model)
         Button("Check for Updates\u{2026}") { updater.checkForUpdates() }
@@ -87,17 +86,5 @@ private struct MeetingLanguageMenu: View {
 
     private var isFinishing: Bool {
         if case .finishing = model.recorder.state { true } else { false }
-    }
-}
-
-extension Shortcut {
-    /// The menu item's key equivalent, which shows the shortcut next to Show Carbon.
-    var keyboardShortcut: KeyboardShortcut {
-        var modifiers: EventModifiers = []
-        if self.modifiers.contains(.control) { modifiers.insert(.control) }
-        if self.modifiers.contains(.option) { modifiers.insert(.option) }
-        if self.modifiers.contains(.shift) { modifiers.insert(.shift) }
-        if self.modifiers.contains(.command) { modifiers.insert(.command) }
-        return KeyboardShortcut(KeyEquivalent(key.lowercased().first ?? "c"), modifiers: modifiers)
     }
 }

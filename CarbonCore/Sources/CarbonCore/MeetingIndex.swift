@@ -93,6 +93,8 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
 
         public var label: String
         public var cluster: String
+        /// The stream the cluster was heard on: the mic's when it was shared, else the call's.
+        public var stream: AudioStream
         public var name: String?
         public var voicePrintId: UUID?
         public var match: Match?
@@ -103,11 +105,12 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
         public var centroid: String?
 
         public init(
-            label: String, cluster: String, name: String? = nil, voicePrintId: UUID? = nil, match: Match? = nil,
+            label: String, cluster: String, stream: AudioStream = .them, name: String? = nil, voicePrintId: UUID? = nil, match: Match? = nil,
             distance: Double? = nil, speechSeconds: Double, centroid: String? = nil
         ) {
             self.label = label
             self.cluster = cluster
+            self.stream = stream
             self.name = name
             self.voicePrintId = voicePrintId
             self.match = match
@@ -121,10 +124,29 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
             centroid.map(\.bitPattern.littleEndian).withUnsafeBytes { Data($0) }.base64EncodedString()
         }
 
+        private enum CodingKeys: String, CodingKey {
+            case label, cluster, stream, name, voicePrintId, match, distance, speechSeconds, centroid
+        }
+
+        /// Entries written before Speakers were heard on the mic have no `stream`: theirs is Them.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            label = try container.decode(String.self, forKey: .label)
+            cluster = try container.decode(String.self, forKey: .cluster)
+            stream = try container.decodeIfPresent(AudioStream.self, forKey: .stream) ?? .them
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            voicePrintId = try container.decodeIfPresent(UUID.self, forKey: .voicePrintId)
+            match = try container.decodeIfPresent(Match.self, forKey: .match)
+            distance = try container.decodeIfPresent(Double.self, forKey: .distance)
+            speechSeconds = try container.decode(Double.self, forKey: .speechSeconds)
+            centroid = try container.decodeIfPresent(String.self, forKey: .centroid)
+        }
+
         public func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(label, forKey: .label)
             try container.encode(cluster, forKey: .cluster)
+            try container.encode(stream, forKey: .stream)
             try container.encode(name, forKey: .name)
             try container.encode(voicePrintId, forKey: .voicePrintId)
             try container.encode(match, forKey: .match)

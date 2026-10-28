@@ -69,6 +69,79 @@ struct VoicePrintTests {
             """.utf8).write(to: printsFile)
     }
 
+    let ownerPrint = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+
+    /// Writes `voiceprints.json` with the owner's print, learnt from `meetings` solo Meetings.
+    func rememberOwner(meetings: Int) throws {
+        try Data("""
+            {"version": 1, "prints": [{
+              "id": "22222222-2222-4222-8222-222222222222", "name": "Me", "owner": true,
+              "model": "fluidaudio/community-1@0.17.7", "centroid": "\(voice)", "recent": [],
+              "meetings": \(meetings), "createdAt": "2026-10-01T10:00:00Z", "lastHeardAt": "2026-10-20T10:00:00Z"
+            }]}
+            """.utf8).write(to: printsFile)
+    }
+
+    /// A meeting room whose mic Speaker A was written as the owner, or not.
+    func createRoom(_ library: Library, speaker: MeetingIndex.Speaker) throws -> URL {
+        try library.create(
+            meeting(id, speakers: [speaker]), transcript: "## Transcript\n\n**\(speaker.label)** [0:02] Hello all.\n")
+    }
+
+    @Test func inARoomAWrongMeIsRenamedAndTheOwnersPrintStaysAsItWas() throws {
+        try rememberOwner(meetings: 1)
+        let library = makeLibrary()
+        let file = try createRoom(library, speaker: MeetingIndex.Speaker(
+            label: "Me", cluster: "A", stream: .me, name: "Me", voicePrintId: ownerPrint, match: .auto,
+            distance: 0.2, speechSeconds: 12.5, centroid: voice))
+
+        try library.renameSpeaker(id, label: "Me", name: "Dana Park")
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Dana Park** [0:02] Hello all."))
+        #expect(try speakers(library).map(\.voicePrintId) == [newPrint])
+        let owner = try #require(library.voicePrints.prints.first { $0.id == ownerPrint })
+        #expect(owner.meetings == 1)
+        #expect(owner.recent.isEmpty)
+    }
+
+    @Test func aMicSpeakerNamedMeIsTheOwnerAndUpdatesTheirPrint() throws {
+        try rememberOwner(meetings: 3)
+        let library = makeLibrary()
+        let file = try createRoom(library, speaker: MeetingIndex.Speaker(
+            label: "Speaker A", cluster: "A", stream: .me, speechSeconds: 12.5, centroid: voice))
+
+        try library.renameSpeaker(id, label: "Speaker A", name: "me")
+
+        let markdown = try String(contentsOf: file, encoding: .utf8)
+        #expect(markdown.contains("**Me** [0:02] Hello all."))
+        #expect(!markdown.contains("  - Me"))
+        #expect(try speakers(library) == [MeetingIndex.Speaker(
+            label: "Me", cluster: "A", stream: .me, name: "Me", voicePrintId: ownerPrint, match: .user,
+            speechSeconds: 12.5, centroid: voice)])
+        #expect(try #require(library.loadIndex().meetings.first).participants.map(\.name) == ["Sam Rivera"])
+        #expect(library.voicePrints.prints.map(\.meetings) == [4])
+    }
+
+    @Test func aMicSpeakerNamedMeEnrollsTheOwnersPrintWhenThereIsNone() throws {
+        let library = makeLibrary()
+        try createRoom(library, speaker: MeetingIndex.Speaker(
+            label: "Speaker A", cluster: "A", stream: .me, speechSeconds: 12.5, centroid: voice))
+
+        try library.renameSpeaker(id, label: "Speaker A", name: "Me")
+
+        #expect(library.voicePrints.prints.map { "\($0.name) \($0.owner)" } == ["Me true"])
+        #expect(try speakers(library).map(\.voicePrintId) == [newPrint])
+    }
+
+    @Test func aSpeakerOnTheCallIsNeverNamedMe() throws {
+        let library = makeLibrary()
+        try createMeeting(library, speaker: speakerA())
+
+        #expect(throws: LibraryError.invalidSpeakerName) {
+            try library.renameSpeaker(id, label: "Speaker A", name: "Me")
+        }
+    }
+
     @Test func namingASpeakerWithTenSecondsOfSpeechRemembersTheirVoice() throws {
         let library = makeLibrary()
         try createMeeting(library, speaker: speakerA())

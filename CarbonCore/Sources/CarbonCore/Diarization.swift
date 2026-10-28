@@ -1,9 +1,9 @@
 import Foundation
 
-/// Who spoke when on the Them stream, as offline diarization found it.
+/// Who spoke when on one stream, as offline diarization found it.
 /// Also the JSON the diarization helper process prints.
 public struct Diarization: Equatable, Sendable, Codable {
-    /// A stretch of the Them stream given to one cluster, in seconds from the start of the stream.
+    /// A stretch of the stream given to one cluster, in seconds from the start of the stream.
     public struct Segment: Equatable, Sendable, Codable {
         public var start: TimeInterval
         public var end: TimeInterval

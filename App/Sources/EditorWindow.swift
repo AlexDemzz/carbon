@@ -79,7 +79,9 @@ private struct SpeakerChips: View {
             ForEach(speakers, id: \.self) { speaker in
                 SpeakerMenu(model: model, meeting: meeting, label: speaker, didRename: didRename)
                     .disabled(isRenameBlocked)
-                    .help(isRenameBlocked && speaker != TranscriptBuilder.me ? "Save your changes to rename Speakers." : "")
+                    .help(
+                        isRenameBlocked && (speaker != TranscriptBuilder.me || meeting.isOnMic(speaker))
+                            ? "Save your changes to rename Speakers." : "")
                     .font(.callout)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)

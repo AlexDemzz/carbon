@@ -20,14 +20,16 @@ public enum VoicePrintMatcher {
     }
 
     /// Keyed by cluster id. A cluster appears when it has enough speech and at least one print of `model` exists.
+    /// The owner's print is compared only with `ownerCandidates`, the clusters heard on the mic (nil: every cluster).
     public static func match(
-        _ clusters: [Diarization.Cluster], prints: [VoicePrint], model: String
+        _ clusters: [Diarization.Cluster], prints: [VoicePrint], model: String, ownerCandidates: Set<String>? = nil
     ) -> [String: Match] {
         let prints = prints.filter { $0.model == model }
         var best: [String: (print: UUID, distance: Double)] = [:]
         var candidates: [(cluster: String, print: UUID, distance: Double)] = []
         for cluster in clusters where cluster.speechSeconds >= minimumSpeechSeconds {
             let ranked = prints
+                .filter { !$0.owner || ownerCandidates?.contains(cluster.id) ?? true }
                 .map { (print: $0.id, distance: cosineDistance(cluster.centroid, $0.centroid)) }
                 .sorted { $0.distance < $1.distance }
             guard let first = ranked.first else { continue }

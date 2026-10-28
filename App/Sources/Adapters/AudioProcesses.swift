@@ -21,12 +21,12 @@ enum AudioProcesses {
 
     /// Every audio process, through `kAudioHardwarePropertyProcessObjectList`.
     static func ids() -> [AudioObjectID] {
-        objectList(kAudioHardwarePropertyProcessObjectList)
+        objectList(of: system, kAudioHardwarePropertyProcessObjectList) ?? []
     }
 
     /// Every audio device, through `kAudioHardwarePropertyDevices`.
     static func devices() -> [AudioObjectID] {
-        objectList(kAudioHardwarePropertyDevices)
+        objectList(of: system, kAudioHardwarePropertyDevices) ?? []
     }
 
     static func all() -> [Process] {
@@ -106,23 +106,38 @@ enum AudioProcesses {
         return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
-    private static func objectList(_ selector: AudioObjectPropertySelector) -> [AudioObjectID] {
+    /// The object IDs a property lists, or nil when the read fails.
+    static func objectList(
+        of object: AudioObjectID, _ selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> [AudioObjectID]? {
         var address = address(selector)
+        address.mScope = scope
         var size = UInt32(0)
-        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        guard AudioObjectGetPropertyDataSize(object, &address, 0, nil, &size) == noErr else { return nil }
+        guard size > 0 else { return [] }
         var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
+        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &ids) == noErr else { return nil }
         return Array(ids.prefix(Int(size) / MemoryLayout<AudioObjectID>.size))
     }
 
-    private static func flag(_ selector: AudioObjectPropertySelector, of id: AudioObjectID) -> Bool {
+    /// A `UInt32` property, or nil when the read fails.
+    static func uint32(
+        _ selector: AudioObjectPropertySelector, of id: AudioObjectID,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> UInt32? {
         var value = UInt32(0)
         var size = UInt32(MemoryLayout<UInt32>.size)
         var address = address(selector)
-        return AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr && value != 0
+        address.mScope = scope
+        return AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr ? value : nil
     }
 
-    private static func string(_ selector: AudioObjectPropertySelector, of id: AudioObjectID) -> String? {
+    private static func flag(_ selector: AudioObjectPropertySelector, of id: AudioObjectID) -> Bool {
+        (uint32(selector, of: id) ?? 0) != 0
+    }
+
+    static func string(_ selector: AudioObjectPropertySelector, of id: AudioObjectID) -> String? {
         var value: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         var address = address(selector)
