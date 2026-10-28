@@ -91,6 +91,29 @@ struct RecoveryTests {
         #expect(entries.map { $0["language"] as? String } == ["fr-FR"])
     }
 
+    @Test func aRecoveredMeetingKeepsTheEventItWasMatchedTo() async throws {
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: [:]), me: 6, them: 6)
+        let sync = CalendarEvent(
+            id: "sync-ext-id", title: "Weekly sync", start: date("2026-10-23T13:00:00Z"),
+            end: date("2026-10-23T13:30:00Z"), notes: "https://meet.google.com/abc-defg-hij",
+            attendees: [.init(name: "Sam Rivera", url: "mailto:sam@example.com")])
+        await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, events: [sync], [(0...0, [])]))
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        let onDisk = crashed.url.appending(path: meetingID.uuidString)
+        try FileManager.default.copyItem(at: folder, to: onDisk)
+        await recorder.discard()
+        try FileManager.default.copyItem(at: onDisk, to: folder)
+
+        let recoveries = await makeRecorder(transcriber: ReplayTranscriber(words: [:])).recover()
+
+        let file = library.url.appending(path: "2026/2026-10-23-weekly-sync.md")
+        #expect(recoveries == [.recovered(title: "Weekly sync", file: file)])
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["provider"] as? String == "Google Meet")
+        #expect(entry["calendarEventId"] as? String == "sync-ext-id")
+        #expect(entry["participants"] as? NSArray == [["name": "Sam Rivera", "email": "sam@example.com"]] as NSArray)
+    }
+
     @Test func aMeetingWhoseAudioCantBeReadIsDiscardedAndReported() async throws {
         try await crashDuringAMeeting(me: 6, them: 6)
         for stream in ["me.caf", "them.caf"] {

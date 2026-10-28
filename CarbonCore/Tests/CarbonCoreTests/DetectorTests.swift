@@ -104,7 +104,7 @@ struct DetectorTests {
         var detector = Detector()
 
         var commands = play(&detector, 0, 5, holders: [chrome])
-        #expect(detector.meetingStarted(at: t0 + 5, ignoredApps: []) == chrome)
+        #expect(detector.meetingStarted(at: t0 + 5, ignoredApps: []).app == chrome)
         commands += play(&detector, 6, 300, holders: [chrome], lastSound: 300)
         commands += play(&detector, 301, 1_000, holders: [], lastSound: 300)
 
@@ -115,7 +115,7 @@ struct DetectorTests {
     @Test func aManualStartWithNoAppOnTheMicEndsAfter10MinutesOfSilence() {
         var detector = Detector()
 
-        #expect(detector.meetingStarted(at: t0, ignoredApps: []) == nil)
+        #expect(detector.meetingStarted(at: t0, ignoredApps: []).app == nil)
         var commands = play(&detector, 0, 1_200, holders: [], lastSound: 400)
         commands += play(&detector, 1_201, 1_300, holders: [chrome], lastSound: 400)
 
@@ -227,7 +227,7 @@ struct DetectorTests {
         var detector = Detector()
 
         var commands = play(&detector, 0, 20, holders: [chrome], autoTranscribe: false)
-        #expect(detector.offerAccepted() == chrome)
+        #expect(detector.offerAccepted()?.app == chrome)
         commands += play(&detector, 21, 300, holders: [chrome], lastSound: 300, autoTranscribe: false)
         commands += play(&detector, 301, 1_000, holders: [], lastSound: 300, autoTranscribe: false)
 
@@ -240,6 +240,6 @@ struct DetectorTests {
 
         _ = play(&detector, 0, 80, holders: [chrome], autoTranscribe: false)
 
-        #expect(detector.offerAccepted() == nil)
+        #expect(detector.offerAccepted()?.app == nil)
     }
 }

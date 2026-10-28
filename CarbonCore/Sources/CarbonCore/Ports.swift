@@ -45,10 +45,13 @@ public protocol Transcriber: Sendable {
 public struct MicSnapshot: Equatable, Sendable {
     public var time: Date
     public var micHolders: [MeetingApp]
+    /// The calendar events around `time`, reduced to plain values.
+    public var events: [CalendarEvent]
 
-    public init(time: Date, micHolders: [MeetingApp]) {
+    public init(time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = []) {
         self.time = time
         self.micHolders = micHolders
+        self.events = events
     }
 }
 

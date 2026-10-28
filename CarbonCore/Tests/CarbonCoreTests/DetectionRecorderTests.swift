@@ -9,10 +9,15 @@ struct ScriptedSignalSource: SignalSource {
     let snapshots: [MicSnapshot]
     let clock: TestClock
 
-    init(_ clock: TestClock, from start: Date, _ script: [(seconds: ClosedRange<Int>, holders: [MeetingApp])]) {
+    init(
+        _ clock: TestClock, from start: Date, events: [CalendarEvent] = [],
+        _ script: [(seconds: ClosedRange<Int>, holders: [MeetingApp])]
+    ) {
         self.clock = clock
         snapshots = script.flatMap { step in
-            step.seconds.map { MicSnapshot(time: start + TimeInterval($0), micHolders: step.holders) }
+            step.seconds.map {
+                MicSnapshot(time: start + TimeInterval($0), micHolders: step.holders, events: events)
+            }
         }
     }
 
