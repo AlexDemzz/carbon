@@ -28,7 +28,7 @@ flowchart LR
         mic["Microphone<br/>(Me)"]
         them["Call audio<br/>(Them)"]
         stt["Live transcription<br/>Apple SpeechTranscriber"]
-        diar["CarbonDiarizer helper<br/>FluidAudio + bundled models"]
+        diar["CarbonDiarizer helper<br/>FluidAudio, models included in the app"]
         prints[("Voice Prints")]
         cal["Calendar"]
         file["Markdown file<br/>~/Documents/Carbon"]
