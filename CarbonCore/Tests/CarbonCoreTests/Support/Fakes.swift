@@ -73,10 +73,15 @@ final class ReplayTranscriber: Transcriber {
     }
 
     var localesHeard: [Locale] { heard.withLock { $0 } }
+    /// Seconds of audio each stream's sessions were fed, in the analyzer format.
+    var secondsHeard: [AudioStream: Double] { sessions.withLock { $0.mapValues { $0.seconds } } }
+    private let sessions = Mutex<[AudioStream: Session]>([:])
 
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
         heard.withLock { $0.append(locale) }
-        return Session(words: words[stream] ?? [])
+        let session = Session(words: words[stream] ?? [])
+        sessions.withLock { $0[stream] = session }
+        return session
     }
 
     final class Session: TranscriptionSession {
@@ -92,6 +97,8 @@ final class ReplayTranscriber: Transcriber {
             precondition(buffer.format == audioFormat, "the transcriber only accepts its analyzer format")
             frames.withLock { $0 += AVAudioFramePosition(buffer.frameLength) }
         }
+
+        var seconds: Double { Double(frames.withLock { $0 }) / audioFormat.sampleRate }
 
         func finish() async throws -> [TranscribedWord] {
             words

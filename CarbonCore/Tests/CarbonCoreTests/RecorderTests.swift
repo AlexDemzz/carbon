@@ -11,11 +11,23 @@ struct RecorderTests {
     let clock = TestClock(date("2026-10-23T13:15:00Z"))
     let meetingID = UUID(uuidString: "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")!
 
+    /// The Library, whose Delete moves files into `trash`.
+    func makeLibrary(trash: URL? = nil) -> Library {
+        let clock = clock
+        return Library(
+            folder: library.url, supportFolder: support.url, now: { clock.now },
+            moveToTrash: { url in
+                guard let trash else { return }
+                try FileManager.default.moveItem(at: url, to: trash.appending(path: url.lastPathComponent))
+            })
+    }
+
     func makeRecorder(
         transcriber: ReplayTranscriber, seconds: Double = 3,
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
-        diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail])
+        diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
+        keepAudio: Bool = false, trash: URL? = nil
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
@@ -26,7 +38,8 @@ struct RecorderTests {
             transcriber: transcriber,
             diarizer: diarizer,
             diarizationTimeout: { _ in .milliseconds(100) },
-            library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }),
+            library: makeLibrary(trash: trash),
+            keepAudio: { keepAudio },
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
             now: { clock.now },
@@ -290,6 +303,56 @@ struct RecorderTests {
             return
         }
         await recorder.discard()
+    }
+
+    @Test func withKeepAudioTheMeetingsAudioIsKeptAsStereoAACNextToItsFileMeLeftThemRight() async throws {
+        let trash = try TemporaryFolder()
+        let recorder = makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"),
+            microphone: FakeAudioSource(seconds: 4), systemAudio: FakeAudioSource(seconds: 0),
+            keepAudio: true, trash: trash.url)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 4)
+        try await recorder.stop()
+
+        let audio = library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.m4a")
+        let file = try AVAudioFile(forReading: audio)
+        #expect(file.fileFormat.settings[AVFormatIDKey] as? UInt32 == kAudioFormatMPEG4AAC)
+        #expect(file.fileFormat.channelCount == 2)
+        #expect(abs(Double(file.length) / file.fileFormat.sampleRate - 4) < 0.1, "the 4 s recorded")
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)))
+        try file.read(into: buffer)
+        let (left, right) = (rms(buffer, channel: 0), rms(buffer, channel: 1))
+        #expect(left > 0.1, "Me's 440 Hz tone at 0.2 peak, RMS ≈ 0.14")
+        #expect(right < 0.001, "Them was silent")
+
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["audio"] as? String == "2026/2026-10-23-meeting-oct-23-9-15-am.m4a")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: support.url.appending(path: "InProgress").path).isEmpty)
+
+        try makeLibrary(trash: trash.url).delete(meetingID)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
+            "2026-10-23-meeting-oct-23-9-15-am.m4a", "2026-10-23-meeting-oct-23-9-15-am.md",
+        ])
+    }
+
+    @Test func withoutKeepAudioNoAudioOutlivesTheTranscript() async throws {
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await recorder.stop()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: library.url.appending(path: "2026").path) == [
+            "2026-10-23-meeting-oct-23-9-15-am.md"
+        ])
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["audio"] == nil)
+    }
+
+    func rms(_ buffer: AVAudioPCMBuffer, channel: Int) -> Float {
+        let samples = UnsafeBufferPointer(start: buffer.floatChannelData![channel], count: Int(buffer.frameLength))
+        return (samples.reduce(0) { $0 + $1 * $1 } / Float(max(1, samples.count))).squareRoot()
     }
 
     func jsonObject(at url: URL) throws -> NSDictionary {

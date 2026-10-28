@@ -32,29 +32,30 @@ public final class Recorder {
         case systemAudioRecordingDenied
     }
 
-    public private(set) var state: State = .idle
+    public internal(set) var state: State = .idle
 
     private let microphone: any AudioSource
     private let systemAudio: any AudioSource
     private let systemAudioPermission: @Sendable () -> SystemAudioPermission
-    private let transcriber: any Transcriber
+    let transcriber: any Transcriber
     private let diarizer: any Diarizer
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let library: Library
-    private let inProgressRoot: URL
-    private let timeZone: TimeZone
+    private let keepAudio: @Sendable () -> Bool
+    let inProgressRoot: URL
+    let timeZone: TimeZone
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
-    private var recording: Recording?
+    var recording: Recording?
 
-    private struct Recording {
+    struct Recording {
         var meeting: LiveMeeting
         var folder: InProgressMeeting
         var me: Stream
         var them: Stream
     }
 
-    private struct Stream {
+    struct Stream {
         var source: any AudioSource
         var session: any TranscriptionSession
         var recorder: StreamRecorder
@@ -73,6 +74,7 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
+        keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         timeZone: TimeZone = .current,
         now: @escaping @Sendable () -> Date = Date.init,
@@ -85,6 +87,7 @@ public final class Recorder {
         self.diarizer = diarizer
         self.diarizationTimeout = diarizationTimeout
         self.library = library
+        self.keepAudio = keepAudio
         inProgressRoot = inProgressFolder
         self.timeZone = timeZone
         self.now = now
@@ -137,12 +140,23 @@ public final class Recorder {
         }
         try recording.me.close()
         try recording.them.close()
-        async let meWords = recording.me.session.finish()
-        async let themWords = recording.them.session.finish()
+        let (me, them) = (recording.me.session, recording.them.session)
+        return try await finish(meeting, end: end, folder: recording.folder) {
+            async let meWords = me.finish()
+            async let themWords = them.finish()
+            return (try await meWords, try await themWords)
+        }
+    }
+
+    /// The normal end of a Meeting, live or recovered: diarization, Library write, kept audio, cleanup.
+    func finish(
+        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
+        words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
+    ) async throws -> URL {
         async let diarized = Self.diarize(
-            recording.folder.themAudio, with: diarizer,
-            timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
-        let (me, them, diarization) = (try await meWords, try await themWords, await diarized)
+            folder.themAudio, with: diarizer, timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
+        let (me, them) = try await words()
+        let diarization = await diarized
         let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
         // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
         let split = letters.isEmpty ? nil : diarization
@@ -153,7 +167,11 @@ public final class Recorder {
                 language: meeting.language, provider: "Unknown", transcriptKind: split == nil ? .fallback : .speakers,
                 speakers: split.map { Self.speakers($0, letters: letters) } ?? []),
             transcript: transcript)
-        recording.folder.remove()
+        if keepAudio() {
+            // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
+            try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)
+        }
+        folder.remove()
         return file
     }
 
