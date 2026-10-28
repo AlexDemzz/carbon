@@ -1,4 +1,0 @@
-{"meeting": "ami-ES2011b",
- "X": {"usefulness": 2, "coverage": "2 / 9", "wrong": [], "next_steps": 3, "language": "yes", "noise": 0, "comment": "Accurate on the new requirements and the target group, but omits all three presentations, the locator and no-speech-recognition decisions, the scroll wheel and power button, and the questionnaire action."},
- "Y": {"usefulness": 3, "coverage": "5 / 9", "wrong": [], "next_steps": 4, "language": "yes", "noise": 1, "comment": "Good on the marketing findings, target group, VCR/DVD question, locator design and the real wrap-up actions, but it misses the new requirements (teletext dropped, TV only, corporate colours), the scroll wheel and the explicit rejection of speech recognition."}
-}
