@@ -15,7 +15,7 @@ final class SpeechTranscriberAdapter: Transcriber {
         }
     }
 
-    func start(locale: Locale) async throws -> any TranscriptionSession {
+    func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
         let transcriber = SpeechTranscriber(
             locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
             attributeOptions: [.audioTimeRange])

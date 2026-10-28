@@ -34,32 +34,49 @@ final class FakeAudioSource: AudioSource {
     func stop() {}
 }
 
-/// Stands in for SpeechTranscriber: hears audio in the analyzer format and replays recorded final words.
+/// Plays a WAV fixture as one captured stream, in 100 ms buffers, as soon as capture starts.
+final class WAVAudioSource: AudioSource {
+    let url: URL
+
+    init(fixture name: String) throws {
+        url = try fixtureURL(name, extension: "wav")
+    }
+
+    func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
+        let file = try AVAudioFile(forReading: url)
+        let chunk = AVAudioFrameCount(file.processingFormat.sampleRate / 10)
+        while file.framePosition < file.length {
+            let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: chunk)!
+            try file.read(into: buffer)
+            onBuffer(buffer)
+        }
+    }
+
+    func stop() {}
+}
+
+/// Stands in for SpeechTranscriber: hears audio in the analyzer format and replays recorded final words per stream.
 final class ReplayTranscriber: Transcriber {
-    let words: [TranscribedWord]
+    let words: [AudioStream: [TranscribedWord]]
     private let heard = Mutex<[Locale]>([])
 
-    init(words: [TranscribedWord]) {
+    init(words: [AudioStream: [TranscribedWord]]) {
         self.words = words
     }
 
-    /// Replays the words of a fixture recorded in the transcription-eval prototype's `{w, s, e}` shape.
-    convenience init(fixture name: String) throws {
-        struct Recorded: Decodable {
-            let w: String
-            let s: Double
-            let e: Double
-        }
-        let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
-        let recorded = try JSONDecoder().decode([Recorded].self, from: Data(contentsOf: url))
-        self.init(words: recorded.map { TranscribedWord(text: $0.w, start: $0.s, end: $0.e) })
+    /// Replays word fixtures recorded in the transcription-eval prototype's `{w, s, e}` shape.
+    convenience init(me: String, them: String? = nil) throws {
+        self.init(words: [
+            .me: try CarbonCoreTests.words(fixture: me),
+            .them: try them.map { try CarbonCoreTests.words(fixture: $0) } ?? [],
+        ])
     }
 
     var localesHeard: [Locale] { heard.withLock { $0 } }
 
-    func start(locale: Locale) async throws -> any TranscriptionSession {
+    func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
         heard.withLock { $0.append(locale) }
-        return Session(words: words)
+        return Session(words: words[stream] ?? [])
     }
 
     final class Session: TranscriptionSession {
@@ -113,4 +130,19 @@ final class TemporaryFolder {
 
 func date(_ iso: String) -> Date {
     try! Date(iso, strategy: .iso8601)
+}
+
+func fixtureURL(_ name: String, extension ext: String) throws -> URL {
+    try #require(Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Fixtures"))
+}
+
+/// Words recorded in the transcription-eval prototype's `{w, s, e}` shape.
+func words(fixture name: String) throws -> [TranscribedWord] {
+    struct Recorded: Decodable {
+        let w: String
+        let s: Double
+        let e: Double
+    }
+    let recorded = try JSONDecoder().decode([Recorded].self, from: Data(contentsOf: fixtureURL(name, extension: "json")))
+    return recorded.map { TranscribedWord(text: $0.w, start: $0.s, end: $0.e) }
 }

@@ -29,11 +29,14 @@ public final class Recorder {
     public enum Failure: Error, Equatable {
         case notIdle
         case notLive
+        case systemAudioRecordingDenied
     }
 
     public private(set) var state: State = .idle
 
-    private let audioSource: any AudioSource
+    private let microphone: any AudioSource
+    private let systemAudio: any AudioSource
+    private let systemAudioPermission: @Sendable () -> SystemAudioPermission
     private let transcriber: any Transcriber
     private let library: Library
     private let inProgressRoot: URL
@@ -45,12 +48,25 @@ public final class Recorder {
     private struct Recording {
         var meeting: LiveMeeting
         var folder: InProgressMeeting
+        var me: Stream
+        var them: Stream
+    }
+
+    private struct Stream {
+        var source: any AudioSource
         var session: any TranscriptionSession
-        var me: StreamRecorder
+        var recorder: StreamRecorder
+
+        func close() throws {
+            source.stop()
+            try recorder.close()
+        }
     }
 
     public init(
-        audioSource: any AudioSource,
+        microphone: any AudioSource,
+        systemAudio: any AudioSource,
+        systemAudioPermission: @escaping @Sendable () -> SystemAudioPermission,
         transcriber: any Transcriber,
         library: Library,
         inProgressFolder: URL,
@@ -58,7 +74,9 @@ public final class Recorder {
         now: @escaping @Sendable () -> Date = Date.init,
         makeID: @escaping @Sendable () -> UUID = UUID.init
     ) {
-        self.audioSource = audioSource
+        self.microphone = microphone
+        self.systemAudio = systemAudio
+        self.systemAudioPermission = systemAudioPermission
         self.transcriber = transcriber
         self.library = library
         inProgressRoot = inProgressFolder
@@ -67,26 +85,34 @@ public final class Recorder {
         self.makeID = makeID
     }
 
-    /// Starts a manual Meeting on the microphone, transcribed in `language`.
+    /// Starts a manual Meeting on the microphone (Me) and the call's audio (Them), transcribed in `language`.
     public func start(language: Locale) async throws {
         guard state == .idle, recording == nil else { throw Failure.notIdle }
+        guard systemAudioPermission() != .denied else { throw Failure.systemAudioRecordingDenied }
         let start = now()
         let meeting = LiveMeeting(
             id: makeID(), title: MeetingFormat.defaultTitle(start: start, in: timeZone), start: start,
             language: language)
         let folder = InProgressMeeting(root: inProgressRoot, id: meeting.id)
         state = .live(meeting)
+        var opened: [Stream] = []
         do {
             try folder.create(
                 .init(
                     id: meeting.id, start: MeetingFormat.timestamp(start, in: timeZone),
                     language: MeetingFormat.bcp47(language), mode: .manual))
-            let session = try await transcriber.start(locale: language)
-            let me = try StreamRecorder(session: session, cafFile: folder.meAudio)
-            recording = Recording(meeting: meeting, folder: folder, session: session, me: me)
-            try audioSource.start { buffer in me.append(buffer) }
+            let me = try await open(.me, from: microphone, into: folder.meAudio, language: language)
+            opened.append(me)
+            let them = try await open(.them, from: systemAudio, into: folder.themAudio, language: language)
+            opened.append(them)
+            try capture(me)
+            try capture(them)
+            recording = Recording(meeting: meeting, folder: folder, me: me, them: them)
         } catch {
-            recording = nil
+            for stream in opened {
+                try? stream.close()
+                _ = try? await stream.session.finish()
+            }
             folder.remove()
             state = .idle
             throw error
@@ -103,10 +129,11 @@ public final class Recorder {
             self.recording = nil
             state = .idle
         }
-        audioSource.stop()
         try recording.me.close()
-        let words = try await recording.session.finish()
-        let transcript = TranscriptBuilder.body(TranscriptBuilder.turns(me: words))
+        try recording.them.close()
+        async let me = recording.me.session.finish()
+        async let them = recording.them.session.finish()
+        let transcript = TranscriptBuilder.body(TranscriptBuilder.turns(me: try await me, them: try await them))
         let file = try library.create(
             FinishedMeeting(
                 id: meeting.id, title: meeting.title, start: meeting.start, end: end, timeZone: timeZone,
@@ -119,11 +146,24 @@ public final class Recorder {
     /// Ends the live Meeting and keeps nothing.
     public func discard() async {
         guard let recording else { return }
-        audioSource.stop()
-        try? recording.me.close()
-        _ = try? await recording.session.finish()
+        for stream in [recording.me, recording.them] {
+            try? stream.close()
+            _ = try? await stream.session.finish()
+        }
         recording.folder.remove()
         self.recording = nil
         state = .idle
+    }
+
+    private func open(
+        _ stream: AudioStream, from source: any AudioSource, into file: URL, language: Locale
+    ) async throws -> Stream {
+        let session = try await transcriber.start(locale: language, stream: stream)
+        return Stream(source: source, session: session, recorder: try StreamRecorder(session: session, cafFile: file))
+    }
+
+    private func capture(_ stream: Stream) throws {
+        let recorder = stream.recorder
+        try stream.source.start { buffer in recorder.append(buffer) }
     }
 }

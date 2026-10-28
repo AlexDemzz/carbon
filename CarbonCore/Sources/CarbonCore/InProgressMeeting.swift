@@ -20,6 +20,7 @@ struct InProgressMeeting {
 
     var stateFile: URL { folder.appending(path: "state.json") }
     var meAudio: URL { folder.appending(path: "me.caf") }
+    var themAudio: URL { folder.appending(path: "them.caf") }
 
     init(root: URL, id: UUID) {
         folder = root.appending(path: id.uuidString)

@@ -24,7 +24,9 @@ final class AppModel {
         let support = applicationSupport.appending(path: "Carbon")
         library = Library(folder: documents.appending(path: "Carbon"), supportFolder: support)
         recorder = Recorder(
-            audioSource: MicrophoneSource(),
+            microphone: MicrophoneSource(),
+            systemAudio: SystemAudioTap(),
+            systemAudioPermission: SystemAudioRecordingPermission.current,
             transcriber: SpeechTranscriberAdapter(),
             library: library,
             inProgressFolder: support.appending(path: "InProgress"))
@@ -62,6 +64,8 @@ final class AppModel {
                     throw AppError.languageUnsupported(Locale.current)
                 }
                 try await recorder.start(language: language)
+            } catch Recorder.Failure.systemAudioRecordingDenied {
+                present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
             } catch {
                 present(error, title: "Carbon couldn't start transcribing")
             }
@@ -98,12 +102,15 @@ final class AppModel {
 
 enum AppError: LocalizedError {
     case microphoneDenied
+    case systemAudioRecordingDenied
     case languageUnsupported(Locale)
 
     var errorDescription: String? {
         switch self {
         case .microphoneDenied:
             "Carbon needs microphone access. Allow it in System Settings › Privacy & Security › Microphone."
+        case .systemAudioRecordingDenied:
+            "Carbon needs System Audio Recording access to hear the other participants. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording."
         case .languageUnsupported(let locale):
             "On-device transcription doesn't support \(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)."
         }
