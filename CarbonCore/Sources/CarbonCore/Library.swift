@@ -1,8 +1,10 @@
 import CryptoKit
 import Foundation
+import Observation
 
 /// The Meetings on the person's Mac: the Markdown files in the Library folder and their index, `meetings.json`.
 @MainActor
+@Observable
 public final class Library {
     static let backupsKept = 14
     static let backupInterval: TimeInterval = 24 * 60 * 60
@@ -10,8 +12,11 @@ public final class Library {
     public let folder: URL
     let indexFile: URL
     let backupsFolder: URL
-    private let now: @Sendable () -> Date
-    private var lastBackup: Date?
+    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored private var lastBackup: Date?
+
+    /// The Meetings whose file Carbon could read, newest first. Filled by `load()`, kept current by Carbon's writes.
+    public private(set) var meetings: [ListedMeeting] = []
 
     /// - Parameters:
     ///   - folder: the Library folder, `~/Documents/Carbon` by default.
@@ -34,22 +39,37 @@ public final class Library {
         try data.write(to: url, options: .withoutOverwriting)
 
         var index = try loadIndex()
-        index.meetings.append(
-            MeetingIndex.Entry(
-                id: meeting.id,
-                file: relativePath,
-                title: meeting.title,
-                start: MeetingFormat.timestamp(meeting.start, in: meeting.timeZone),
-                end: MeetingFormat.timestamp(meeting.end, in: meeting.timeZone),
-                language: MeetingFormat.bcp47(meeting.language),
-                provider: meeting.provider,
-                meetingApp: meeting.meetingApp,
-                participants: meeting.participants,
-                transcript: meeting.transcriptKind.rawValue,
-                summary: "off",
-                writtenHash: Self.sha256(data)))
+        let entry = MeetingIndex.Entry(
+            id: meeting.id,
+            file: relativePath,
+            title: meeting.title,
+            start: MeetingFormat.timestamp(meeting.start, in: meeting.timeZone),
+            end: MeetingFormat.timestamp(meeting.end, in: meeting.timeZone),
+            language: MeetingFormat.bcp47(meeting.language),
+            provider: meeting.provider,
+            meetingApp: meeting.meetingApp,
+            participants: meeting.participants,
+            transcript: meeting.transcriptKind.rawValue,
+            summary: "off",
+            writtenHash: Self.sha256(data))
+        index.meetings.append(entry)
         try save(index)
+        if let listed = ListedMeeting(entry, folder: folder) {
+            meetings.append(listed)
+            meetings.sort(by: Self.newestFirst)
+        }
         return url
+    }
+
+    /// Reads `meetings.json` and every Meeting's file, for the list and Search.
+    public func load() throws {
+        meetings = try loadIndex().meetings
+            .compactMap { ListedMeeting($0, folder: folder) }
+            .sorted(by: Self.newestFirst)
+    }
+
+    private static func newestFirst(_ a: ListedMeeting, _ b: ListedMeeting) -> Bool {
+        a.start > b.start
     }
 
     public func loadIndex() throws -> MeetingIndex {

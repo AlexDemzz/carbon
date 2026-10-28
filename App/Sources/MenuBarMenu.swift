@@ -28,6 +28,8 @@ struct MenuBarMenu: View {
             Text("Finishing \u{201C}\(meeting.title)\u{201D}\u{2026}")
         }
         Divider()
+        Button("Show Carbon") { model.showMainWindow() }
+            .keyboardShortcut("c", modifiers: [.option, .command])
         Button("Reveal in Finder") { model.revealLibrary() }
         Button("Check for Updates\u{2026}") { updater.checkForUpdates() }
         Button("Settings\u{2026}") {
