@@ -55,23 +55,34 @@ struct MenuBarMenu: View {
     }
 }
 
-/// Meeting Language ▸, with a check on the live Meeting's language, or on the next Meeting's outside one.
+/// Meeting Language ▸, with a check on the live Meeting's language, or on the next Meeting's outside one,
+/// and Add Languages… last, which opens the Languages settings.
 private struct MeetingLanguageMenu: View {
     let model: AppModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Picker(
-            "Meeting Language",
-            selection: Binding(
-                get: { model.menuLanguage?.identifier(.bcp47) ?? "" },
-                set: { id in model.chooseMeetingLanguage(Locale(identifier: Locale.identifier(.icu, from: id))) })
-        ) {
-            ForEach(model.menuLanguages, id: \.self) { language in
-                Text(model.languageName(language)).tag(language.identifier(.bcp47))
+        Menu("Meeting Language") {
+            Picker(
+                "Meeting Language",
+                selection: Binding(
+                    get: { model.menuLanguage?.identifier(.bcp47) ?? "" },
+                    set: { id in model.chooseMeetingLanguage(Locale(identifier: Locale.identifier(.icu, from: id))) })
+            ) {
+                ForEach(model.menuLanguages, id: \.self) { language in
+                    Text(model.languageName(language)).tag(language.identifier(.bcp47))
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+            .disabled(isFinishing)
+            Divider()
+            Button("Add Languages\u{2026}") {
+                model.settingsTab = .languages
+                NSApp.activate()
+                openSettings()
             }
         }
-        .pickerStyle(.menu)
-        .disabled(model.menuLanguages.isEmpty || isFinishing)
     }
 
     private var isFinishing: Bool {
