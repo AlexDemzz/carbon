@@ -10,13 +10,13 @@ extension TranscriptBuilder {
     public static func turns(inMarkdown markdown: String) -> [Turn] {
         var turns: [Turn] = []
         var inTranscript = false
-        for line in markdown.split(separator: "\n", omittingEmptySubsequences: false) {
+        for line in markdown.lines {
             if line.hasPrefix("## ") {
                 inTranscript = line.trimmingCharacters(in: .whitespaces) == "## Transcript"
                 continue
             }
             guard inTranscript else { continue }
-            if let turn = turn(atHeaderOf: line) {
+            if let turn = turn(atHeaderOf: line[...]) {
                 turns.append(turn)
             } else if !turns.isEmpty, !line.allSatisfy(\.isWhitespace) {
                 turns[turns.count - 1].text += "\n" + line

@@ -109,4 +109,30 @@ struct LibraryReconcileTests {
 
         #expect(library.search("pelicans").map(\.meeting.title) == ["Standup"])
     }
+
+    @Test func aWindowsLineEndingsFileMovedInFinderIsFoundAgainByItsID() throws {
+        let standup = folder.url.appending(path: "2026/2026-10-25-standup.md")
+        let crlf = try String(contentsOf: standup, encoding: .utf8).replacingOccurrences(of: "\n", with: "\r\n")
+        try FileManager.default.removeItem(at: standup)
+        try crlf.write(to: folder.url.appending(path: "2026/moved standup.md"), atomically: true, encoding: .utf8)
+        let library = makeLibrary()
+
+        try library.reconcile()
+
+        let index = try library.loadIndex()
+        #expect(index.deleted.isEmpty)
+        #expect(index.meetings.first { $0.title == "Standup" }?.file == "2026/moved standup.md")
+    }
+
+    @Test func searchReadsTheTurnsOfAWindowsLineEndingsFile() throws {
+        let standup = folder.url.appending(path: "2026/2026-10-25-standup.md")
+        try String(contentsOf: standup, encoding: .utf8).replacingOccurrences(of: "\n", with: "\r\n")
+            .write(to: standup, atomically: true, encoding: .utf8)
+        let library = makeLibrary()
+
+        try library.reconcile()
+
+        #expect(library.search("export bug").map { $0.snippet } == ["Me: Yesterday I fixed the export bug."])
+        #expect(library.search("microsoft").isEmpty, "the frontmatter is not searched")
+    }
 }

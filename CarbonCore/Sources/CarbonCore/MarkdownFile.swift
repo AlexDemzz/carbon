@@ -34,7 +34,7 @@ enum MarkdownFile {
 
     /// The file with only its frontmatter `title` line changed, or nil when it has none.
     static func replacingTitle(in markdown: String, with title: String) -> String? {
-        var lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+        var lines = markdown.linesKeepingEnds
         guard let frontmatter = frontmatterLines(markdown),
               let position = frontmatter.firstIndex(where: { $0.hasPrefix("title:") })
         else { return nil }
@@ -43,11 +43,19 @@ enum MarkdownFile {
         return lines.joined(separator: "\n")
     }
 
-    /// The lines between the opening and closing `---`, or nil without frontmatter.
-    static func frontmatterLines(_ markdown: String) -> ArraySlice<Substring>? {
-        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
+    /// The lines between the opening and closing `---`, without their line endings, or nil without frontmatter.
+    /// Their indices are those of `markdown.lines`.
+    static func frontmatterLines(_ markdown: String) -> ArraySlice<String>? {
+        let lines = markdown.lines
         guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return nil }
         return lines[1..<end]
+    }
+
+    /// The lines after the frontmatter, or every line without one, without their line endings.
+    static func bodyLines(_ markdown: String) -> ArraySlice<String> {
+        let lines = markdown.lines
+        guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return lines[...] }
+        return lines[(end + 1)...]
     }
 
     /// A plain scalar when YAML reads it back unchanged, a double-quoted string otherwise.

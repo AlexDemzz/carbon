@@ -52,14 +52,10 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
     }
 
     private static func searchLines(_ markdown: String) -> [String] {
-        var lines = markdown.split(separator: "\n")[...]
-        if lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") {
-            lines = lines[(end + 1)...]
-        }
-        return lines.compactMap { line in
+        MarkdownFile.bodyLines(markdown).compactMap { line in
             guard !line.hasPrefix("#"), !line.allSatisfy(\.isWhitespace) else { return nil }
-            if let turn = TranscriptBuilder.turn(atHeaderOf: line) { return "\(turn.speaker): \(turn.text)" }
-            return String(line)
+            if let turn = TranscriptBuilder.turn(atHeaderOf: line[...]) { return "\(turn.speaker): \(turn.text)" }
+            return line
         }
     }
 

@@ -112,6 +112,17 @@ struct LibraryEditTests {
         #expect(url.lastPathComponent == "2026-10-27-remote-control-kickoff-2.md")
     }
 
+    @Test func renamingAWindowsLineEndingsFileKeepsItsLineEndings() throws {
+        let library = makeLibrary()
+        let url = try created(library)
+        let crlf = createdMarkdown.replacingOccurrences(of: "\n", with: "\r\n")
+        try crlf.write(to: url, atomically: true, encoding: .utf8)
+
+        try library.rename(id, title: "Kickoff")
+
+        #expect(try read(url) == crlf.replacingOccurrences(of: "title: Remote control kickoff", with: "title: Kickoff"))
+    }
+
     // MARK: Color
 
     @Test func aColorDotIsKeptInTheIndexOnly() throws {

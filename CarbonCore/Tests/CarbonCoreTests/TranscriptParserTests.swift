@@ -70,4 +70,13 @@ struct TranscriptParserTests {
             """).map { $0.spokenElapsed(locale: english) }
         #expect(spoken == ["0 seconds", "19 seconds", "1 minute", "1 hour, 2 minutes, 10 seconds"])
     }
+
+    @Test func aWindowsLineEndingsFileHasTheSameTurns() {
+        let markdown = "---\r\ntitle: Kickoff\r\n---\r\n\r\n## Transcript\r\n\r\n**Me** [0:00] Hello.\r\n"
+            + "A line the person added.\r\n\r\n**Speaker A** [0:19] Hi.\r\n"
+        #expect(turns(markdown) == [
+            "Me · 0:00 · Hello.\nA line the person added.",
+            "Speaker A · 0:19 · Hi.",
+        ])
+    }
 }

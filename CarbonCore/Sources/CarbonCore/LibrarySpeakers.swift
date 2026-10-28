@@ -35,7 +35,7 @@ extension Library {
 extension MarkdownFile {
     /// The file with `name` appended to the frontmatter `participants`, every other line as it was.
     static func addingParticipant(_ name: String, to markdown: String) -> String {
-        var lines = markdown.components(separatedBy: "\n")
+        var lines = markdown.linesKeepingEnds
         func isFence(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespacesAndNewlines) == "---" }
         guard let first = lines.first, isFence(first),
               let end = lines.indices.dropFirst().first(where: { isFence(lines[$0]) })
@@ -62,8 +62,7 @@ extension TranscriptBuilder {
     /// The file with `label` replaced by `name` in the `## Transcript` Turn headers that read `label`.
     static func renamingSpeaker(_ label: String, to name: String, in markdown: String) -> String {
         var inTranscript = false
-        // Not `split(separator:)`: a `\r\n` is one Character, so it would never split a Windows file.
-        return markdown.components(separatedBy: "\n").map { line in
+        return markdown.linesKeepingEnds.map { line in
             if line.hasPrefix("## ") {
                 inTranscript = line.trimmingCharacters(in: .whitespacesAndNewlines) == "## Transcript"
                 return line
