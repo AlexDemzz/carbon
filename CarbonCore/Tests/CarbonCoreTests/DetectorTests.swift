@@ -170,3 +170,193 @@ struct DetectorTests {
         #expect(commands.map(\.1) == [.start(chrome)])
     }
 }
+
+/// The call assertion, back-to-back, cap and overlap rules of "Power assertions as a Detection signal".
+struct CallDetectorTests {
+    let chrome = MeetingApp(bundleID: "com.google.Chrome", name: "Google Chrome")
+    let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
+    let teams = MeetingApp(bundleID: "com.microsoft.teams2", name: "Microsoft Teams")
+    let t0 = date("2026-10-23T13:00:00Z")
+
+    func zoomCall(_ id: Int = 1) -> PowerAssertion {
+        PowerAssertion(app: zoom, name: "Describe Activity Type", type: "PreventUserIdleDisplaySleep", id: id)
+    }
+
+    func teamsCall(_ id: Int = 7) -> PowerAssertion {
+        PowerAssertion(app: teams, name: "call in progress", type: "PreventUserIdleSystemSleep", id: id)
+    }
+
+    /// Feeds one snapshot per second from `from` to `to` (seconds after t0). The assertions are polled on every
+    /// second divisible by 3, as the SignalSampler does.
+    func play(
+        _ detector: inout Detector, _ from: Int, _ to: Int, holders: [MeetingApp] = [],
+        assertions: [PowerAssertion] = [], lastSound: Int? = nil
+    ) -> [(Int, Detector.Command)] {
+        var commands: [(Int, Detector.Command)] = []
+        for second in from...to {
+            let signals = Detector.Signals(
+                time: t0 + TimeInterval(second), micHolders: holders,
+                assertions: second % 3 == 0 ? assertions : nil, lastSound: lastSound.map { t0 + TimeInterval($0) })
+            commands += detector.observe(signals).map { (second, $0) }
+        }
+        return commands
+    }
+
+    @Test func aCallAssertionOnTwoConsecutivePollsStartsAMeetingWithoutTheMic() {
+        var detector = Detector()
+
+        let commands = play(&detector, 1, 10, assertions: [zoomCall()])
+
+        #expect(commands.map(\.0) == [6])
+        #expect(commands.map(\.1) == [.start(zoom)])
+    }
+
+    @Test func aCallAssertionSeenOnASinglePollStartsNothing() {
+        var detector = Detector()
+
+        var commands = play(&detector, 1, 3, assertions: [zoomCall()])
+        commands += play(&detector, 4, 30)
+
+        #expect(commands.isEmpty)
+    }
+
+    @Test func aBrowserWebRTCAssertionStartsNothing() {
+        let webRTC = PowerAssertion(
+            app: chrome, name: "WebRTC has active PeerConnections", type: "NoIdleSleepAssertion", id: 3)
+        var detector = Detector()
+
+        #expect(play(&detector, 1, 12, holders: [], assertions: [webRTC]).isEmpty)
+    }
+
+    @Test func aCallEnds15SecondsAfterTheAssertionAndTheMicAreReleasedThen30SecondsOfSilence() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall()], lastSound: 600)
+        commands += play(&detector, 601, 2_000, lastSound: 600)
+
+        #expect(commands.map(\.0) == [3, 648], "the assertion is seen released on the 603 poll")
+        #expect(commands.map(\.1) == [.start(zoom), .end(.callEnded)])
+    }
+
+    @Test func soundAfterTheCallIsReleasedPushesTheEndBack() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall()], lastSound: 600)
+        commands += play(&detector, 601, 2_000, lastSound: 630)
+
+        #expect(commands.map(\.0) == [3, 660])
+    }
+
+    @Test func aCallWhoseAssertionStaysDoesNotEndWhenTheMicIsReleased() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall()], lastSound: 600)
+        commands += play(&detector, 601, 2_000, assertions: [zoomCall()], lastSound: 600)
+
+        #expect(commands.map(\.1) == [.start(zoom)])
+    }
+
+    @Test func aCallWhoseMicStaysHeldDoesNotEndWhenTheAssertionIsReleased() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall()], lastSound: 600)
+        commands += play(&detector, 601, 2_000, holders: [zoom], lastSound: 600)
+
+        #expect(commands.map(\.1) == [.start(zoom)])
+    }
+
+    @Test func afterAManualStopTheSameCallNeverStartsAgain() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 100, assertions: [zoomCall()])
+        detector.meetingStopped()
+        commands += play(&detector, 101, 1_000, assertions: [zoomCall()])
+        commands += play(&detector, 1_001, 1_100, assertions: [zoomCall(2)])
+
+        #expect(commands.map(\.0) == [3, 1_005], "only the next call starts, after 2 polls")
+    }
+
+    @Test func aNewAssertionIdWhileTheMicStaysHeldSplitsTheMeetingAfterA5SecondCooldown() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall(1)])
+        commands += play(&detector, 601, 700, holders: [zoom], assertions: [zoomCall(2)])
+
+        #expect(commands.map(\.0) == [3, 603, 608])
+        #expect(commands.map(\.1) == [.start(zoom), .end(.backToBack), .start(zoom)])
+    }
+
+    @Test func aCallBackAfterTheMicAndTheAssertionWereReleased5SecondsIsANewMeeting() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall(1)])
+        commands += play(&detector, 601, 608)
+        commands += play(&detector, 609, 700, holders: [zoom], assertions: [zoomCall(2)])
+
+        #expect(commands.map(\.0) == [3, 609, 614], "released on the 603 poll; the new call waits out the cooldown")
+        #expect(commands.map(\.1) == [.start(zoom), .end(.backToBack), .start(zoom)])
+    }
+
+    @Test func aReleaseShorterThan5SecondsKeepsTheSameMeeting() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [zoom], assertions: [zoomCall(1)])
+        commands += play(&detector, 601, 604)
+        commands += play(&detector, 605, 2_000, holders: [zoom], assertions: [zoomCall(1)])
+
+        #expect(commands.map(\.1) == [.start(zoom)])
+    }
+
+    @Test func aMeetingEndsAt4HoursAndStartsAgainWhenTheCallIsStillLive() {
+        var detector = Detector()
+
+        let commands = play(&detector, 0, 14_430, holders: [chrome])
+
+        #expect(commands.map(\.0) == [15, 14_415, 14_420])
+        #expect(commands.map(\.1) == [.start(chrome), .end(.cap), .start(chrome)])
+    }
+
+    @Test func anotherAppsStartSignalDuringAMeetingOffersASwitchOnceAndNeverStartsASecondMeeting() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 100, holders: [chrome])
+        commands += play(&detector, 101, 1_000, holders: [chrome, zoom], assertions: [zoomCall()])
+
+        #expect(commands.map(\.0) == [15, 105])
+        #expect(commands.map(\.1) == [.start(chrome), .offerSwitch(zoom)])
+    }
+
+    @Test func switchingEndsOnTheOtherAppsRulesAndTheOldHoldNeverStartsAgain() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 100, holders: [chrome])
+        commands += play(&detector, 101, 200, holders: [chrome, zoom], assertions: [zoomCall()])
+        detector.meetingSwitched(to: zoom, at: t0 + 200)
+        commands += play(&detector, 201, 300, holders: [chrome, zoom], assertions: [zoomCall()])
+        commands += play(&detector, 301, 2_000, holders: [chrome])
+
+        #expect(commands.map(\.0) == [15, 105, 348], "Zoom's call rule: released on the 303 poll, + 15 s + 30 s")
+        #expect(commands.map(\.1) == [.start(chrome), .offerSwitch(zoom), .end(.callEnded)])
+    }
+
+    @Test func anotherAppStartingAfterTheMeetingAppReleased5SecondsTakesOverAsBackToBack() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 100, holders: [chrome])
+        commands += play(&detector, 101, 109)
+        commands += play(&detector, 110, 200, holders: [zoom], assertions: [zoomCall()])
+
+        #expect(commands.map(\.0) == [15, 114, 114])
+        #expect(commands.map(\.1) == [.start(chrome), .end(.backToBack), .start(zoom)])
+    }
+
+    @Test func aManualMeetingWithNoAppOnlyOffersTheSwitch() {
+        var detector = Detector()
+
+        _ = detector.meetingStarted(at: t0, ignoredApps: [])
+        let commands = play(&detector, 0, 300, holders: [chrome], lastSound: 300)
+
+        #expect(commands.map(\.0) == [15])
+        #expect(commands.map(\.1) == [.offerSwitch(chrome)])
+    }
+}

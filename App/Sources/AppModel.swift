@@ -72,6 +72,7 @@ final class AppModel {
                 self?.present(error, title: "Carbon couldn't transcribe a Meeting")
             }
         }
+        recorder.onSwitchOffer = { [weak self] offer in self?.offerSwitch(offer) }
         let recorder = recorder
         Task {
             guard await MicrophoneSource.requestAccess() else {
@@ -80,6 +81,29 @@ final class AppModel {
             }
             recorder.detectionLanguage = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
             await recorder.runDetection(SignalSampler())
+        }
+    }
+
+    /// A second call app took the mic during a live Meeting: offer to move the Meeting to it.
+    private func offerSwitch(_ offer: Recorder.SwitchOffer) {
+        let recorder = recorder
+        Task {
+            await Notifier.post(
+                title: "\(offer.provider) is using the microphone.",
+                body: "Carbon is still transcribing “\(offer.meeting.title)”.",
+                actions: [(id: "switch", title: "Switch to \(offer.provider)")]
+            ) { [weak self] action in
+                // An offer outlives its Meeting in Notification Center: only the Meeting it named can switch.
+                guard action == "switch", case .live(let meeting) = recorder.state, meeting.id == offer.meeting.id
+                else { return }
+                Task {
+                    do {
+                        try await recorder.switchMeeting(to: offer.app)
+                    } catch {
+                        self?.present(error, title: "Carbon couldn't switch Meetings")
+                    }
+                }
+            }
         }
     }
 

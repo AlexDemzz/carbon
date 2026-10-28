@@ -47,6 +47,15 @@ public final class Recorder {
     public var detectionLanguage: Locale?
     /// Called when Detection could not start or save a Meeting.
     @ObservationIgnored public var onDetectionFailure: (@MainActor (any Error) -> Void)?
+    /// Called when another app's start signal arrives during the live Meeting, to offer "Switch to <app>".
+    @ObservationIgnored public var onSwitchOffer: (@MainActor (SwitchOffer) -> Void)?
+
+    /// Another Meeting App wants the microphone while `meeting` is live.
+    public struct SwitchOffer: Equatable, Sendable {
+        public var app: MeetingApp
+        public var provider: String
+        public var meeting: LiveMeeting
+    }
 
     private let microphone: any AudioSource
     private let systemAudio: @Sendable (MeetingApp?) -> any AudioSource
@@ -63,6 +72,8 @@ public final class Recorder {
     private let makeID: @Sendable () -> UUID
     private var detector: Detector
     var recording: Recording?
+    /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
+    private var filings: [UUID: Task<Void, Never>] = [:]
     /// The last time the stream that tells whether the Meeting is still going was not silent.
     private let lastSound = LastSound()
 
@@ -152,23 +163,29 @@ public final class Recorder {
         for await snapshot in source.micSnapshots() {
             await observe(snapshot)
         }
+        while let filing = filings.values.first {
+            await filing.value
+        }
     }
 
     private func observe(_ snapshot: MicSnapshot) async {
         let signals = Detector.Signals(
-            time: snapshot.time, micHolders: snapshot.micHolders, lastSound: lastSound.value,
-            ignoredApps: ignoredApps)
+            time: snapshot.time, micHolders: snapshot.micHolders, assertions: snapshot.assertions,
+            lastSound: lastSound.value, ignoredApps: ignoredApps)
         for command in detector.observe(signals) {
             do {
                 switch command {
                 case .start(let app):
-                    guard let language = detectionLanguage, state == .idle else {
+                    guard let language = detectionLanguage, recording == nil else {
                         detector.meetingStopped()
                         continue
                     }
                     try await begin(language: language, app: app, mode: .auto)
                 case .end:
-                    if case .live = state { try await finish() }
+                    if recording != nil { try finishInBackground() }
+                case .offerSwitch(let app):
+                    guard case .live(let meeting) = state else { continue }
+                    onSwitchOffer?(SwitchOffer(app: app, provider: vendorTable.provider(for: app), meeting: meeting))
                 }
             } catch {
                 onDetectionFailure?(error)
@@ -179,7 +196,7 @@ public final class Recorder {
     /// Starts a manual Meeting on the microphone (Me) and the call's audio (Them), transcribed in `language`.
     /// The app holding the mic, if any, becomes its Meeting App, and the usual stop rules apply.
     public func start(language: Locale) async throws {
-        guard state == .idle, recording == nil else { throw Failure.notIdle }
+        guard recording == nil else { throw Failure.notIdle }
         let app = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
         try await begin(language: language, app: app, mode: .manual)
     }
@@ -190,6 +207,15 @@ public final class Recorder {
         guard recording != nil, case .live = state else { throw Failure.notLive }
         detector.meetingStopped()
         return try await finish()
+    }
+
+    /// The person took "Switch to <app>": ends the live Meeting as usual and starts one on `app` at once,
+    /// in the same Meeting Language. The ended Meeting is filed meanwhile.
+    public func switchMeeting(to app: MeetingApp) async throws {
+        guard recording != nil, case .live(let meeting) = state else { throw Failure.notLive }
+        detector.meetingSwitched(to: app, at: now())
+        try finishInBackground()
+        try await begin(language: meeting.language, app: app, mode: .auto)
     }
 
     /// Ends the live Meeting and keeps nothing.
@@ -206,7 +232,7 @@ public final class Recorder {
     }
 
     private func begin(language: Locale, app: MeetingApp?, mode: InProgressMeeting.State.Mode) async throws {
-        guard state == .idle, recording == nil else { throw Failure.notIdle }
+        guard recording == nil else { throw Failure.notIdle }
         do {
             try await open(language: language, app: app, mode: mode)
         } catch {
@@ -251,21 +277,51 @@ public final class Recorder {
 
     @discardableResult
     private func finish() async throws -> URL {
+        let (meeting, file) = try close()
+        defer { settle(meeting) }
+        return try await file()
+    }
+
+    /// Ends a Meeting Detection ended without holding up Detection: the next Meeting can start while it is filed.
+    private func finishInBackground() throws {
+        let (meeting, file) = try close()
+        filings[meeting.id] = Task {
+            do {
+                _ = try await file()
+            } catch {
+                onDetectionFailure?(error)
+            }
+            settle(meeting)
+            filings[meeting.id] = nil
+        }
+    }
+
+    /// Stops the live Meeting's capture. Returns the work that files it.
+    private func close() throws -> (LiveMeeting, @MainActor () async throws -> URL) {
         guard let recording, case .live(let meeting) = state else { throw Failure.notLive }
         let end = now()
         state = .finishing(meeting)
-        defer {
-            self.recording = nil
+        self.recording = nil
+        do {
+            try recording.me.close()
+            try recording.them.close()
+        } catch {
             state = .idle
+            throw error
         }
-        try recording.me.close()
-        try recording.them.close()
         let (me, them) = (recording.me.session, recording.them.session)
-        return try await file(meeting, end: end, folder: recording.folder) {
-            async let meWords = me.finish()
-            async let themWords = them.finish()
-            return (try await meWords, try await themWords)
-        }
+        return (meeting, {
+            try await self.file(meeting, end: end, folder: recording.folder) {
+                async let meWords = me.finish()
+                async let themWords = them.finish()
+                return (try await meWords, try await themWords)
+            }
+        })
+    }
+
+    /// A filed Meeting leaves the state, unless another Meeting has started meanwhile.
+    private func settle(_ meeting: LiveMeeting) {
+        if state == .finishing(meeting) { state = .idle }
     }
 
     /// The end of a Meeting, live or recovered: diarization, Library write, kept audio, cleanup.

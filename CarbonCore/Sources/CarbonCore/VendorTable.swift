@@ -9,6 +9,46 @@ public struct VendorTable: Sendable, Decodable {
     public var neverIgnored: Set<String>
     /// Native Meeting App bundle ID → Provider.
     public var providers: [String: String]
+    /// Native call assertions: one means a call is live in that app.
+    public var callAssertions: [AssertionMatcher]
+    /// Chromium's WebRTC assertion: logged only, it never starts anything.
+    public var webRTCAssertions: [AssertionMatcher]
+
+    /// Matches an assertion on its owning app, its name and its type. A field left out matches anything.
+    public struct AssertionMatcher: Sendable, Decodable {
+        public var apps: Set<String>?
+        public var name: String?
+        /// Modern type names; their legacy spellings match too.
+        public var types: Set<String>?
+
+        func matches(_ assertion: PowerAssertion) -> Bool {
+            (apps?.contains(assertion.app.bundleID) ?? true)
+                && (name.map { $0.caseInsensitiveCompare(assertion.name) == .orderedSame } ?? true)
+                && (types?.contains(VendorTable.modernType(assertion.type)) ?? true)
+        }
+    }
+
+    public enum AssertionKind: Equatable, Sendable {
+        case call
+        case webRTC
+    }
+
+    /// Legacy assertion types, as Chromium and older apps still create them, to their modern names.
+    static let legacyTypes = [
+        "NoDisplaySleepAssertion": "PreventUserIdleDisplaySleep",
+        "NoIdleSleepAssertion": "PreventUserIdleSystemSleep",
+    ]
+
+    static func modernType(_ type: String) -> String {
+        legacyTypes[type] ?? type
+    }
+
+    /// Whether `assertion` is a native call, Chromium's WebRTC assertion, or neither.
+    public func kind(of assertion: PowerAssertion) -> AssertionKind? {
+        if callAssertions.contains(where: { $0.matches(assertion) }) { return .call }
+        if webRTCAssertions.contains(where: { $0.matches(assertion) }) { return .webRTC }
+        return nil
+    }
 
     public static let shipped: VendorTable = {
         guard let url = Bundle.module.url(forResource: "VendorTable", withExtension: "json"),

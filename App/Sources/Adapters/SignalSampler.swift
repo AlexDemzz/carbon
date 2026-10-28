@@ -6,6 +6,7 @@ import Synchronization
 /// Detection's mic signal: which apps hold the microphone, from Core Audio's process list.
 /// Property listeners on the list and on each process's `IsRunningInput` / `IsRunningOutput` sample at once;
 /// a 1 s poll is the backstop, so a snapshot arrives at least every second for the Detector's timers.
+/// Every 3 s while the mic is held, a snapshot also carries the power assertions (native call and WebRTC ones).
 final class SignalSampler: SignalSource {
     private let vendorTable: VendorTable
     private let log: DiagnosticLog
@@ -36,6 +37,9 @@ final class SignalSampler: SignalSource {
             /// The listeners installed on each process, to remove them when the process goes. Never read for sampling.
             var processListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
             var stopped = false
+            var lastAssertionPoll: Date?
+            /// The last poll found a call or WebRTC assertion.
+            var callAssertionsSeen = false
         }
 
         private static let watched = [kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyIsRunningOutput]
@@ -117,7 +121,37 @@ final class SignalSampler: SignalSource {
                         "Unmatched mic holder: \(owner.bundleID) (\(owner.name))")
                 }
             }
-            emit(MicSnapshot(time: Date(), micHolders: holders))
+            let now = Date()
+            let assertions = pollAssertions(at: now, micHeld: !holders.isEmpty)
+            emit(MicSnapshot(time: now, micHolders: holders, assertions: assertions))
         }
+
+        /// Polls the power assertions every 3 s while the mic is held, and on until the last call or WebRTC
+        /// assertion seen is gone, so the Detector sees a call's assertion released after its mic.
+        private func pollAssertions(at now: Date, micHeld: Bool) -> [PowerAssertion]? {
+            let due = state.withLock { state in
+                guard micHeld || state.callAssertionsSeen,
+                    state.lastAssertionPoll.map({ now.timeIntervalSince($0) >= Self.assertionPollInterval }) ?? true
+                else { return false }
+                state.lastAssertionPoll = now
+                return true
+            }
+            guard due else { return nil }
+            let assertions = PowerAssertions.all()
+            var seen = false
+            for assertion in assertions {
+                guard let kind = vendorTable.kind(of: assertion) else { continue }
+                seen = true
+                let label = kind == .call ? "Call" : "WebRTC"
+                log.writeOnce(
+                    key: "assertion:\(label):\(assertion.app.bundleID):\(assertion.name)",
+                    "\(label) assertion: \(assertion.app.bundleID) (\(assertion.app.name)) "
+                        + "\"\(assertion.name)\" \(assertion.type)")
+            }
+            state.withLock { $0.callAssertionsSeen = seen }
+            return assertions
+        }
+
+        private static let assertionPollInterval: TimeInterval = 3
     }
 }

@@ -41,14 +41,35 @@ public protocol Transcriber: Sendable {
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession
 }
 
+/// One entry of `IOPMCopyAssertionsByProcess()`, with its process resolved to its owning app.
+public struct PowerAssertion: Equatable, Sendable {
+    public var app: MeetingApp
+    /// `AssertName`.
+    public var name: String
+    /// `AssertType`, as created: modern (`PreventUserIdleDisplaySleep`) or legacy (`NoDisplaySleepAssertion`).
+    public var type: String
+    /// `AssertionId`. A native call app creates a new one per call.
+    public var id: Int
+
+    public init(app: MeetingApp, name: String, type: String, id: Int) {
+        self.app = app
+        self.name = name
+        self.type = type
+        self.id = id
+    }
+}
+
 /// What the microphone looked like at one moment: the apps holding it, each resolved to its owning app.
 public struct MicSnapshot: Equatable, Sendable {
     public var time: Date
     public var micHolders: [MeetingApp]
+    /// The power assertions, when they were polled at this snapshot (every 3 s at most); nil between polls.
+    public var assertions: [PowerAssertion]?
 
-    public init(time: Date, micHolders: [MeetingApp]) {
+    public init(time: Date, micHolders: [MeetingApp], assertions: [PowerAssertion]? = nil) {
         self.time = time
         self.micHolders = micHolders
+        self.assertions = assertions
     }
 }
 
