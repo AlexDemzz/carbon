@@ -27,7 +27,7 @@ struct RecorderTests {
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
-        keepAudio: Bool = false, trash: URL? = nil
+        keepAudio: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
@@ -38,6 +38,7 @@ struct RecorderTests {
             transcriber: transcriber,
             diarizer: diarizer,
             diarizationTimeout: { _ in .milliseconds(100) },
+            summarizer: summarizer ?? NoSummarizer(),
             library: makeLibrary(trash: trash),
             keepAudio: { keepAudio },
             inProgressFolder: support.url.appending(path: "InProgress"),
@@ -96,6 +97,58 @@ struct RecorderTests {
             ]],
             "deleted": [],
         ] as NSDictionary)
+    }
+
+    @Test func theSummarizerGetsTheTranscriptInTheMeetingLanguageOnlyOnceTheFileIsOnDisk() async throws {
+        let file = library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")
+        let summarizer = SpySummarizer(file: file)
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"), summarizer: summarizer)
+
+        try await recorder.start(language: Locale(identifier: "fr_FR"))
+        clock.advance(by: 125)
+        try await recorder.stop()
+
+        #expect(summarizer.calls == [SpySummarizer.Call(
+            transcript: """
+                ## Transcript
+
+                **Me** [0:01] Hello everybody, can you hear me?
+
+                **Me** [0:15] Okay, let's start with the agenda.
+
+                """,
+            language: Locale(identifier: "fr_FR"),
+            fileWasOnDisk: true)])
+        let markdown = try String(contentsOf: file, encoding: .utf8)
+        #expect(!markdown.contains("## Summary"))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"]
+            as? [NSDictionary])?.first)
+        #expect(entry["summary"] as? String == "off")
+    }
+
+    @Test func aSummarizerThatThrowsStillLeavesTheMeetingFiledWithSummaryOff() async throws {
+        let file = library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")
+        let recorder = makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"), summarizer: SpySummarizer(file: file, fails: true))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 125)
+        let filed = try await recorder.stop()
+
+        #expect(filed == file)
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ## Transcript
+
+            **Me** [0:01] Hello everybody, can you hear me?
+
+            **Me** [0:15] Okay, let's start with the agenda.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"]
+            as? [NSDictionary])?.first)
+        #expect(entry["summary"] as? String == "off")
+        #expect(!FileManager.default.fileExists(
+            atPath: support.url.appending(path: "InProgress/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21").path))
     }
 
     @Test func aLiveMeetingRecordsIntoItsInProgressFolderUntilItIsStopped() async throws {

@@ -102,6 +102,7 @@ public final class Recorder {
     let transcriber: any Transcriber
     private let diarizer: any Diarizer
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
+    private let summarizer: any Summarizer
     private let library: Library
     private let keepAudio: @Sendable () -> Bool
     let vendorTable: VendorTable
@@ -154,6 +155,7 @@ public final class Recorder {
         transcriber: any Transcriber,
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
+        summarizer: any Summarizer = NoSummarizer(),
         library: Library,
         keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
@@ -168,6 +170,7 @@ public final class Recorder {
         self.transcriber = transcriber
         self.diarizer = diarizer
         self.diarizationTimeout = diarizationTimeout
+        self.summarizer = summarizer
         self.library = library
         self.keepAudio = keepAudio
         self.vendorTable = vendorTable
@@ -187,6 +190,7 @@ public final class Recorder {
         transcriber: any Transcriber,
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
+        summarizer: any Summarizer = NoSummarizer(),
         library: Library,
         keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
@@ -196,7 +200,8 @@ public final class Recorder {
     ) {
         self.init(
             microphone: microphone, systemAudio: { _ in systemAudio }, systemAudioPermission: systemAudioPermission,
-            transcriber: transcriber, diarizer: diarizer, diarizationTimeout: diarizationTimeout, library: library,
+            transcriber: transcriber, diarizer: diarizer, diarizationTimeout: diarizationTimeout,
+            summarizer: summarizer, library: library,
             keepAudio: keepAudio, inProgressFolder: inProgressFolder, timeZone: timeZone, now: now, makeID: makeID)
     }
 
@@ -433,7 +438,7 @@ public final class Recorder {
         if state == .finishing(meeting) { state = .idle }
     }
 
-    /// The end of a Meeting, live or recovered: diarization, Library write, kept audio, cleanup.
+    /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, cleanup.
     func file(
         _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
         words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
@@ -464,6 +469,7 @@ public final class Recorder {
                 return turn
             }
         }
+        let transcript = TranscriptBuilder.body(turns)
         let file = try library.create(
             FinishedMeeting(
                 id: meeting.id, title: meeting.title, start: meeting.start, end: end, timeZone: timeZone,
@@ -471,7 +477,9 @@ public final class Recorder {
                 providerMeetingId: meeting.event.flatMap(matcher.link(in:))?.meetingId,
                 calendarEventId: meeting.event?.id, participants: participants,
                 transcriptKind: split == nil ? .fallback : .speakers, speakers: speakers),
-            transcript: TranscriptBuilder.body(turns))
+            transcript: transcript)
+        // v1 inserts no Summary: NoSummarizer answers nil, and a failure leaves `summary: "off"` too.
+        _ = try? await summarizer.summarize(transcript: transcript, language: meeting.language)
         if keepAudio() {
             // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
             try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)

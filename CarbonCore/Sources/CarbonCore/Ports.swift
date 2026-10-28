@@ -89,6 +89,30 @@ public protocol Diarizer: Sendable {
     func diarize(_ audio: URL) async throws -> Diarization
 }
 
+/// A Meeting's recap: what was said and what comes next.
+public struct Summary: Equatable, Sendable {
+    public var keyPoints: [String]
+    public var nextSteps: [String]
+
+    public init(keyPoints: [String], nextSteps: [String]) {
+        self.keyPoints = keyPoints
+        self.nextSteps = nextSteps
+    }
+}
+
+/// Summarizes a Meeting's Transcript once its file is on disk.
+public protocol Summarizer: Sendable {
+    /// `transcript` is the `## Transcript` section as written. Nil when summarizing is off.
+    func summarize(transcript: String, language: Locale) async throws -> Summary?
+}
+
+/// v1's Summarizer: "On-device summary quality" dropped the Summary, so every Meeting keeps `summary: "off"`.
+public struct NoSummarizer: Summarizer {
+    public init() {}
+
+    public func summarize(transcript: String, language: Locale) async throws -> Summary? { nil }
+}
+
 /// One stream being transcribed live.
 public protocol TranscriptionSession: AnyObject, Sendable {
     /// The format `append` expects (the analyzer format).

@@ -9,7 +9,9 @@ Spec: "Summary (pending …)", UI (Meeting panel).
 
 **Blocked by:** 08 (Main window: Meeting list, search and Meeting panel), 09 (Meeting actions, the editor window, Local Edits and reconcile).
 
-**Status:** ready-for-agent
+**Status:** done
+
+Built (drop path): the `Summarizer` port and the `Summary` type in `CarbonCore/Ports.swift`, the no-op `NoSummarizer` (it answers nil, which means off), and the Recorder wiring. The Recorder calls the Summarizer after `library.create`, so the file is already on disk, and it files the Meeting the same way when the Summarizer throws. `AppModel` passes `NoSummarizer()`. Tests in `RecorderTests`: the Summarizer gets the `## Transcript` section in the Meeting Language once the file is on disk, and a throwing Summarizer still leaves the Meeting filed with `summary: "off"`. The unchecked boxes below are the ship path, deferred to v1.1+ with the verdict. `Library.insertSummary` is deferred with them.
 
 - [ ] Summarizer adapter: `SystemLanguageModel.default`, guided generation, greedy sampling, a fresh session per pass, line-boundary chunks sized with `tokenCount(for:)` against `contextSize`, and one repair pass on invalid output.
 - [ ] The Summary is rendered under `## Summary` with `### Key points` and `### Next steps` (next steps left out when empty). It is inserted only while `## Transcript` exists, and `writtenHash` is kept correct as in Library's surgical-write rule.
@@ -17,4 +19,5 @@ Spec: "Summary (pending …)", UI (Meeting panel).
 - [ ] A guardrail error, overflow or failed repair gives `failed`, with no retry, and the panel shows "No Summary for this Meeting.".
 - [ ] The panel shows Key points and Next steps notes above the Transcript.
 - [ ] Recorder tests with a Summarizer fake: Summary inserted after the Transcript; unavailable then retried; guardrail failure; a Local Edit before insertion keeps the person's text.
-- [ ] The spec's Summary section is updated to the verdict's final shape.
+- [x] The spec's Summary section is updated to the verdict's final shape.
+- [x] Drop path: a no-op Summarizer, `summary: "off"`, no section and no notes; the port is wired into the Recorder and the app.

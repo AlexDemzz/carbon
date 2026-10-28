@@ -56,6 +56,7 @@ final class AppModel {
             systemAudioPermission: SystemAudioRecordingPermission.current,
             transcriber: SpeechTranscriberAdapter(),
             diarizer: HelperProcessDiarizer(),
+            summarizer: NoSummarizer(),
             library: library,
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
             inProgressFolder: support.appending(path: "InProgress"))
