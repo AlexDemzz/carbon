@@ -11,11 +11,17 @@ struct RecorderTests {
     let clock = TestClock(date("2026-10-23T13:15:00Z"))
     let meetingID = UUID(uuidString: "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")!
 
-    func makeRecorder(transcriber: ReplayTranscriber, seconds: Double = 3) -> Recorder {
+    func makeRecorder(
+        transcriber: ReplayTranscriber, seconds: Double = 3,
+        microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
+        systemAudioPermission: SystemAudioPermission = .granted
+    ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
         return Recorder(
-            audioSource: FakeAudioSource(seconds: seconds),
+            microphone: microphone ?? FakeAudioSource(seconds: seconds),
+            systemAudio: systemAudio ?? FakeAudioSource(seconds: seconds),
+            systemAudioPermission: { systemAudioPermission },
             transcriber: transcriber,
             library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }),
             inProgressFolder: support.url.appending(path: "InProgress"),
@@ -26,7 +32,7 @@ struct RecorderTests {
     }
 
     @Test func stoppingAManualMeetingWritesItsMarkdownFileAndIndexEntry() async throws {
-        let recorder = makeRecorder(transcriber: try ReplayTranscriber(fixture: "me-words"))
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"))
 
         try await recorder.start(language: Locale(identifier: "en_US"))
         clock.advance(by: 125)
@@ -77,7 +83,7 @@ struct RecorderTests {
     }
 
     @Test func aLiveMeetingRecordsIntoItsInProgressFolderUntilItIsStopped() async throws {
-        let recorder = makeRecorder(transcriber: try ReplayTranscriber(fixture: "me-words"), seconds: 7)
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"), seconds: 7)
         let folder = support.url.appending(path: "InProgress/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")
 
         try await recorder.start(language: Locale(identifier: "en_US"))
@@ -100,7 +106,7 @@ struct RecorderTests {
     }
 
     @Test func discardingAMeetingKeepsNothing() async throws {
-        let recorder = makeRecorder(transcriber: try ReplayTranscriber(fixture: "me-words"))
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"))
 
         try await recorder.start(language: Locale(identifier: "en_US"))
         clock.advance(by: 60)
@@ -113,7 +119,7 @@ struct RecorderTests {
     }
 
     @Test func theMeetingIsTranscribedInTheChosenLanguage() async throws {
-        let transcriber = try ReplayTranscriber(fixture: "me-words")
+        let transcriber = try ReplayTranscriber(me: "me-words")
         let recorder = makeRecorder(transcriber: transcriber)
 
         try await recorder.start(language: Locale(identifier: "en_US"))
@@ -122,8 +128,67 @@ struct RecorderTests {
             language: Locale(identifier: "en_US"))))
         try await recorder.stop()
 
-        #expect(transcriber.localesHeard == [Locale(identifier: "en_US")])
+        #expect(transcriber.localesHeard == [Locale(identifier: "en_US"), Locale(identifier: "en_US")], "Me and Them")
         #expect(recorder.state == .idle)
+    }
+
+    @Test func aMeetingTranscribesTheMicAsMeAndTheCallsAudioAsThem() async throws {
+        let recorder = makeRecorder(
+            transcriber: try ReplayTranscriber(me: "ami-ES2004a-me-opening", them: "ami-ES2004a-them-opening"),
+            microphone: try WAVAudioSource(fixture: "ami-ES2004a-me-clip"),
+            systemAudio: try WAVAudioSource(fixture: "ami-ES2004a-them-clip"))
+        let folder = support.url.appending(path: "InProgress/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        for stream in ["me.caf", "them.caf"] {
+            let audio = try AVAudioFile(forReading: folder.appending(path: stream))
+            #expect(Double(audio.length) / audio.fileFormat.sampleRate == 5, "\(stream): 6 s heard, the first 5 s flushed")
+        }
+
+        clock.advance(by: 40)
+        let file = try await recorder.stop()
+
+        let markdown = try String(contentsOf: file, encoding: .utf8)
+        #expect(markdown.hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:10] Are we - we're not allowed to dim the lights, so people can see that a bit better. Am I supposed to be standing up there? Um, yeah.
+
+            **Them** [0:24] So we've got both of these clipped on. Is she gonna answer me or not?
+
+            **Me** [0:29] Yeah, I've got. Yes.
+
+            **Them** [0:31] Right, both of them. Okay.
+
+            """))
+    }
+
+    @Test func withoutSystemAudioRecordingPermissionNoMeetingStarts() async throws {
+        let recorder = makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"), systemAudioPermission: .denied)
+
+        await #expect(throws: Recorder.Failure.systemAudioRecordingDenied) {
+            try await recorder.start(language: Locale(identifier: "en_US"))
+        }
+
+        #expect(recorder.state == .idle)
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "InProgress").path))
+    }
+
+    @Test(arguments: [SystemAudioPermission.notDetermined, .unknown])
+    func aMeetingStillStartsWhenThePermissionIsNotKnownToBeDenied(permission: SystemAudioPermission) async throws {
+        let recorder = makeRecorder(transcriber: try ReplayTranscriber(me: "me-words"), systemAudioPermission: permission)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        guard case .live = recorder.state else {
+            Issue.record("expected a live Meeting, got \(recorder.state)")
+            return
+        }
+        await recorder.discard()
     }
 
     func jsonObject(at url: URL) throws -> NSDictionary {

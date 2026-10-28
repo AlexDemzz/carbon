@@ -14,7 +14,22 @@ public struct TranscribedWord: Equatable, Sendable, Codable {
     }
 }
 
-/// A live audio stream, such as the microphone (the Me stream).
+/// The two streams of a Meeting: the microphone (Me) and the call's audio (Them).
+public enum AudioStream: Hashable, Sendable {
+    case me
+    case them
+}
+
+/// The System Audio Recording permission, as `TCCAccessPreflight` reports it. Never inferred from audio.
+public enum SystemAudioPermission: Sendable {
+    case granted
+    case denied
+    case notDetermined
+    /// The private preflight could not be loaded.
+    case unknown
+}
+
+/// A live audio stream, such as the microphone (Me) or a system audio tap (Them).
 public protocol AudioSource: Sendable {
     /// Starts capture. `onBuffer` receives every captured buffer in order, on any thread.
     func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws
@@ -23,7 +38,7 @@ public protocol AudioSource: Sendable {
 
 /// Speech-to-text for one stream, such as SpeechTranscriber.
 public protocol Transcriber: Sendable {
-    func start(locale: Locale) async throws -> any TranscriptionSession
+    func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession
 }
 
 /// One stream being transcribed live.
