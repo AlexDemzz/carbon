@@ -134,6 +134,13 @@ jobs:
         working-directory: scripts/release
         run: python3 -m unittest -v
 
+      - name: Test the release Worker
+        working-directory: worker
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run check-types
+
       # 4. DMG with the app and an Applications symlink
       - name: Make the DMG
         env:
@@ -198,7 +205,16 @@ jobs:
           jq -n --arg version "$VERSION" --argjson build "$BUILD" --arg file "$DMG" \
             '{version: $version, build: $build, file: $file}' > build/latest.json
 
-      # 8. Upload: DMG, then appcast.xml, then latest.json, so nothing points at a missing file
+      # 8. Release Worker (worker/): its zone routes answer /download, /appcast.xml and /releases/*
+      - name: Deploy the release Worker
+        if: steps.mode.outputs.release == 'true'
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      # 9. Upload: DMG, then appcast.xml, then latest.json, so nothing points at a missing file
       - name: Upload to R2
         if: steps.mode.outputs.release == 'true'
         env:
@@ -216,7 +232,7 @@ jobs:
       - name: Report a dry run
         if: steps.mode.outputs.release != 'true'
         run: |
-          echo "::notice::Dry run done: unsigned build, tests and DMG only. Skipped: keychain import, Developer ID export, DMG signing, notarization, stapling, sign_update, appcast and upload."
+          echo "::notice::Dry run done: unsigned build, tests and DMG only. Skipped: keychain import, Developer ID export, DMG signing, notarization, stapling, sign_update, appcast, Worker deploy and upload."
 
       - name: Upload the dry-run DMG
         if: steps.mode.outputs.release != 'true'
