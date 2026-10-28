@@ -291,6 +291,18 @@ final class AppModel {
         perform("Carbon couldn't rename the Meeting") { try library.rename(meeting.id, title: title) }
     }
 
+    /// Names a Speaker: only its Turn headers change in the file. Returns false, after telling the person, when it couldn't.
+    @discardableResult
+    func renameSpeaker(_ meeting: ListedMeeting, label: String, to name: String) -> Bool {
+        do {
+            try library.renameSpeaker(meeting.id, label: label, name: name)
+            return true
+        } catch {
+            present(error, title: "Carbon couldn't name the Speaker")
+            return false
+        }
+    }
+
     func delete(_ meeting: ListedMeeting) {
         let list = library.meetings
         perform("Carbon couldn't delete the Meeting") {

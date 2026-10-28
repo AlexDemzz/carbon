@@ -15,7 +15,13 @@ struct EditorWindow: View {
     var body: some View {
         if let meeting {
             VStack(spacing: 0) {
-                SpeakerChips(speakers: Self.speakers(in: text))
+                SpeakerChips(
+                    model: model, meeting: meeting, speakers: Self.speakers(in: text),
+                    isRenameBlocked: hasUnsavedChanges
+                ) {
+                    text = model.currentMarkdown(model.library.meetings.first { $0.id == id } ?? meeting)
+                    savedText = text
+                }
                 Divider()
                 TextEditor(text: $text)
                     .font(.body.monospaced())
@@ -60,13 +66,20 @@ struct EditorWindow: View {
     }
 }
 
+/// A rename writes the file on disk, so it waits until the person's own changes are saved.
 private struct SpeakerChips: View {
+    let model: AppModel
+    let meeting: ListedMeeting
     let speakers: [String]
+    let isRenameBlocked: Bool
+    let didRename: () -> Void
 
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(speakers, id: \.self) { speaker in
-                Text(speaker)
+                SpeakerMenu(model: model, meeting: meeting, label: speaker, didRename: didRename)
+                    .disabled(isRenameBlocked)
+                    .help(isRenameBlocked && speaker != TranscriptBuilder.me ? "Save your changes to rename Speakers." : "")
                     .font(.callout)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -76,7 +89,7 @@ private struct SpeakerChips: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Speakers")
     }
 }
