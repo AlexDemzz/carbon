@@ -8,7 +8,10 @@ import Speech
 @Observable
 final class AppModel {
     let recorder: Recorder
-    private let library: Library
+    let library: Library
+    /// Set by a view that can open SwiftUI windows, since the global shortcut fires outside SwiftUI.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
+    @ObservationIgnored private var showCarbonShortcut: GlobalHotKey?
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
@@ -25,7 +28,29 @@ final class AppModel {
             transcriber: SpeechTranscriberAdapter(),
             library: library,
             inProgressFolder: support.appending(path: "InProgress"))
+        do {
+            try library.load()
+        } catch {
+            present(error, title: "Carbon couldn't read its Library")
+        }
+        showCarbonShortcut = GlobalHotKey { [weak self] in self?.toggleMainWindow() }
     }
+
+    /// Show Carbon: brings the main window forward, or hides Carbon when it is already in front.
+    func toggleMainWindow() {
+        if NSApp.isActive, NSApp.keyWindow?.identifier?.rawValue.hasPrefix(Self.mainWindowID) == true {
+            NSApp.hide(nil)
+        } else {
+            showMainWindow()
+        }
+    }
+
+    func showMainWindow() {
+        openMainWindow?()
+        NSApp.activate()
+    }
+
+    static let mainWindowID = "main"
 
     func start() {
         Task {
