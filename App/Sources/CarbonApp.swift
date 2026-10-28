@@ -10,11 +10,18 @@ struct CarbonApp: App {
 
     var body: some Scene {
         Window("Carbon", id: AppModel.mainWindowID) {
-            MainWindow(library: model.library)
+            MainWindow(model: model)
         }
         .defaultSize(width: 980, height: 640)
         .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
+
+        WindowGroup("Edit Meeting", id: AppModel.editorWindowID, for: UUID.self) { $id in
+            if let id { EditorWindow(model: model, id: id) }
+        }
+        .defaultSize(width: 720, height: 640)
+        .windowResizability(.contentMinSize)
+        .restorationBehavior(.disabled)
 
         MenuBarExtra {
             MenuBarMenu(model: model, updater: updater)
@@ -52,6 +59,9 @@ private struct HandsOpenWindowToModel: ViewModifier {
     @Environment(\.openWindow) private var openWindow
 
     func body(content: Content) -> some View {
-        content.task { model.openMainWindow = { [openWindow] in openWindow(id: AppModel.mainWindowID) } }
+        content.task {
+            model.openMainWindow = { [openWindow] in openWindow(id: AppModel.mainWindowID) }
+            model.openEditor = { [openWindow] id in openWindow(id: AppModel.editorWindowID, value: id) }
+        }
     }
 }

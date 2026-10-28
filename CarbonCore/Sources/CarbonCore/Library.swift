@@ -12,17 +12,25 @@ public final class Library {
     public let folder: URL
     let indexFile: URL
     let backupsFolder: URL
-    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored let now: @Sendable () -> Date
     @ObservationIgnored private var lastBackup: Date?
+    @ObservationIgnored let moveToTrash: @Sendable (URL) throws -> Void
 
     /// The Meetings whose file Carbon could read, newest first. Filled by `load()`, kept current by Carbon's writes.
-    public private(set) var meetings: [ListedMeeting] = []
+    public internal(set) var meetings: [ListedMeeting] = []
 
     /// - Parameters:
     ///   - folder: the Library folder, `~/Documents/Carbon` by default.
     ///   - supportFolder: where `meetings.json` and `Backups/` live, `~/Library/Application Support/Carbon`.
-    public init(folder: URL, supportFolder: URL, now: @escaping @Sendable () -> Date = Date.init) {
+    ///   - moveToTrash: how Delete gets rid of a file, the Finder's Trash by default.
+    public init(
+        folder: URL, supportFolder: URL, now: @escaping @Sendable () -> Date = Date.init,
+        moveToTrash: @escaping @Sendable (URL) throws -> Void = {
+            try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
+        }
+    ) {
         self.folder = folder
+        self.moveToTrash = moveToTrash
         indexFile = supportFolder.appending(path: "meetings.json")
         backupsFolder = supportFolder.appending(path: "Backups")
         self.now = now
@@ -69,7 +77,7 @@ public final class Library {
             .sorted(by: Self.newestFirst)
     }
 
-    private static func newestFirst(_ a: ListedMeeting, _ b: ListedMeeting) -> Bool {
+    static func newestFirst(_ a: ListedMeeting, _ b: ListedMeeting) -> Bool {
         a.start > b.start
     }
 
@@ -78,7 +86,7 @@ public final class Library {
         return try JSONDecoder().decode(MeetingIndex.self, from: Data(contentsOf: indexFile))
     }
 
-    private func save(_ index: MeetingIndex) throws {
+    func save(_ index: MeetingIndex) throws {
         try FileManager.default.createDirectory(
             at: indexFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try backUpIfDue()
