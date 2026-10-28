@@ -63,21 +63,14 @@ struct TranscriptBuilderTests {
             """)
     }
 
-    @Test func turnHeadersAreReadBackWithTheAnchoredPattern() {
-        #expect(TranscriptBuilder.header(#"**Sam Rivera** [1:02:05] Use \*args, ok."#)
-            == TurnHeader(speaker: "Sam Rivera", start: 3_725, text: #"Use \*args, ok."#))
-        #expect(TranscriptBuilder.header("**Me** [0:10] Hello.") == TurnHeader(speaker: "Me", start: 10, text: "Hello."))
-        #expect(TranscriptBuilder.header("Notes: **Me** [0:10] Hello.") == nil)
-        #expect(TranscriptBuilder.header("**Me** [0:1] Hello.") == nil)
-        #expect(TranscriptBuilder.header("**Me**[0:10] Hello.") == nil)
-    }
+    @Test func everyTurnWrittenForARealMeetingReadsBackThroughTheHeaderParser() throws {
+        let me = try words(fixture: "ami-ES2004a-me-words")
+        let them = try words(fixture: "ami-ES2004a-them-words")
 
-    @Test func everyTurnOfTheRealSampleReadsBackAsAHeader() throws {
-        let sample = try String(contentsOf: fixtureURL("ami-ES2004a-fallback", extension: "md"), encoding: .utf8)
-        let headers = sample.split(separator: "\n").compactMap(TranscriptBuilder.header)
+        let read = TranscriptBuilder.turns(inMarkdown: TranscriptBuilder.body(TranscriptBuilder.turns(me: me, them: them)))
 
-        #expect(headers.count == 120)
-        #expect(headers.last == TurnHeader(speaker: "Them", start: 1_048, text: "Yep."))
+        #expect(read.count == 120)
+        #expect(read.last == Turn(speaker: "Them", start: 1_048, text: "Yep."))
     }
 
     @Test func aPersonsNameBecomesALabelWithoutMarkupAndNeverAsAReservedOne() {

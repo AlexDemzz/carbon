@@ -13,20 +13,6 @@ public struct Turn: Equatable, Sendable {
     }
 }
 
-/// A Turn header read back from a Markdown line: `**Speaker** [m:ss] text`.
-public struct TurnHeader: Equatable, Sendable {
-    public var speaker: String
-    public var start: TimeInterval
-    /// The rest of the line, as written in the file (Markdown escapes included).
-    public var text: String
-
-    public init(speaker: String, start: TimeInterval, text: String) {
-        self.speaker = speaker
-        self.start = start
-        self.text = text
-    }
-}
-
 /// Turns the Transcriber's words into Turns and the `## Transcript` body, per "Transcript body format in Markdown".
 public enum TranscriptBuilder {
     public static let me = "Me"
@@ -77,14 +63,6 @@ public enum TranscriptBuilder {
         return (["## Transcript"] + lines).joined(separator: "\n\n") + "\n"
     }
 
-    /// Reads a Turn header with the anchored pattern `^\*\*(name)\*\* \[(time)\] `, or nil if the line isn't one.
-    public static func header(_ line: some StringProtocol) -> TurnHeader? {
-        guard let match = String(line).wholeMatch(of: headerPattern) else { return nil }
-        let parts = match.output.2.split(separator: ":").compactMap { Int($0) }
-        let seconds = parts.reduce(0) { $0 * 60 + $1 }
-        return TurnHeader(speaker: String(match.output.1), start: TimeInterval(seconds), text: String(match.output.3))
-    }
-
     /// The Speaker label a person's name is written as: `*`, `[` and `]` dropped, line breaks made spaces.
     /// Nil when nothing is left or the name is a reserved label (`Me`, `Them`).
     public static func label(forName name: String) -> String? {
@@ -95,8 +73,6 @@ public enum TranscriptBuilder {
         let reserved = [me, them].contains { $0.caseInsensitiveCompare(cleaned) == .orderedSame }
         return reserved ? nil : cleaned
     }
-
-    nonisolated(unsafe) private static let headerPattern = /\*\*([^*\n]+)\*\* \[(\d+:\d{2}(?::\d{2})?)\] (.*)/
 
     private static func sentences(_ words: [Word]) -> [[Word]] {
         var sentences: [[Word]] = []
