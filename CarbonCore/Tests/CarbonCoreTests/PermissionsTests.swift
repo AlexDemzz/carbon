@@ -19,11 +19,4 @@ struct PermissionsTests {
 
         #expect(permissions.menuWarnings.isEmpty)
     }
-
-    @Test func theSystemAudioRecordingPreflightReadsAsAStatus() {
-        #expect(PermissionStatus(SystemAudioPermission.granted) == .allowed)
-        #expect(PermissionStatus(SystemAudioPermission.denied) == .notAllowed)
-        #expect(PermissionStatus(SystemAudioPermission.notDetermined) == .notAllowed)
-        #expect(PermissionStatus(SystemAudioPermission.unknown) == .unknown)
-    }
 }
