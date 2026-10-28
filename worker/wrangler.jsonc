@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "carbon-releases",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-19",
+  "account_id": "677d9e313c814c2292d42400cfafa651",
+  "workers_dev": false,
+  // Zone routes run ahead of the landing Worker `carbon`, which owns the host as a Custom Domain
+  // and answers every path not listed here.
+  "routes": [
+    { "pattern": "carbon.alexandrejoly.me/download", "zone_name": "alexandrejoly.me" },
+    { "pattern": "carbon.alexandrejoly.me/appcast.xml", "zone_name": "alexandrejoly.me" },
+    { "pattern": "carbon.alexandrejoly.me/releases/*", "zone_name": "alexandrejoly.me" }
+  ],
+  "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "carbon-releases" }],
+  "observability": { "enabled": true }
+}

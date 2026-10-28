@@ -281,7 +281,7 @@ Each module is deep: a small interface over a lot of behavior.
 
 **Verdict of issues/10: drop.** Apple Foundation Models has an 8,192-token context on macOS 27. On the 18 AMI, ICSI and SUMM-RE Meetings it scored a mean usefulness of 2.7 in English and 2.1–2.9 in French, against a bar of 3. Each Summary carried 1.4–2.4 wrong or unsupported items, mostly invented next steps, and 1 Meeting in 18 hit a guardrail false positive. Speed passed (≤ 3 min per hour of audio).
 
-**v1:** the Summarizer port gets a no-op adapter and `summary` is `off` for every Meeting. `## Summary` is never written, and the Meeting panel shows no notes section. Nothing else changes: the port, the `summary` field and `insertSummary` stay, so a later model can be plugged in.
+**v1:** the Summarizer port gets a no-op adapter and `summary` is `off` for every Meeting. `## Summary` is never written, and the Meeting panel shows no notes section. Nothing else changes: the port and the `summary` field stay, so a later model can be plugged in. As built (ticket 18): `Summarizer.summarize(transcript:language:) async throws -> Summary?` in `CarbonCore/Ports.swift`, where nil means off. `NoSummarizer` always answers nil. The Recorder calls it after `library.create`, so the file is already on disk, and ignores both its answer and any error it throws. `Library.insertSummary`, the rendering and the retry are not built; they land with the v1.1 adapter, on `writeSurgically`.
 
 The design below is kept as the starting point for v1.1+, when the summary-eval harness passes on a newer model. Map-reduce was the better variant: fewer wrong items, and less noise in French.
 
@@ -356,27 +356,30 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
 - **GitHub Action** (in `AlexDemzz/carbon`, on `v*` tags, macOS 26 runner):
   1. import the Developer ID `.p12` into a temporary keychain;
   2. `xcodebuild archive` and export with the Developer ID method;
-  3. run the `CarbonCore` tests;
+  3. run the `CarbonCore` tests, the appcast script tests and the release Worker tests;
   4. build `Carbon-X.Y.Z.dmg` with `hdiutil`, holding the app and an Applications symlink;
   5. sign, notarize and staple the DMG;
   6. sign the DMG with Sparkle's `sign_update` (EdDSA private key from secrets);
   7. regenerate `appcast.xml` from the previous one plus this item (release notes from the tag's annotation);
-  8. upload `releases/Carbon-X.Y.Z.dmg`, then `appcast.xml`, then `latest.json` (`{ "version", "build", "file" }`) to the R2 bucket `carbon-releases` with `wrangler`.
+  8. deploy the release Worker from `worker/` with `wrangler deploy`;
+  9. upload `releases/Carbon-X.Y.Z.dmg`, then `appcast.xml`, then `latest.json` (`{ "version", "build", "file" }`) to the R2 bucket `carbon-releases` with `wrangler`.
 
   Uploading the DMG first means a half-failed release never points at a missing file.
+
+  **Dry run**: a run that is not on a `v*` tag (e.g. started by hand), or that is missing any signing secret, builds unsigned, runs the tests, builds the DMG and uploads it as an Action artifact. Every signing, notarization, Worker deploy and upload step is skipped and reported.
 - **Secrets**:
   - `DEVELOPER_ID_P12` (base64) and `DEVELOPER_ID_P12_PASSWORD`;
   - `NOTARY_KEY_P8`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`;
   - `SPARKLE_ED_PRIVATE_KEY`;
-  - `CLOUDFLARE_API_TOKEN` (R2 write only) and `CLOUDFLARE_ACCOUNT_ID`.
+  - `CLOUDFLARE_API_TOKEN` (Workers Scripts Edit on the account, Workers Routes Edit on the `alexandrejoly.me` zone, R2 Edit) and `CLOUDFLARE_ACCOUNT_ID`.
 
   The Sparkle public key goes in Info.plist as `SUPublicEDKey`, and `SUFeedURL` is `https://carbon.alexandrejoly.me/appcast.xml`.
-- **Serving**: the existing `carbon` Worker (alexandrejoly.me monorepo, `apps/carbon`, custom domain `carbon.alexandrejoly.me`) gets an R2 binding `RELEASES` → `carbon-releases` and three server routes handled ahead of the site:
+- **Serving**: a standalone release Worker `carbon-releases`, in this repository's `worker/` (its own `package.json`, `wrangler.jsonc` and tests), with an R2 binding `RELEASES` → `carbon-releases`. All Carbon code lives in the carbon repository; the alexandrejoly.me monorepo only holds the landing page, whose Worker `carbon` owns `carbon.alexandrejoly.me` as a Custom Domain. The release Worker takes three zone routes on `alexandrejoly.me` (`carbon.alexandrejoly.me/download`, `/appcast.xml` and `/releases/*`), which run ahead of the Custom Domain Worker; any other request it gets is passed on with `fetch(request)`:
   - `GET /download` → 302 to `/releases/<file from latest.json>`, `Cache-Control: no-store`, so the site's `DOWNLOAD_URL = "/download"` stays as is.
   - `GET /appcast.xml` → the R2 object, `application/rss+xml`, `Cache-Control: max-age=300`.
   - `GET /releases/<name>.dmg` → the R2 object streamed with `application/x-apple-diskimage`, `Content-Disposition: attachment`, immutable caching, `Range` supported, 404 for unknown names.
 
-  The bucket stays private: the Worker is its only reader. A release never redeploys the Worker.
+  The bucket stays private: the release Worker is its only reader. Each release redeploys the release Worker (step 8), never the landing Worker.
 - **Vendor table updates** ship inside app releases. There is no separate remote config fetch, so the app makes no network calls beyond Sparkle's.
 
 ## Testing Decisions
@@ -403,7 +406,7 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   - The ticket 17 rule list is the Detector test table.
 - **Fixtures** are small and committed: a few minutes of words and segments. The full 28-Meeting test set stays outside the repo in `~/Datasets/carbon-test-set`; the prototypes' quality scripts (`score.py` in transcription-eval, diarization-eval and summary-eval) stay manual, AFK checks rerun when an engine or threshold changes, not part of CI.
 - **Adapters** (Capture, SignalSampler, Transcriber, Diarizer, Summarizer, Sparkle) get no unit tests. They are checked by dogfooding the signed app and by the diagnostic log. The tap must be validated from the signed app, never from a terminal, because the terminal becomes the responsible process.
-- **Release pipeline**: the Action runs `CarbonCore` tests before signing. A Worker test (Vitest + Miniflare, as the monorepo already uses Vitest) covers the three routes against a local R2: `/download` redirect, appcast content type, a range request, a 404.
+- **Release pipeline**: the Action runs `CarbonCore` tests before signing. The release Worker's tests (`worker/`, Vitest + Miniflare via `getPlatformProxy`) cover the three routes against a local R2: `/download` redirect, appcast content type, a range request, a 404, and requests passed on to the landing Worker.
 - **Not hand-tested** (map Notes): no hand-recorded Meetings and no hand-run Detection checks. Real-usage tuning comes from the author dogfooding the built app and sending the diagnostic log.
 
 ## Out of Scope
@@ -435,6 +438,6 @@ As validated in "Main window, menus and notification mock" (issues/12), which wi
   - Carbon has no account, no analytics and no server. The only network traffic is Sparkle checking `appcast.xml` and downloading updates, plus Apple's own model and speech-asset downloads.
   - The person is responsible for consent: some US states require all-party consent, and so does France (art. 226-1 du code pénal).
   - The author never receives any audio, Transcript or Voice Print. That is also why biometric-data collection rules aimed at services that hold such data don't apply to the author. The page should still say it plainly.
-- **Private API use**: `responsibility_get_pid_responsible_for_pid` and `TCCAccessPreflight` are loaded through `dlsym`, as shipped by FineTune, pasrom, AudioCap and Hyprnote. Both are fine for Developer ID distribution and both could break on an OS update. If the lookup is missing, capture falls back to the `.app` path, and permission falls back to showing "Unknown" in Settings › Permissions.
+- **Private API use**: `responsibility_get_pid_responsible_for_pid`, `TCCAccessPreflight` and `TCCAccessRequest` are loaded through `dlsym`, as shipped by FineTune, pasrom, AudioCap and Hyprnote. `TCCAccessRequest` shows the System Audio Recording prompt at first launch. All three are fine for Developer ID distribution and all could break on an OS update. If the lookup is missing, capture falls back to the `.app` path, permission falls back to showing "Unknown" in Settings › Permissions, and the prompt falls back to appearing with the first tap.
 - **Steps that need the author** are in the morning checklist: the Developer ID certificate, the App Store Connect API key and the GitHub secrets.
 - **Vocabulary**: this spec uses `GLOSSARY.md` terms throughout. No new domain terms; "in-progress folder" and "diagnostic log" are implementation words, not domain language.

@@ -1,0 +1,206 @@
+@preconcurrency import AVFoundation
+import Foundation
+import Synchronization
+
+/// Takes one captured stream to the analyzer format, feeds it to its TranscriptionSession and appends it
+/// to a CAF file, written to disk every `flushInterval` seconds of audio so a crash loses at most that much.
+final class StreamRecorder: Sendable {
+    static let flushInterval: TimeInterval = 5
+
+    private struct State {
+        var file: AVAudioFile
+        var pending: AVAudioPCMBuffer
+        var converter: AVAudioConverter?
+        var session: any TranscriptionSession
+        /// Converts the file's format to the session's, for a session that wants another one.
+        var sessionConverter: AVAudioConverter?
+        /// While a new session catches up on the file, the audio that arrives meanwhile, in the file's format.
+        var backlog: [AVAudioPCMBuffer]?
+        var error: (any Error)?
+        var closed = false
+    }
+
+    private let url: URL
+    private let fileFormat: AVAudioFormat
+    private let state: Mutex<State>
+
+    init(session: any TranscriptionSession, cafFile url: URL) throws {
+        let format = session.audioFormat
+        let file = try AVAudioFile(
+            forWriting: url, settings: format.settings, commonFormat: format.commonFormat,
+            interleaved: format.isInterleaved)
+        let capacity = AVAudioFrameCount(format.sampleRate * Self.flushInterval)
+        guard let pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
+            throw CocoaError(.featureUnsupported)
+        }
+        self.url = url
+        fileFormat = format
+        state = Mutex(State(file: file, pending: pending, session: session))
+    }
+
+    func append(_ buffer: AVAudioPCMBuffer) {
+        state.withLock { state in
+            guard !state.closed, state.error == nil else { return }
+            do {
+                let converted = try Self.convert(buffer, to: fileFormat, with: &state.converter)
+                if state.backlog != nil {
+                    state.backlog?.append(try Self.copy(converted))
+                } else {
+                    try Self.feed(converted, to: &state)
+                }
+                try Self.enqueue(converted, into: &state)
+            } catch {
+                state.error = error
+            }
+        }
+    }
+
+    /// Hands the stream to `session` from now on. It first hears everything recorded so far, read back from the
+    /// file, then the audio that arrived meanwhile, then the live audio: no gap. Returns the session it replaces.
+    /// On failure the old session keeps the stream. Reads the whole file, so keep it off the main actor.
+    func hand(to session: any TranscriptionSession) throws -> any TranscriptionSession {
+        let (old, recorded) = try state.withLock { state in
+            if state.closed { throw CocoaError(.fileWriteUnknown) }
+            if let error = state.error { throw error }
+            try Self.flush(&state)
+            let old = state.session
+            state.session = session
+            state.sessionConverter = nil
+            state.backlog = []
+            return (old, state.file.length)
+        }
+        do {
+            try replay(recorded, to: session)
+        } catch {
+            state.withLock { state in
+                state.session = old
+                state.sessionConverter = nil
+                Self.drainBacklog(&state)
+            }
+            throw error
+        }
+        state.withLock { Self.drainBacklog(&$0) }
+        return old
+    }
+
+    /// Hands the stream back to a session that heard it before, without replaying anything.
+    func giveBack(_ session: any TranscriptionSession) {
+        state.withLock { state in
+            state.session = session
+            state.sessionConverter = nil
+        }
+    }
+
+    private func replay(_ frames: AVAudioFramePosition, to session: any TranscriptionSession) throws {
+        let file = try AVAudioFile(
+            forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        let chunk = AVAudioFrameCount(fileFormat.sampleRate)
+        var converter: AVAudioConverter?
+        while file.framePosition < frames {
+            let count = min(chunk, AVAudioFrameCount(frames - file.framePosition))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count) else {
+                throw CocoaError(.featureUnsupported)
+            }
+            try file.read(into: buffer, frameCount: count)
+            if buffer.frameLength == 0 { break }
+            session.append(try Self.convert(buffer, to: session.audioFormat, with: &converter))
+        }
+    }
+
+    private static func drainBacklog(_ state: inout State) {
+        let backlog = state.backlog ?? []
+        state.backlog = nil
+        do {
+            for buffer in backlog { try feed(buffer, to: &state) }
+        } catch {
+            state.error = error
+        }
+    }
+
+    private static func feed(_ buffer: AVAudioPCMBuffer, to state: inout State) throws {
+        state.session.append(try convert(buffer, to: state.session.audioFormat, with: &state.sessionConverter))
+    }
+
+    private static func copy(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+            throw CocoaError(.featureUnsupported)
+        }
+        Self.copy(buffer.frameLength, framesFrom: buffer, at: 0, to: copy)
+        return copy
+    }
+
+    /// Writes what is left and closes the file. Throws the first error met while recording.
+    func close() throws {
+        try state.withLock { state in
+            guard !state.closed else { return }
+            state.closed = true
+            if state.error == nil {
+                do { try Self.flush(&state) } catch { state.error = error }
+            }
+            if let error = state.error { throw error }
+        }
+    }
+
+    static func convert(
+        _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?
+    ) throws -> AVAudioPCMBuffer {
+        if buffer.format == format { return buffer }
+        if converter?.inputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: format)
+        }
+        guard let converter else { throw CocoaError(.featureUnsupported) }
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
+        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
+            throw CocoaError(.featureUnsupported)
+        }
+        nonisolated(unsafe) var consumed = false
+        var error: NSError?
+        converter.convert(to: output, error: &error) { _, status in
+            if consumed {
+                status.pointee = .noDataNow
+                return nil
+            }
+            consumed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        if let error { throw error }
+        return output
+    }
+
+    private static func enqueue(_ buffer: AVAudioPCMBuffer, into state: inout State) throws {
+        var offset: AVAudioFrameCount = 0
+        while offset < buffer.frameLength {
+            let room = state.pending.frameCapacity - state.pending.frameLength
+            let count = min(room, buffer.frameLength - offset)
+            copy(count, framesFrom: buffer, at: offset, to: state.pending)
+            offset += count
+            if state.pending.frameLength == state.pending.frameCapacity {
+                try flush(&state)
+            }
+        }
+    }
+
+    private static func flush(_ state: inout State) throws {
+        guard state.pending.frameLength > 0 else { return }
+        try state.file.write(from: state.pending)
+        state.pending.frameLength = 0
+    }
+
+    private static func copy(
+        _ count: AVAudioFrameCount, framesFrom source: AVAudioPCMBuffer, at offset: AVAudioFrameCount,
+        to destination: AVAudioPCMBuffer
+    ) {
+        let bytesPerFrame = Int(source.format.streamDescription.pointee.mBytesPerFrame)
+        let sources = UnsafeMutableAudioBufferListPointer(source.mutableAudioBufferList)
+        let destinations = UnsafeMutableAudioBufferListPointer(destination.mutableAudioBufferList)
+        for (from, to) in zip(sources, destinations) {
+            memcpy(
+                to.mData! + Int(destination.frameLength) * bytesPerFrame,
+                from.mData! + Int(offset) * bytesPerFrame,
+                Int(count) * bytesPerFrame)
+        }
+        destination.frameLength += count
+    }
+}
