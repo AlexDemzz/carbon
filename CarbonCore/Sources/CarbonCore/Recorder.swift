@@ -34,6 +34,32 @@ public final class Recorder {
         case finishing(LiveMeeting)
     }
 
+    /// What the person is told about, as notifications.
+    public enum Event: Equatable, Sendable {
+        /// Detection started a Meeting on its own.
+        case started(LiveMeeting)
+        /// Detection offers a Meeting (auto-transcribe off).
+        case offered(Offer)
+        /// The offer went away: nobody answered within 60 s, or its app released the mic.
+        case offerWithdrawn(MeetingApp)
+        case transcriptReady(id: UUID, title: String, file: URL)
+    }
+
+    public struct Offer: Equatable, Sendable {
+        public var app: MeetingApp
+        public var title: String
+        public var provider: String
+        /// The language Transcribe starts the Meeting in.
+        public var language: Locale
+
+        public init(app: MeetingApp, title: String, provider: String, language: Locale) {
+            self.app = app
+            self.title = title
+            self.provider = provider
+            self.language = language
+        }
+    }
+
     public enum Failure: Error, Equatable {
         case notIdle
         case notLive
@@ -45,6 +71,9 @@ public final class Recorder {
     public var ignoredApps: Set<String> = []
     /// The Meeting Language Detection starts Meetings in. Nil until it is known; Detection starts nothing meanwhile.
     public var detectionLanguage: Locale?
+    /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
+    public var autoTranscribe = true
+    @ObservationIgnored public var onEvent: (@MainActor (Event) -> Void)?
     /// Called when Detection could not start or save a Meeting.
     @ObservationIgnored public var onDetectionFailure: (@MainActor (any Error) -> Void)?
 
@@ -153,7 +182,7 @@ public final class Recorder {
     private func observe(_ snapshot: MicSnapshot) async {
         let signals = Detector.Signals(
             time: snapshot.time, micHolders: snapshot.micHolders, lastSound: lastSound.value,
-            ignoredApps: ignoredApps)
+            ignoredApps: ignoredApps, autoTranscribe: autoTranscribe)
         for command in detector.observe(signals) {
             do {
                 switch command {
@@ -163,8 +192,19 @@ public final class Recorder {
                         continue
                     }
                     try await begin(language: language, app: app, mode: .auto)
+                    if case .live(let meeting) = state { onEvent?(.started(meeting)) }
                 case .end:
                     if case .live = state { try await finish() }
+                case .offer(let app):
+                    guard let language = detectionLanguage, state == .idle else {
+                        detector.offerDeclined(at: snapshot.time)
+                        continue
+                    }
+                    onEvent?(.offered(Offer(
+                        app: app, title: MeetingFormat.defaultTitle(start: now(), in: timeZone),
+                        provider: vendorTable.provider(for: app), language: language)))
+                case .withdrawOffer(let app):
+                    onEvent?(.offerWithdrawn(app))
                 }
             } catch {
                 onDetectionFailure?(error)
@@ -178,6 +218,24 @@ public final class Recorder {
         guard state == .idle, recording == nil else { throw Failure.notIdle }
         let app = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
         try await begin(language: language, app: app, mode: .manual)
+    }
+
+    /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
+    public func acceptOffer(language: Locale) async throws {
+        guard state == .idle, recording == nil, let app = detector.offerAccepted() else { return }
+        try await begin(language: language, app: app, mode: .auto)
+    }
+
+    /// The offer was dismissed: its app is not offered again for 10 min.
+    public func declineOffer() {
+        detector.offerDeclined(at: now())
+    }
+
+    /// Never on the offer: its app joins the person's Ignored Apps.
+    public func neverOffer() {
+        guard let app = detector.pendingOffer else { return }
+        detector.offerDeclined(at: now())
+        ignoredApps.insert(app.bundleID)
     }
 
     /// Ends the live Meeting and keeps it. Returns the Markdown file written to the Library.
@@ -274,6 +332,7 @@ public final class Recorder {
                 speakers: split.map { Self.speakers($0, letters: letters) } ?? []),
             transcript: transcript)
         recording.folder.remove()
+        onEvent?(.transcriptReady(id: meeting.id, title: meeting.title, file: file))
         return file
     }
 

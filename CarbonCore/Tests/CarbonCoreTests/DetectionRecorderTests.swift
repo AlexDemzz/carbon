@@ -116,4 +116,92 @@ struct DetectionRecorderTests {
         #expect(recorder.state == .idle)
         #expect(try FileManager.default.contentsOfDirectory(atPath: library.url.appending(path: "2026").path).count == 1)
     }
+
+    // MARK: What the person is told
+
+    func recordEvents(of recorder: Recorder) -> Events {
+        let events = Events()
+        recorder.onEvent = { events.list.append($0) }
+        return events
+    }
+
+    var meetingID: UUID { UUID(uuidString: "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")! }
+
+    @Test func aMeetingDetectionStartsIsAnnouncedWithItsTitleProviderAndLanguage() async throws {
+        let recorder = try makeRecorder()
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+
+        #expect(events.list == [
+            .started(LiveMeeting(
+                id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: start + 15,
+                language: Locale(identifier: "en_US"), app: zoom, provider: "Zoom")),
+        ])
+        await recorder.discard()
+    }
+
+    @Test func aWrittenTranscriptIsAnnouncedWithItsFile() async throws {
+        let recorder = try makeRecorder()
+        let events = recordEvents(of: recorder)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        try await recorder.stop()
+
+        #expect(events.list == [
+            .transcriptReady(
+                id: meetingID, title: "Meeting Oct 23, 9:15 AM",
+                file: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")),
+        ])
+    }
+
+    @Test func withAutoTranscribeOffDetectionOffersAMeetingAndStartsNothing() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...100, [zoom])]))
+
+        #expect(events.list == [
+            .offered(.init(app: zoom, title: "Meeting Oct 23, 9:15 AM", provider: "Zoom", language: Locale(identifier: "en_US"))),
+            .offerWithdrawn(zoom),
+        ])
+        #expect(recorder.state == .idle)
+    }
+
+    @Test func transcribingAnOfferStartsTheMeetingInTheChosenLanguage() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+        try await recorder.acceptOffer(language: Locale(identifier: "fr_FR"))
+
+        guard case .live(let meeting) = recorder.state else {
+            Issue.record("no live Meeting")
+            return
+        }
+        #expect(meeting.app == zoom)
+        #expect(meeting.language == Locale(identifier: "fr_FR"))
+        #expect(events.list.count == 1, "an accepted offer is not announced again")
+        await recorder.discard()
+    }
+
+    @Test func neverAddsTheOfferedAppToIgnoredApps() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+        recorder.neverOffer()
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start + 21, [(0...9, []), (10...1_500, [zoom])]))
+
+        #expect(recorder.ignoredApps == ["us.zoom.xos"])
+        #expect(events.list.count == 1, "no offer after Never, even once the mute is over")
+    }
+}
+
+@MainActor
+final class Events {
+    var list: [Recorder.Event] = []
 }
