@@ -41,6 +41,25 @@ public protocol Transcriber: Sendable {
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession
 }
 
+/// What the microphone looked like at one moment: the apps holding it, each resolved to its owning app.
+public struct MicSnapshot: Equatable, Sendable {
+    public var time: Date
+    public var micHolders: [MeetingApp]
+    /// The calendar events around `time`, reduced to plain values.
+    public var events: [CalendarEvent]
+    /// The power assertions, when they were polled at this snapshot (every 3 s at most); nil between polls.
+    public var assertions: [PowerAssertion]?
+
+    public init(
+        time: Date, micHolders: [MeetingApp], events: [CalendarEvent] = [], assertions: [PowerAssertion]? = nil
+    ) {
+        self.time = time
+        self.micHolders = micHolders
+        self.events = events
+        self.assertions = assertions
+    }
+}
+
 /// One entry of `IOPMCopyAssertionsByProcess()`, with its process resolved to its owning app.
 public struct PowerAssertion: Equatable, Sendable {
     public var app: MeetingApp
@@ -56,20 +75,6 @@ public struct PowerAssertion: Equatable, Sendable {
         self.name = name
         self.type = type
         self.id = id
-    }
-}
-
-/// What the microphone looked like at one moment: the apps holding it, each resolved to its owning app.
-public struct MicSnapshot: Equatable, Sendable {
-    public var time: Date
-    public var micHolders: [MeetingApp]
-    /// The power assertions, when they were polled at this snapshot (every 3 s at most); nil between polls.
-    public var assertions: [PowerAssertion]?
-
-    public init(time: Date, micHolders: [MeetingApp], assertions: [PowerAssertion]? = nil) {
-        self.time = time
-        self.micHolders = micHolders
-        self.assertions = assertions
     }
 }
 

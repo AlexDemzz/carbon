@@ -33,10 +33,10 @@ extension Recorder {
         }
         // Only the bundle ID is saved: an app the vendor table doesn't know is its own provider.
         let app = saved.meetingApp.map { MeetingApp(bundleID: $0, name: $0) }
-        let meeting = LiveMeeting(
-            id: saved.id, title: MeetingFormat.defaultTitle(start: start, in: timeZone), start: start,
-            language: Locale(identifier: Locale.identifier(.icu, from: saved.language)), app: app,
-            provider: app.map(vendorTable.provider(for:)) ?? "Unknown")
+        var meeting = LiveMeeting(
+            id: saved.id, title: "", start: start,
+            language: Locale(identifier: Locale.identifier(.icu, from: saved.language)), app: app)
+        name(&meeting, after: saved.event)
         guard saved.recoveryAttempts < Self.recoveryAttemptsAllowed else {
             folder.moveToFailed()
             return .failed(title: meeting.title)
@@ -51,12 +51,12 @@ extension Recorder {
             folder.remove()
             return .discarded(title: meeting.title)
         }
-        let transcriber = transcriber
+        let (transcriber, language) = (transcriber, meeting.language)
         let written = try? await file(meeting, end: start + seconds, folder: folder) {
             async let meWords = Self.transcribe(
-                me == nil ? nil : folder.meAudio, as: .me, in: meeting.language, with: transcriber)
+                me == nil ? nil : folder.meAudio, as: .me, in: language, with: transcriber)
             async let themWords = Self.transcribe(
-                them == nil ? nil : folder.themAudio, as: .them, in: meeting.language, with: transcriber)
+                them == nil ? nil : folder.themAudio, as: .them, in: language, with: transcriber)
             return (try await meWords, try await themWords)
         }
         return written.map { .recovered(title: meeting.title, file: $0) }

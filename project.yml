@@ -55,6 +55,7 @@ targets:
       path: App/Carbon.entitlements
       properties:
         com.apple.security.device.audio-input: true
+        com.apple.security.personal-information.calendars: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.alexandrejoly.carbon

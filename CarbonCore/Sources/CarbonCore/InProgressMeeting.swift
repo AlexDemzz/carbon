@@ -13,6 +13,8 @@ struct InProgressMeeting {
         var meetingApp: String?
         var language: String
         var mode: Mode
+        /// The matched calendar Event, as Detection last saw it.
+        var event: CalendarEvent?
         var recoveryAttempts = 0
     }
 

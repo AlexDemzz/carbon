@@ -9,20 +9,23 @@ struct ScriptedSignalSource: SignalSource {
     let snapshots: [MicSnapshot]
     let clock: TestClock
 
-    init(_ clock: TestClock, from start: Date, _ script: [(seconds: ClosedRange<Int>, holders: [MeetingApp])]) {
-        self.init(clock, from: start, script.map { ($0.seconds, $0.holders, []) })
+    init(
+        _ clock: TestClock, from start: Date, events: [CalendarEvent] = [],
+        _ script: [(seconds: ClosedRange<Int>, holders: [MeetingApp])]
+    ) {
+        self.init(clock, from: start, events: events, script.map { ($0.seconds, $0.holders, []) })
     }
 
     /// The assertions are polled on every second divisible by 3, as the SignalSampler does.
     init(
-        _ clock: TestClock, from start: Date,
+        _ clock: TestClock, from start: Date, events: [CalendarEvent] = [],
         _ script: [(seconds: ClosedRange<Int>, holders: [MeetingApp], assertions: [PowerAssertion])]
     ) {
         self.clock = clock
         snapshots = script.flatMap { step in
             step.seconds.map {
                 MicSnapshot(
-                    time: start + TimeInterval($0), micHolders: step.holders,
+                    time: start + TimeInterval($0), micHolders: step.holders, events: events,
                     assertions: $0 % 3 == 0 ? step.assertions : nil)
             }
         }
@@ -145,16 +148,93 @@ struct DetectionRecorderTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: library.url.appending(path: "2026").path).count == 1)
     }
 
-    func files() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(atPath: library.url.appending(path: "2026").path).sorted()
+    // MARK: What the person is told
+
+    func recordEvents(of recorder: Recorder) -> Events {
+        let events = Events()
+        recorder.onEvent = { events.list.append($0) }
+        return events
     }
 
-    func indexed(_ key: String) throws -> [String?] {
-        let index = try #require(
-            JSONSerialization.jsonObject(with: Data(contentsOf: support.url.appending(path: "meetings.json")))
-                as? NSDictionary)
-        let meetings = try #require(index["meetings"] as? [NSDictionary])
-        return meetings.map { $0[key] as? String }.sorted { ($0 ?? "") < ($1 ?? "") }
+    var meetingID: UUID { UUID(uuidString: "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21")! }
+
+    @Test func aMeetingDetectionStartsIsAnnouncedWithItsTitleProviderAndLanguage() async throws {
+        let recorder = try makeRecorder()
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+
+        #expect(events.list == [
+            .started(LiveMeeting(
+                id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: start + 15,
+                language: Locale(identifier: "en_US"), app: zoom, provider: "Zoom")),
+        ])
+        await recorder.discard()
+    }
+
+    @Test func aWrittenTranscriptIsAnnouncedWithItsFile() async throws {
+        let recorder = try makeRecorder()
+        let events = recordEvents(of: recorder)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+
+        try await recorder.stop()
+
+        #expect(events.list == [
+            .transcriptReady(
+                id: meetingID, title: "Meeting Oct 23, 9:15 AM",
+                file: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")),
+        ])
+    }
+
+    @Test func withAutoTranscribeOffDetectionOffersAMeetingAndStartsNothing() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...100, [zoom])]))
+
+        #expect(events.list == [
+            .offered(.init(app: zoom, title: "Meeting Oct 23, 9:15 AM", provider: "Zoom", language: Locale(identifier: "en_US"))),
+            .offerWithdrawn(zoom),
+        ])
+        #expect(recorder.state == .idle)
+    }
+
+    @Test func transcribingAnOfferStartsTheMeetingInTheChosenLanguage() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+        try await recorder.acceptOffer(language: Locale(identifier: "fr_FR"))
+
+        guard case .live(let meeting) = recorder.state else {
+            Issue.record("no live Meeting")
+            return
+        }
+        #expect(meeting.app == zoom)
+        #expect(meeting.language == Locale(identifier: "fr_FR"))
+        #expect(events.list.count == 1, "an accepted offer is not announced again")
+        await recorder.discard()
+    }
+
+    @Test func neverAddsTheOfferedAppToIgnoredApps() async throws {
+        let recorder = try makeRecorder()
+        recorder.autoTranscribe = false
+        let events = recordEvents(of: recorder)
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
+        recorder.neverOffer()
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start + 21, [(0...9, []), (10...1_500, [zoom])]))
+
+        #expect(recorder.ignoredApps == ["us.zoom.xos"])
+        #expect(events.list.count == 1, "no offer after Never, even once the mute is over")
+    }
+
+    // MARK: Call assertions, back-to-back and overlap
+
+    func files() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: library.url.appending(path: "2026").path).sorted()
     }
 
     /// The `duration` of each file, in file name order.
@@ -163,6 +243,14 @@ struct DetectionRecorderTests {
             let markdown = try String(contentsOf: library.url.appending(path: "2026/\(name)"), encoding: .utf8)
             let line = markdown.split(separator: "\n").first { $0.hasPrefix("duration: ") } ?? ""
             return String(line.dropFirst("duration: ".count))
+        }
+    }
+
+    func providers() throws -> [String] {
+        try files().map { name in
+            let markdown = try String(contentsOf: library.url.appending(path: "2026/\(name)"), encoding: .utf8)
+            let line = markdown.split(separator: "\n").first { $0.hasPrefix("provider: ") } ?? ""
+            return String(line.dropFirst("provider: ".count))
         }
     }
 
@@ -198,19 +286,17 @@ struct DetectionRecorderTests {
 
     @Test func aSecondCallAppOffersASwitchAndSwitchingFilesTheFirstMeeting() async throws {
         let recorder = try makeRecorder()
-        let offers = Mutex<[Recorder.SwitchOffer]>([])
-        recorder.onSwitchOffer = { offer in offers.withLock { $0.append(offer) } }
+        let events = recordEvents(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [
             (0...100, [chrome], []),
             (101...130, [chrome, zoom], [zoomCall(1)]),
         ]))
-        let offer = try #require(offers.withLock { $0.first })
-        #expect(offers.withLock { $0.count } == 1)
-        #expect(offer.app == zoom)
-        #expect(offer.provider == "Zoom")
-        #expect(offer.meeting.title == "Meeting Oct 23, 9:15 AM")
-        #expect(offer.meeting.provider == "Google Chrome")
+        guard case .live(let chromeMeeting) = recorder.state else { Issue.record("no live Meeting"); return }
+        #expect(events.list.dropFirst() == [
+            .switchOffered(.init(app: zoom, provider: "Zoom", meeting: chromeMeeting)),
+        ])
+        #expect(chromeMeeting.provider == "Google Chrome")
 
         try await recorder.switchMeeting(to: zoom)
         guard case .live(let switched) = recorder.state else { Issue.record("not live: \(recorder.state)"); return }
@@ -218,7 +304,7 @@ struct DetectionRecorderTests {
         #expect(switched.start == start + 130)
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(131...300, [chrome], [])]))
 
-        #expect(try indexed("provider") == ["Google Chrome", "Zoom"])
+        #expect(try providers() == ["Google Chrome", "Zoom"])
         #expect(try durations() == ["1:55", "0:47"])
         #expect(recorder.state == .idle)
     }
@@ -239,4 +325,9 @@ final class WaitingDiarizer: Diarizer {
         sawTheNextMeeting.withLock { $0.append(saw) }
         throw ScriptedDiarizer.Failed()
     }
+}
+
+@MainActor
+final class Events {
+    var list: [Recorder.Event] = []
 }

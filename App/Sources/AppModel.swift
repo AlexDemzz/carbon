@@ -14,11 +14,27 @@ final class AppModel {
     /// The Meeting waiting for the Delete confirmation, or for a new title.
     var pendingDelete: ListedMeeting?
     var pendingRename: ListedMeeting?
+    /// The Settings tab in front, so the menu's missing-permission item can open Permissions.
+    var settingsTab: SettingsTab = .general
+    /// What Settings › Permissions and the menu bar menu show. Refreshed on launch, on activation and every minute.
+    var permissions = Permissions(
+        microphone: .allowed, systemAudioRecording: .allowed, calendar: .allowed, notifications: .allowed)
+    /// Show Carbon's global shortcut, ⌥⌘C unless the person recorded another.
+    var showCarbonShortcut: Shortcut {
+        didSet {
+            UserDefaults.standard.set(try? JSONEncoder().encode(showCarbonShortcut), forKey: SettingsKey.showCarbonShortcut)
+            registerShowCarbonShortcut()
+        }
+    }
     /// Set by a view that can open SwiftUI windows, since the global shortcut fires outside SwiftUI.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored var openEditor: ((UUID) -> Void)?
-    @ObservationIgnored private var showCarbonShortcut: GlobalHotKey?
+    @ObservationIgnored private var showCarbonHotKey: GlobalHotKey?
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
+    @ObservationIgnored private let notifier = Notifier()
+    /// The last "Switch to <app>" offer posted, which its banner's action refers to.
+    @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
+    @ObservationIgnored private var otherMeetingLanguages: [Locale] = []
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
@@ -29,7 +45,11 @@ final class AppModel {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
-        library = Library(folder: documents.appending(path: "Carbon"), supportFolder: support)
+        let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
+            .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
+        library = Library(folder: libraryFolder, supportFolder: support)
+        showCarbonShortcut = UserDefaults.standard.data(forKey: SettingsKey.showCarbonShortcut)
+            .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .showCarbon
         recorder = Recorder(
             microphone: MicrophoneSource(),
             systemAudio: { app in SystemAudioTap(app: app) },
@@ -41,29 +61,138 @@ final class AppModel {
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
+        watchLibrary()
+        registerShowCarbonShortcut()
+        UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true])
+        recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
+        recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
+        recorder.onEvent = { [weak self] event in self?.announce(event) }
+        notifier.onResponse = { [weak self] response in self?.respond(to: response) }
+        let notifier = notifier
+        Task {
+            await FirstLaunch.run(notifier: notifier)
+            Task { [weak self] in await self?.watchPermissions() }
+            async let recovered: Void = recoverInterruptedMeetings()
+            await startDetection()
+            await recovered
+        }
+    }
+
+    func watchLibrary() {
         libraryWatcher = FolderWatcher(folder: library.folder) { [weak self] in self?.reconcileLibrary() }
-        showCarbonShortcut = GlobalHotKey { [weak self] in self?.toggleMainWindow() }
-        Task { await recoverInterruptedMeetings() }
-        startDetection()
+    }
+
+    func stopWatchingLibrary() {
+        libraryWatcher = nil
+    }
+
+    /// Permissions change in System Settings, outside Carbon: reread them when Carbon comes forward, and every minute.
+    private func watchPermissions() async {
+        let activations = Task { [weak self] in
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                await self?.refreshPermissions()
+            }
+        }
+        defer { activations.cancel() }
+        while !Task.isCancelled {
+            await refreshPermissions()
+            try? await Task.sleep(for: .seconds(60))
+        }
+    }
+
+    private func registerShowCarbonShortcut() {
+        // Released first, so re-recording the same shortcut doesn't collide with itself.
+        showCarbonHotKey = nil
+        showCarbonHotKey = GlobalHotKey(showCarbonShortcut) { [weak self] in self?.toggleMainWindow() }
+    }
+
+    /// "Transcribe Meetings automatically". Off, Detection only offers Meetings.
+    var autoTranscribe: Bool {
+        get { recorder.autoTranscribe }
+        set {
+            recorder.autoTranscribe = newValue
+            UserDefaults.standard.set(newValue, forKey: SettingsKey.autoTranscribe)
+        }
+    }
+
+    private func announce(_ event: Recorder.Event) {
+        switch event {
+        case .started(let meeting):
+            notifier.postStarted(meeting)
+        case .offered(let offer):
+            notifier.postOffer(offer, otherLanguages: otherMeetingLanguages.filter { !$0.sameLanguage(as: offer.language) })
+        case .offerWithdrawn:
+            notifier.withdrawOffer()
+        case .transcriptReady(let id, let title, _):
+            notifier.postReady(meetingID: id, title: title)
+        case .switchOffered(let offer):
+            switchOffer = offer
+            notifier.postSwitchOffer(offer)
+        }
+    }
+
+    private func respond(to response: Notifier.Response) {
+        switch response {
+        case .stop(let meetingID):
+            notifier.removeStarted(meetingID)
+            // A banner left over from an earlier Meeting never discards the current one.
+            guard case .live(let meeting) = recorder.state, meeting.id == meetingID else { return }
+            discard()
+        case .transcribe(let app, let language):
+            guard recorder.pendingOffer?.bundleID == app else { return }
+            Task {
+                do {
+                    try await recorder.acceptOffer(language: language)
+                } catch Recorder.Failure.systemAudioRecordingDenied {
+                    present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
+                } catch {
+                    present(error, title: "Carbon couldn't start transcribing")
+                }
+            }
+        case .decline(let app):
+            guard recorder.pendingOffer?.bundleID == app else { return }
+            recorder.declineOffer()
+        case .never(let app):
+            guard recorder.pendingOffer?.bundleID == app else { return }
+            recorder.neverOffer()
+            saveIgnoredApps()
+        case .show(let meetingID):
+            showMeeting(meetingID)
+        case .switchTo(let app, let meetingID):
+            // An offer outlives its Meeting in Notification Center: only the Meeting it named can switch.
+            guard let offer = switchOffer, offer.app.bundleID == app, offer.meeting.id == meetingID,
+                case .live(let meeting) = recorder.state, meeting.id == meetingID
+            else { return }
+            switchOffer = nil
+            Task {
+                do {
+                    try await recorder.switchMeeting(to: offer.app)
+                } catch {
+                    present(error, title: "Carbon couldn't switch Meetings")
+                }
+            }
+        }
     }
 
     /// Finishes the Meetings a crash interrupted, from the audio already on disk, and says what happened to each.
     private func recoverInterruptedMeetings() async {
         for recovery in await recorder.recover() {
             switch recovery {
-            case .recovered(let title, _):
-                await Notifier.post("Recovered “\(title)” after Carbon quit unexpectedly.")
+            case .recovered(let title, let file):
+                notifier.post(
+                    title: title, "Recovered after Carbon quit unexpectedly. Transcript ready.",
+                    meetingID: library.meetings.first { $0.file.standardizedFileURL == file.standardizedFileURL }?.id)
             case .discarded(let title):
-                await Notifier.post("Carbon couldn't read the audio of “\(title)”, so it was discarded.")
+                notifier.post("Carbon couldn't read the audio of “\(title)”, so it was discarded.")
             case .failed(let title):
                 let meeting = title.map { "“\($0)”" } ?? "a Meeting"
-                await Notifier.post("Carbon couldn't recover \(meeting) and stopped trying.")
+                notifier.post("Carbon couldn't recover \(meeting) and stopped trying.")
             }
         }
     }
 
     /// Detection runs for the whole launch: a Meeting App holding the mic starts and ends Meetings on its own.
-    private func startDetection() {
+    private func startDetection() async {
         recorder.onDetectionFailure = { [weak self] error in
             DiagnosticLog.shared.write("Detection couldn't start or save a Meeting: \(error.localizedDescription)")
             if case Recorder.Failure.systemAudioRecordingDenied = error {
@@ -72,39 +201,27 @@ final class AppModel {
                 self?.present(error, title: "Carbon couldn't transcribe a Meeting")
             }
         }
-        recorder.onSwitchOffer = { [weak self] offer in self?.offerSwitch(offer) }
-        let recorder = recorder
-        Task {
-            guard await MicrophoneSource.requestAccess() else {
-                DiagnosticLog.shared.write("Detection is off: no microphone access")
-                return
-            }
-            recorder.detectionLanguage = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
-            await recorder.runDetection(SignalSampler())
+        guard await MicrophoneSource.requestAccess() else {
+            DiagnosticLog.shared.write("Detection is off: no microphone access")
+            return
         }
+        let language = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
+        recorder.detectionLanguage = language
+        otherMeetingLanguages = await Self.otherLanguages(than: language)
+        await recorder.runDetection(SignalSampler())
     }
 
-    /// A second call app took the mic during a live Meeting: offer to move the Meeting to it.
-    private func offerSwitch(_ offer: Recorder.SwitchOffer) {
-        let recorder = recorder
-        Task {
-            await Notifier.post(
-                title: "\(offer.provider) is using the microphone.",
-                body: "Carbon is still transcribing “\(offer.meeting.title)”.",
-                actions: [(id: "switch", title: "Switch to \(offer.provider)")]
-            ) { [weak self] action in
-                // An offer outlives its Meeting in Notification Center: only the Meeting it named can switch.
-                guard action == "switch", case .live(let meeting) = recorder.state, meeting.id == offer.meeting.id
-                else { return }
-                Task {
-                    do {
-                        try await recorder.switchMeeting(to: offer.app)
-                    } catch {
-                        self?.present(error, title: "Carbon couldn't switch Meetings")
-                    }
-                }
-            }
+    /// The offer's "Transcribe in <language>" choices. Until Settings › Languages (ticket 12) lists the person's
+    /// Meeting Languages, they are English and French, the US-first launch languages, as SpeechTranscriber has them.
+    private static func otherLanguages(than language: Locale?) async -> [Locale] {
+        var others: [Locale] = []
+        for candidate in [Locale(identifier: "en_US"), Locale(identifier: "fr_FR")] {
+            guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: candidate),
+                language.map({ !supported.sameLanguage(as: $0) }) ?? true
+            else { continue }
+            others.append(supported)
         }
+        return others
     }
 
     /// Show Carbon: brings the main window forward, or hides Carbon when it is already in front.
@@ -228,6 +345,7 @@ final class AppModel {
     }
 
     func discard() {
+        if case .live(let meeting) = recorder.state { notifier.removeStarted(meeting.id) }
         Task { await recorder.discard() }
     }
 
@@ -248,6 +366,19 @@ final class AppModel {
 /// UserDefaults keys of Settings.
 enum SettingsKey {
     static let keepAudio = "keepAudio"
+    static let autoTranscribe = "autoTranscribe"
+    /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
+    static let ignoredApps = "ignoredApps"
+    /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
+    static let libraryFolder = "libraryFolder"
+    /// Show Carbon's shortcut, a JSON `Shortcut`.
+    static let showCarbonShortcut = "showCarbonShortcut"
+}
+
+extension Locale {
+    func sameLanguage(as other: Locale) -> Bool {
+        language.languageCode == other.language.languageCode
+    }
 }
 
 enum AppError: LocalizedError {

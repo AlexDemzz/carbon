@@ -7,7 +7,7 @@
 **Status:** done
 
 - [x] `IOPMCopyAssertionsByProcess()` is polled every 3 s while the mic is held or an Event is in its window.
-  - Polled while the mic is held, and on until the last call/WebRTC assertion seen is gone (so a call's assertion release after its mic is seen). The "Event in its window" condition comes with ticket 06 (no Events yet).
+  - Also polled on until the last call/WebRTC assertion seen is gone, so a call's assertion release after its mic is seen.
 - [x] The vendor table matches Zoom, Teams "call in progress" and Webex "On a call", in both modern and legacy type spellings.
 - [x] A call assertion confirmed on 2 consecutive polls starts a Meeting on its own.
 - [x] Browser WebRTC assertions are logged only.

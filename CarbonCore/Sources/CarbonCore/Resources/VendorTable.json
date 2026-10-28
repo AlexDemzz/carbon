@@ -63,6 +63,15 @@
     "com.tinyspeck.slackmacgap": "Slack",
     "com.hnc.Discord": "Discord"
   },
+  "links": [
+    { "host": "meet.google.com", "provider": "Google Meet", "path": "^/(?:_meet/)?([a-z]{3,}-[a-z]{4,}-[a-z]{3,})" },
+    { "host": "zoom.us", "provider": "Zoom", "path": "^/(?:j|my|w|s|wc/join|wc)/([A-Za-z0-9.]+)" },
+    { "host": "zoomgov.com", "provider": "Zoom", "path": "^/(?:j|my|w|s|wc/join|wc)/([A-Za-z0-9.]+)" },
+    { "host": "teams.microsoft.com", "provider": "Microsoft Teams", "path": "^/(?:l/meetup-join/|meet/([0-9]+))" },
+    { "host": "teams.live.com", "provider": "Microsoft Teams", "path": "^/(?:l/meetup-join/|meet/([0-9]+))" },
+    { "host": "webex.com", "provider": "Webex", "path": "^/(?:meet/|join/|[a-z0-9-]+/j\\.php)" },
+    { "host": "facetime.apple.com", "provider": "FaceTime", "path": "^/join" }
+  ],
   "callAssertions": [
     { "apps": ["us.zoom.xos"], "types": ["PreventUserIdleDisplaySleep"] },
     { "apps": ["com.microsoft.teams2", "com.microsoft.teams"], "name": "call in progress" },

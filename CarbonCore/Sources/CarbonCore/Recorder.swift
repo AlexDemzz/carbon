@@ -11,9 +11,12 @@ public struct LiveMeeting: Equatable, Sendable {
     /// The app the Meeting is held through, nil for a manual Meeting with no app on the mic.
     public var app: MeetingApp?
     public var provider: String
+    /// The calendar Event the Meeting belongs to, if any.
+    public var event: CalendarEvent?
 
     public init(
-        id: UUID, title: String, start: Date, language: Locale, app: MeetingApp? = nil, provider: String = "Unknown"
+        id: UUID, title: String, start: Date, language: Locale, app: MeetingApp? = nil, provider: String = "Unknown",
+        event: CalendarEvent? = nil
     ) {
         self.id = id
         self.title = title
@@ -21,6 +24,7 @@ public struct LiveMeeting: Equatable, Sendable {
         self.language = language
         self.app = app
         self.provider = provider
+        self.event = event
     }
 }
 
@@ -34,6 +38,47 @@ public final class Recorder {
         case finishing(LiveMeeting)
     }
 
+    /// What the person is told about, as notifications.
+    public enum Event: Equatable, Sendable {
+        /// Detection started a Meeting on its own.
+        case started(LiveMeeting)
+        /// Detection offers a Meeting (auto-transcribe off).
+        case offered(Offer)
+        /// The offer went away: nobody answered within 60 s, or its app released the mic.
+        case offerWithdrawn(MeetingApp)
+        case transcriptReady(id: UUID, title: String, file: URL)
+        /// Another app's start signal during the live Meeting: offer "Switch to <app>".
+        case switchOffered(SwitchOffer)
+    }
+
+    /// Another Meeting App wants the microphone while `meeting` is live.
+    public struct SwitchOffer: Equatable, Sendable {
+        public var app: MeetingApp
+        public var provider: String
+        public var meeting: LiveMeeting
+
+        public init(app: MeetingApp, provider: String, meeting: LiveMeeting) {
+            self.app = app
+            self.provider = provider
+            self.meeting = meeting
+        }
+    }
+
+    public struct Offer: Equatable, Sendable {
+        public var app: MeetingApp
+        public var title: String
+        public var provider: String
+        /// The language Transcribe starts the Meeting in.
+        public var language: Locale
+
+        public init(app: MeetingApp, title: String, provider: String, language: Locale) {
+            self.app = app
+            self.title = title
+            self.provider = provider
+            self.language = language
+        }
+    }
+
     public enum Failure: Error, Equatable {
         case notIdle
         case notLive
@@ -45,17 +90,11 @@ public final class Recorder {
     public var ignoredApps: Set<String> = []
     /// The Meeting Language Detection starts Meetings in. Nil until it is known; Detection starts nothing meanwhile.
     public var detectionLanguage: Locale?
+    /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
+    public var autoTranscribe = true
+    @ObservationIgnored public var onEvent: (@MainActor (Event) -> Void)?
     /// Called when Detection could not start or save a Meeting.
     @ObservationIgnored public var onDetectionFailure: (@MainActor (any Error) -> Void)?
-    /// Called when another app's start signal arrives during the live Meeting, to offer "Switch to <app>".
-    @ObservationIgnored public var onSwitchOffer: (@MainActor (SwitchOffer) -> Void)?
-
-    /// Another Meeting App wants the microphone while `meeting` is live.
-    public struct SwitchOffer: Equatable, Sendable {
-        public var app: MeetingApp
-        public var provider: String
-        public var meeting: LiveMeeting
-    }
 
     private let microphone: any AudioSource
     private let systemAudio: @Sendable (MeetingApp?) -> any AudioSource
@@ -66,6 +105,7 @@ public final class Recorder {
     private let library: Library
     private let keepAudio: @Sendable () -> Bool
     let vendorTable: VendorTable
+    let matcher: EventMatcher
     let inProgressRoot: URL
     let timeZone: TimeZone
     private let now: @Sendable () -> Date
@@ -89,6 +129,7 @@ public final class Recorder {
     struct Recording {
         var meeting: LiveMeeting
         var folder: InProgressMeeting
+        var mode: InProgressMeeting.State.Mode
         var me: Stream
         var them: Stream
     }
@@ -130,6 +171,7 @@ public final class Recorder {
         self.library = library
         self.keepAudio = keepAudio
         self.vendorTable = vendorTable
+        matcher = EventMatcher(vendorTable: vendorTable)
         detector = Detector(vendorTable: vendorTable)
         inProgressRoot = inProgressFolder
         self.timeZone = timeZone
@@ -171,21 +213,37 @@ public final class Recorder {
     private func observe(_ snapshot: MicSnapshot) async {
         let signals = Detector.Signals(
             time: snapshot.time, micHolders: snapshot.micHolders, assertions: snapshot.assertions,
-            lastSound: lastSound.value, ignoredApps: ignoredApps)
+            lastSound: lastSound.value, ignoredApps: ignoredApps, autoTranscribe: autoTranscribe,
+            events: snapshot.events)
         for command in detector.observe(signals) {
             do {
                 switch command {
-                case .start(let app):
+                case .start(let app, let event):
                     guard let language = detectionLanguage, recording == nil else {
                         detector.meetingStopped()
                         continue
                     }
-                    try await begin(language: language, app: app, mode: .auto)
+                    try await begin(language: language, app: app, event: event, mode: .auto)
+                    if case .live(let meeting) = state { onEvent?(.started(meeting)) }
+                case .event(let event):
+                    try retarget(to: event)
                 case .end:
                     if recording != nil { try finishInBackground() }
                 case .offerSwitch(let app):
                     guard case .live(let meeting) = state else { continue }
-                    onSwitchOffer?(SwitchOffer(app: app, provider: vendorTable.provider(for: app), meeting: meeting))
+                    onEvent?(.switchOffered(
+                        SwitchOffer(app: app, provider: vendorTable.provider(for: app), meeting: meeting)))
+                case .offer(let app, let event):
+                    guard let language = detectionLanguage, recording == nil else {
+                        detector.offerDeclined(at: snapshot.time)
+                        continue
+                    }
+                    onEvent?(.offered(Offer(
+                        app: app, title: Self.title(of: event) ?? MeetingFormat.defaultTitle(start: now(), in: timeZone),
+                        provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))),
+                        language: language)))
+                case .withdrawOffer(let app):
+                    onEvent?(.offerWithdrawn(app))
                 }
             } catch {
                 onDetectionFailure?(error)
@@ -197,8 +255,29 @@ public final class Recorder {
     /// The app holding the mic, if any, becomes its Meeting App, and the usual stop rules apply.
     public func start(language: Locale) async throws {
         guard recording == nil else { throw Failure.notIdle }
-        let app = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
-        try await begin(language: language, app: app, mode: .manual)
+        let (app, event) = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
+        try await begin(language: language, app: app, event: event, mode: .manual)
+    }
+
+    /// The app of the offer waiting for an answer.
+    public var pendingOffer: MeetingApp? { detector.pendingOffer }
+
+    /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
+    public func acceptOffer(language: Locale) async throws {
+        guard recording == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
+        try await begin(language: language, app: app, event: event, mode: .auto)
+    }
+
+    /// The offer was dismissed: its app is not offered again for 10 min.
+    public func declineOffer() {
+        detector.offerDeclined(at: now())
+    }
+
+    /// Never on the offer: its app joins the person's Ignored Apps.
+    public func neverOffer() {
+        guard let app = detector.pendingOffer else { return }
+        detector.offerDeclined(at: now())
+        ignoredApps.insert(app.bundleID)
     }
 
     /// Ends the live Meeting and keeps it. Returns the Markdown file written to the Library.
@@ -213,9 +292,10 @@ public final class Recorder {
     /// in the same Meeting Language. The ended Meeting is filed meanwhile.
     public func switchMeeting(to app: MeetingApp) async throws {
         guard recording != nil, case .live(let meeting) = state else { throw Failure.notLive }
-        detector.meetingSwitched(to: app, at: now())
+        let event = detector.meetingSwitched(to: app, at: now())
         try finishInBackground()
-        try await begin(language: meeting.language, app: app, mode: .auto)
+        try await begin(language: meeting.language, app: app, event: event, mode: .auto)
+        if case .live(let started) = state { onEvent?(.started(started)) }
     }
 
     /// Ends the live Meeting and keeps nothing.
@@ -231,31 +311,30 @@ public final class Recorder {
         state = .idle
     }
 
-    private func begin(language: Locale, app: MeetingApp?, mode: InProgressMeeting.State.Mode) async throws {
+    private func begin(
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+    ) async throws {
         guard recording == nil else { throw Failure.notIdle }
         do {
-            try await open(language: language, app: app, mode: mode)
+            try await open(language: language, app: app, event: event, mode: mode)
         } catch {
             detector.meetingStopped()
             throw error
         }
     }
 
-    private func open(language: Locale, app: MeetingApp?, mode: InProgressMeeting.State.Mode) async throws {
+    private func open(
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+    ) async throws {
         guard systemAudioPermission() != .denied else { throw Failure.systemAudioRecordingDenied }
-        let start = now()
-        let meeting = LiveMeeting(
-            id: makeID(), title: MeetingFormat.defaultTitle(start: start, in: timeZone), start: start,
-            language: language, app: app, provider: app.map(vendorTable.provider(for:)) ?? "Unknown")
+        var meeting = LiveMeeting(id: makeID(), title: "", start: now(), language: language, app: app)
+        name(&meeting, after: event)
         let folder = InProgressMeeting(root: inProgressRoot, id: meeting.id)
         state = .live(meeting)
         lastSound.value = nil
         var opened: [Stream] = []
         do {
-            try folder.create(
-                .init(
-                    id: meeting.id, start: MeetingFormat.timestamp(start, in: timeZone), meetingApp: app?.bundleID,
-                    language: MeetingFormat.bcp47(language), mode: mode))
+            try folder.create(state(of: meeting, mode: mode))
             let me = try await open(.me, from: microphone, into: folder.meAudio, language: language)
             opened.append(me)
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
@@ -263,7 +342,7 @@ public final class Recorder {
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, tracksSound: app == nil)
             try capture(them, tracksSound: app != nil)
-            recording = Recording(meeting: meeting, folder: folder, me: me, them: them)
+            recording = Recording(meeting: meeting, folder: folder, mode: mode, me: me, them: them)
         } catch {
             for stream in opened {
                 try? stream.close()
@@ -273,6 +352,34 @@ public final class Recorder {
             state = .idle
             throw error
         }
+    }
+
+    /// Titles the Meeting after its Event, or by default, and resolves its Provider.
+    func name(_ meeting: inout LiveMeeting, after event: CalendarEvent?) {
+        meeting.event = event
+        meeting.title = Self.title(of: event) ?? MeetingFormat.defaultTitle(start: meeting.start, in: timeZone)
+        meeting.provider = vendorTable.provider(for: meeting.app, link: event.flatMap(matcher.link(in:)))
+    }
+
+    private static func title(of event: CalendarEvent?) -> String? {
+        event?.title.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+    }
+
+    private func state(of meeting: LiveMeeting, mode: InProgressMeeting.State.Mode) -> InProgressMeeting.State {
+        InProgressMeeting.State(
+            id: meeting.id, start: MeetingFormat.timestamp(meeting.start, in: timeZone),
+            meetingApp: meeting.app?.bundleID, language: MeetingFormat.bcp47(meeting.language), mode: mode,
+            event: meeting.event)
+    }
+
+    /// The live Meeting belongs to another Event from now on.
+    private func retarget(to event: CalendarEvent) throws {
+        guard var recording, case .live(var meeting) = state else { return }
+        name(&meeting, after: event)
+        recording.meeting = meeting
+        self.recording = recording
+        state = .live(meeting)
+        try recording.folder.create(state(of: meeting, mode: recording.mode))
     }
 
     @discardableResult
@@ -296,7 +403,7 @@ public final class Recorder {
         }
     }
 
-    /// Stops the live Meeting's capture. Returns the work that files it.
+    /// Stops the live Meeting's capture. Returns the work that files it and says the Transcript is ready.
     private func close() throws -> (LiveMeeting, @MainActor () async throws -> URL) {
         guard let recording, case .live(let meeting) = state else { throw Failure.notLive }
         let end = now()
@@ -311,11 +418,13 @@ public final class Recorder {
         }
         let (me, them) = (recording.me.session, recording.them.session)
         return (meeting, {
-            try await self.file(meeting, end: end, folder: recording.folder) {
+            let file = try await self.file(meeting, end: end, folder: recording.folder) {
                 async let meWords = me.finish()
                 async let themWords = them.finish()
                 return (try await meWords, try await themWords)
             }
+            self.onEvent?(.transcriptReady(id: meeting.id, title: meeting.title, file: file))
+            return file
         })
     }
 
@@ -336,14 +445,33 @@ public final class Recorder {
         let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
         // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
         let split = letters.isEmpty ? nil : diarization
-        let transcript = TranscriptBuilder.body(TranscriptBuilder.turns(me: me, them: them, diarization: split))
+        let participants = meeting.event.map(EventMatcher.participants(of:)) ?? []
+        // In a 1:1 Event, the lone Them Speaker (or Them) is the other attendee.
+        let attendee = participants.count == 1 ? TranscriptBuilder.label(forName: participants[0].name) : nil
+        var speakers = split.map { Self.speakers($0, letters: letters) } ?? []
+        var labels: [String: String] = [:]
+        if let attendee, speakers.count == 1 {
+            labels[speakers[0].cluster] = attendee
+            speakers[0].label = attendee
+            speakers[0].name = attendee
+            speakers[0].match = "attendee1to1"
+        }
+        var turns = TranscriptBuilder.turns(me: me, them: them, diarization: split, labels: labels)
+        if let attendee, split == nil {
+            turns = turns.map { turn in
+                var turn = turn
+                if turn.speaker == TranscriptBuilder.them { turn.speaker = attendee }
+                return turn
+            }
+        }
         let file = try library.create(
             FinishedMeeting(
                 id: meeting.id, title: meeting.title, start: meeting.start, end: end, timeZone: timeZone,
                 language: meeting.language, provider: meeting.provider, meetingApp: meeting.app?.bundleID,
-                transcriptKind: split == nil ? .fallback : .speakers,
-                speakers: split.map { Self.speakers($0, letters: letters) } ?? []),
-            transcript: transcript)
+                providerMeetingId: meeting.event.flatMap(matcher.link(in:))?.meetingId,
+                calendarEventId: meeting.event?.id, participants: participants,
+                transcriptKind: split == nil ? .fallback : .speakers, speakers: speakers),
+            transcript: TranscriptBuilder.body(turns))
         if keepAudio() {
             // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
             try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)

@@ -9,7 +9,7 @@ public final class Library {
     static let backupsKept = 14
     static let backupInterval: TimeInterval = 24 * 60 * 60
 
-    public let folder: URL
+    public internal(set) var folder: URL
     let indexFile: URL
     let backupsFolder: URL
     @ObservationIgnored let now: @Sendable () -> Date
@@ -55,7 +55,9 @@ public final class Library {
             end: MeetingFormat.timestamp(meeting.end, in: meeting.timeZone),
             language: MeetingFormat.bcp47(meeting.language),
             provider: meeting.provider,
+            providerMeetingId: meeting.providerMeetingId,
             meetingApp: meeting.meetingApp,
+            calendarEventId: meeting.calendarEventId,
             participants: meeting.participants,
             speakers: meeting.speakers,
             transcript: meeting.transcriptKind.rawValue,
