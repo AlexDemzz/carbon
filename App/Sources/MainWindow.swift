@@ -3,24 +3,43 @@ import SwiftUI
 
 /// The native split window: Meetings and Search in the sidebar, the selected Meeting in the panel.
 struct MainWindow: View {
-    let library: Library
+    @Bindable var model: AppModel
     @State private var query = ""
-    @State private var selection: ListedMeeting.ID?
+
+    private var library: Library { model.library }
+    private var selected: ListedMeeting? { library.meetings.first { $0.id == model.selection } }
+
+    private func meeting(_ ids: Set<UUID>) -> ListedMeeting? {
+        ids.first.flatMap { id in library.meetings.first { $0.id == id } }
+    }
 
     var body: some View {
         let hits = library.search(query)
         NavigationSplitView {
-            List(hits, id: \.meeting.id, selection: $selection) { hit in
+            List(hits, id: \.meeting.id, selection: $model.selection) { hit in
                 MeetingRow(meeting: hit.meeting, snippet: hit.snippet)
             }
+            .contextMenu(forSelectionType: UUID.self) { ids in
+                if let meeting = meeting(ids) {
+                    MeetingMenuItems(model: model, meeting: meeting, place: .contextMenu)
+                }
+            } primaryAction: { ids in
+                // Return and double-click.
+                if let meeting = meeting(ids) { model.edit(meeting) }
+            }
+            .onCopyCommand {
+                guard let selected else { return [] }
+                return [NSItemProvider(object: model.currentMarkdown(selected) as NSString)]
+            }
+            .onDeleteCommand { model.pendingDelete = selected }
             .searchable(text: $query, placement: .sidebar, prompt: "Search Meetings")
             .navigationSplitViewColumnWidth(min: 240, ideal: 300)
             .overlay {
                 if hits.isEmpty { EmptyLibrary(query: query) }
             }
         } detail: {
-            if let meeting = library.meetings.first(where: { $0.id == selection }) {
-                MeetingPanel(meeting: meeting)
+            if let selected {
+                MeetingPanel(model: model, meeting: selected)
             } else {
                 ContentUnavailableView(
                     "No Meeting Selected", systemImage: "text.alignleft",
@@ -28,7 +47,17 @@ struct MainWindow: View {
             }
         }
         .frame(minWidth: 700, minHeight: 420)
-        .onAppear { selection = selection ?? library.meetings.first?.id }
+        .background {
+            // ⇧⌘C anywhere in the window. The list's own ⌘C (onCopyCommand) leaves text selection's ⌘C alone.
+            Button("Copy Path") { selected.map(model.copyPath) }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(selected == nil)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+        .modifier(MeetingDialogs(model: model))
+        .onAppear { model.selection = model.selection ?? library.meetings.first?.id }
     }
 }
 
@@ -74,6 +103,8 @@ struct MeetingRow: View {
 }
 
 enum MeetingColor {
+    static let names = ["red", "orange", "yellow", "green", "blue", "purple", "gray"]
+
     static func color(_ name: String?) -> Color {
         switch name {
         case "red": .red
@@ -89,6 +120,7 @@ enum MeetingColor {
 }
 
 struct MeetingPanel: View {
+    let model: AppModel
     let meeting: ListedMeeting
 
     var body: some View {
@@ -109,20 +141,20 @@ struct MeetingPanel: View {
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle(meeting.title)
+        // An editable title: double-click it in the title bar to rename the Meeting.
+        .navigationTitle(Binding(get: { meeting.title }, set: { model.rename(meeting, to: $0) }))
         .navigationSubtitle(meeting.titleBarDetails(in: .current))
         .toolbar {
-            // Edit and More get their actions in ticket 09.
             ToolbarItem(placement: .primaryAction) {
-                Button("Edit", systemImage: "square.and.pencil") {}
+                Button("Edit", systemImage: "square.and.pencil") { model.edit(meeting) }
                     .help("Edit the Meeting's Markdown in a new window")
-                    .disabled(true)
             }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
-                Menu("More", systemImage: "ellipsis") {}
-                    .menuIndicator(.hidden)
-                    .disabled(true)
+                Menu("More", systemImage: "ellipsis") {
+                    MeetingMenuItems(model: model, meeting: meeting, place: .more)
+                }
+                .menuIndicator(.hidden)
             }
         }
     }
