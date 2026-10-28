@@ -9,15 +9,17 @@ import Synchronization
 final class SignalSampler: SignalSource {
     private let vendorTable: VendorTable
     private let log: DiagnosticLog
+    private let calendar: CalendarEvents
 
-    init(vendorTable: VendorTable = .shipped, log: DiagnosticLog = .shared) {
+    init(vendorTable: VendorTable = .shipped, log: DiagnosticLog = .shared, calendar: CalendarEvents = CalendarEvents()) {
         self.vendorTable = vendorTable
         self.log = log
+        self.calendar = calendar
     }
 
     func micSnapshots() -> AsyncStream<MicSnapshot> {
         let (stream, continuation) = AsyncStream.makeStream(of: MicSnapshot.self, bufferingPolicy: .bufferingNewest(4))
-        let running = Running(vendorTable: vendorTable, log: log) { continuation.yield($0) }
+        let running = Running(vendorTable: vendorTable, log: log, calendar: calendar) { continuation.yield($0) }
         continuation.onTermination = { _ in running.stop() }
         running.start()
         return stream
@@ -26,6 +28,7 @@ final class SignalSampler: SignalSource {
     private final class Running: Sendable {
         private let vendorTable: VendorTable
         private let log: DiagnosticLog
+        private let calendar: CalendarEvents
         private let emit: @Sendable (MicSnapshot) -> Void
         private let queue = DispatchQueue(label: "me.alexandrejoly.carbon.signal-sampler")
         private let state = Mutex(State())
@@ -40,7 +43,11 @@ final class SignalSampler: SignalSource {
 
         private static let watched = [kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyIsRunningOutput]
 
-        init(vendorTable: VendorTable, log: DiagnosticLog, emit: @escaping @Sendable (MicSnapshot) -> Void) {
+        init(
+            vendorTable: VendorTable, log: DiagnosticLog, calendar: CalendarEvents,
+            emit: @escaping @Sendable (MicSnapshot) -> Void
+        ) {
+            self.calendar = calendar
             self.vendorTable = vendorTable
             self.log = log
             self.emit = emit
@@ -117,7 +124,7 @@ final class SignalSampler: SignalSource {
                         "Unmatched mic holder: \(owner.bundleID) (\(owner.name))")
                 }
             }
-            emit(MicSnapshot(time: Date(), micHolders: holders))
+            emit(MicSnapshot(time: Date(), micHolders: holders, events: calendar.current))
         }
     }
 }

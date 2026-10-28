@@ -26,6 +26,10 @@ public struct FinishedMeeting: Equatable, Sendable {
     public var language: Locale
     public var provider: String
     public var meetingApp: String?
+    /// The Provider's meeting code, parsed from the Event's link.
+    public var providerMeetingId: String?
+    /// The matched Event's `calendarItemExternalIdentifier`.
+    public var calendarEventId: String?
     public var participants: [Participant]
     public var transcriptKind: TranscriptKind
     /// The diarized Speakers, lettered as in the Transcript. Empty for the Me / Them fallback.
@@ -33,7 +37,8 @@ public struct FinishedMeeting: Equatable, Sendable {
 
     public init(
         id: UUID, title: String, start: Date, end: Date, timeZone: TimeZone, language: Locale,
-        provider: String, meetingApp: String? = nil, participants: [Participant] = [],
+        provider: String, meetingApp: String? = nil, providerMeetingId: String? = nil,
+        calendarEventId: String? = nil, participants: [Participant] = [],
         transcriptKind: TranscriptKind, speakers: [MeetingIndex.Speaker] = []
     ) {
         self.speakers = speakers
@@ -45,6 +50,8 @@ public struct FinishedMeeting: Equatable, Sendable {
         self.language = language
         self.provider = provider
         self.meetingApp = meetingApp
+        self.providerMeetingId = providerMeetingId
+        self.calendarEventId = calendarEventId
         self.participants = participants
         self.transcriptKind = transcriptKind
     }
