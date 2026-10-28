@@ -35,11 +35,12 @@ A spec for Carbon v1, ready to hand off for implementation: the product design i
 - [Power assertions as a Detection signal](issues/17-power-assertions-as-detection-signal.md): Zoom/Teams/Webex call assertions join the mic as start signals (each alone auto-starts) and end a Meeting on release; browser WebRTC assertion is diagnostic only; 15 s / 3 s×2 confirm, 15 s grace + 30 s silence, 5 s back-to-back gap, 4 h cap; ~40 Ignored Apps.
 - [Diarization and Voice Print quality on real calls](issues/07-diarization-quality-on-real-calls.md): ship Speaker A/B/C and Voice Prints in v1. Them DER 21.5 % EN / 12.8 % FR / 14.4 % FR phone, mostly missed overlap. Clustering threshold stays 0.6, merge per word. Voice Prints auto-match below 0.30 cosine distance with a 0.10 margin, from ≥ 10 s of speech. The pass runs under a watchdog, falling back to Me/Them.
 - [Transcription engine quality on real calls](issues/14-transcription-engine-on-real-calls.md): SpeechTranscriber only, no Parakeet post-pass. Ultra is only 10–14 % better than SpeechTranscriber, short of the 15 % bar. No phantom text on silence. Two live streams cost ~6 % of one core with ~2 s final lag. Meeting Language stays chosen. No name boosting: `contextualStrings` is inert and CTC floods the text. Phone-band audio is the weak case.
+- [Transcript body format in Markdown](issues/18-transcript-markdown-format.md): one turn per line, `**Speaker** [m:ss] text`. Turns are built from sentences ordered across streams, and a new turn starts on a Speaker change, a 10 s pause or a 90 s monologue. Voice Print names go into the first write; a rename rewrites header labels only; the fallback uses Me/Them.
 
 ## Not yet specified
 
-- `meetings.json` schema and Voice Print storage (where, how deletable, privacy wording). A print is a 256-d centroid plus the embedding model id; the matching rules are in "Diarization and Voice Print quality on real calls".
-- Behaviour around overlapping Meetings (two call apps at once) and app crashes mid-Meeting (partial Transcript recovery); back-to-back splitting is decided in "Power assertions as a Detection signal".
+- `meetings.json` schema and Voice Print storage (where, how deletable, privacy wording). A print is a 256-d centroid plus the embedding model id; the per-Meeting Speaker letter → name / Voice Print link lives here, not in the Markdown file; the matching rules are in "Diarization and Voice Print quality on real calls".
+- Behaviour around overlapping Meetings (two call apps at once) and app crashes mid-Meeting (partial Transcript recovery: whether anything is written to the file before the Meeting ends); back-to-back splitting is decided in "Power assertions as a Detection signal".
 - Landing page and privacy page content for `carbon.alexandrejoly.me`.
 - Settings: final layout and copy (the mock only roughs it out), plus a VoiceOver / keyboard / light-mode pass over the whole UI.
 

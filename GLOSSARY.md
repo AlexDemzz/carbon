@@ -36,6 +36,10 @@ _Avoid_: Locale, transcription language
 A distinct voice in a Transcript: the person themself ("Me") or another participant, unnamed ("Speaker A") until named.
 _Avoid_: Participant, attendee, voice
 
+**Turn**:
+One stretch of a Transcript attributed to a single Speaker, stamped with the time it starts.
+_Avoid_: Segment, utterance, line
+
 **Voice Print**:
 The remembered signature of a named Speaker's voice, used to recognize them in later Meetings.
 _Avoid_: Embedding, voice profile
