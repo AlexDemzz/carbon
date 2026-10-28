@@ -113,6 +113,8 @@ public final class Recorder {
     private let makeID: @Sendable () -> UUID
     private var detector: Detector
     var recording: Recording?
+    /// The Meeting Language switch under way, which every end of the Meeting waits for.
+    private var languageSwitch: Task<Void, any Error>?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
     private var filings: [UUID: Task<Void, Never>] = [:]
     /// The last time the stream that tells whether the Meeting is still going was not silent.
@@ -233,7 +235,7 @@ public final class Recorder {
                 case .event(let event):
                     try retarget(to: event)
                 case .end:
-                    if recording != nil { try finishInBackground() }
+                    if recording != nil { try await finishInBackground() }
                 case .offerSwitch(let app):
                     guard case .live(let meeting) = state else { continue }
                     onEvent?(.switchOffered(
@@ -296,15 +298,17 @@ public final class Recorder {
     /// The person took "Switch to <app>": ends the live Meeting as usual and starts one on `app` at once,
     /// in the same Meeting Language. The ended Meeting is filed meanwhile.
     public func switchMeeting(to app: MeetingApp) async throws {
+        try? await languageSwitch?.value
         guard recording != nil, case .live(let meeting) = state else { throw Failure.notLive }
         let event = detector.meetingSwitched(to: app, at: now())
-        try finishInBackground()
+        try await finishInBackground()
         try await begin(language: meeting.language, app: app, event: event, mode: .auto)
         if case .live(let started) = state { onEvent?(.started(started)) }
     }
 
     /// Ends the live Meeting and keeps nothing.
     public func discard() async {
+        try? await languageSwitch?.value
         guard let recording else { return }
         detector.meetingStopped()
         for stream in [recording.me, recording.them] {
@@ -377,6 +381,61 @@ public final class Recorder {
             event: meeting.event)
     }
 
+    /// Changes the live Meeting's Meeting Language: a new pair of sessions in `language` hears both streams again
+    /// from the start, then goes on live, and the old pair's words are dropped. The file is written entirely in
+    /// `language`. If the new sessions can't start, the Meeting goes on in its old language and this throws.
+    public func switchLanguage(to language: Locale) async throws {
+        try? await languageSwitch?.value
+        guard recording != nil, case .live(let meeting) = state else { throw Failure.notLive }
+        guard language != meeting.language else { return }
+        let task = Task { try await handStreams(of: meeting.id, to: language) }
+        languageSwitch = task
+        defer { if languageSwitch == task { languageSwitch = nil } }
+        try await task.value
+    }
+
+    private func handStreams(of id: UUID, to language: Locale) async throws {
+        let me = try await transcriber.start(locale: language, stream: .me)
+        let them: any TranscriptionSession
+        do {
+            them = try await transcriber.start(locale: language, stream: .them)
+        } catch {
+            _ = try? await me.finish()
+            throw error
+        }
+        guard var recording, recording.meeting.id == id else {
+            _ = try? await me.finish()
+            _ = try? await them.finish()
+            throw Failure.notLive
+        }
+        let (meRecorder, themRecorder) = (recording.me.recorder, recording.them.recorder)
+        let replaced: [any TranscriptionSession]
+        do {
+            replaced = try await Task.detached {
+                let oldMe = try meRecorder.hand(to: me)
+                do {
+                    return [oldMe, try themRecorder.hand(to: them)]
+                } catch {
+                    // Me already moved on: give it back, so both streams stay in one language. The old session
+                    // misses the audio of the attempt, which beats a file in two languages.
+                    meRecorder.giveBack(oldMe)
+                    throw error
+                }
+            }.value
+        } catch {
+            _ = try? await me.finish()
+            _ = try? await them.finish()
+            throw error
+        }
+        recording.me.session = me
+        recording.them.session = them
+        recording.meeting.language = language
+        self.recording = recording
+        state = .live(recording.meeting)
+        try? recording.folder.create(state(of: recording.meeting, mode: recording.mode))
+        for session in replaced { _ = try? await session.finish() }
+    }
+
     /// The live Meeting belongs to another Event from now on.
     private func retarget(to event: CalendarEvent) throws {
         guard var recording, case .live(var meeting) = state else { return }
@@ -389,13 +448,15 @@ public final class Recorder {
 
     @discardableResult
     private func finish() async throws -> URL {
+        try? await languageSwitch?.value
         let (meeting, file) = try close()
         defer { settle(meeting) }
         return try await file()
     }
 
     /// Ends a Meeting Detection ended without holding up Detection: the next Meeting can start while it is filed.
-    private func finishInBackground() throws {
+    private func finishInBackground() async throws {
+        try? await languageSwitch?.value
         let (meeting, file) = try close()
         filings[meeting.id] = Task {
             do {
@@ -409,6 +470,7 @@ public final class Recorder {
     }
 
     /// Stops the live Meeting's capture. Returns the work that files it and says the Transcript is ready.
+    /// Wait for a Meeting Language switch first: until it settles, its sessions are not the Recording's yet.
     private func close() throws -> (LiveMeeting, @MainActor () async throws -> URL) {
         guard let recording, case .live(let meeting) = state else { throw Failure.notLive }
         let end = now()

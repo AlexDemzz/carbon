@@ -10,6 +10,9 @@ struct SettingsView: View {
             Tab("General", systemImage: "gearshape", value: .general) {
                 GeneralSettings(model: model, updater: updater)
             }
+            Tab("Languages", systemImage: "globe", value: .languages) {
+                LanguagesSettings(model: model)
+            }
             Tab("Ignored Apps", systemImage: "nosign", value: .ignoredApps) {
                 IgnoredAppsSettings(model: model)
             }
@@ -69,6 +72,83 @@ private struct GeneralSettings: View {
         }
         .formStyle(.grouped)
         .onAppear { launchesAtLogin = model.launchesAtLogin }
+    }
+}
+
+/// The Meeting Languages: a checkbox per language SpeechTranscriber supports, each checked one with its download
+/// state, and the default among the checked ones.
+private struct LanguagesSettings: View {
+    let model: AppModel
+
+    var body: some View {
+        Form {
+            if let languages = model.meetingLanguages {
+                Section {
+                    Picker("Default language", selection: defaultLanguage) {
+                        ForEach(languages.chosen, id: \.self) { language in
+                            Text(languages.name(of: language)).tag(language.identifier(.bcp47))
+                        }
+                    }
+                } footer: {
+                    Text("Meetings start in the default language. Switch while transcribing from the menu bar or the notification.")
+                        .foregroundStyle(.secondary)
+                }
+                Section("Meeting Languages") {
+                    ForEach(model.languageAssets.supported, id: \.self) { language in
+                        LanguageRow(
+                            name: Locale.current.localizedString(forIdentifier: language.identifier)
+                                ?? language.identifier(.bcp47),
+                            isChosen: chosen(language),
+                            canUncheck: languages.canUncheck(language),
+                            state: model.languageAssets.state(of: language))
+                    }
+                }
+            } else {
+                ProgressView()
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            if model.languageAssets.supported.isEmpty { await model.languageAssets.loadSupported() }
+        }
+    }
+
+    private var defaultLanguage: Binding<String> {
+        Binding(
+            get: { model.meetingLanguages?.defaultLanguage.identifier(.bcp47) ?? "" },
+            set: { model.meetingLanguages?.defaultLanguage = Locale(identifier: Locale.identifier(.icu, from: $0)) })
+    }
+
+    private func chosen(_ language: Locale) -> Binding<Bool> {
+        Binding(
+            get: { model.meetingLanguages?.isChosen(language) ?? false },
+            set: { model.meetingLanguages?.set(language, chosen: $0) })
+    }
+}
+
+private struct LanguageRow: View {
+    let name: String
+    @Binding var isChosen: Bool
+    let canUncheck: Bool
+    let state: MeetingLanguageAssets.State?
+
+    var body: some View {
+        HStack {
+            Toggle(name, isOn: $isChosen)
+                .toggleStyle(.checkbox)
+                .disabled(!canUncheck)
+            Spacer()
+            if isChosen, let state {
+                switch state {
+                case .downloading:
+                    Text("Downloading\u{2026}").foregroundStyle(.secondary)
+                case .ready:
+                    Text("Ready").foregroundStyle(.secondary)
+                case .failed:
+                    Text("Couldn\u{2019}t download").foregroundStyle(.red)
+                }
+            }
+        }
     }
 }
 
