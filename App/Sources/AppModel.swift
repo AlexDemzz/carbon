@@ -25,7 +25,7 @@ final class AppModel {
         library = Library(folder: documents.appending(path: "Carbon"), supportFolder: support)
         recorder = Recorder(
             microphone: MicrophoneSource(),
-            systemAudio: SystemAudioTap(),
+            systemAudio: { app in SystemAudioTap(app: app) },
             systemAudioPermission: SystemAudioRecordingPermission.current,
             transcriber: SpeechTranscriberAdapter(),
             library: library,
@@ -36,6 +36,28 @@ final class AppModel {
             present(error, title: "Carbon couldn't read its Library")
         }
         showCarbonShortcut = GlobalHotKey { [weak self] in self?.toggleMainWindow() }
+        startDetection()
+    }
+
+    /// Detection runs for the whole launch: a Meeting App holding the mic starts and ends Meetings on its own.
+    private func startDetection() {
+        recorder.onDetectionFailure = { [weak self] error in
+            DiagnosticLog.shared.write("Detection couldn't start or save a Meeting: \(error.localizedDescription)")
+            if case Recorder.Failure.systemAudioRecordingDenied = error {
+                self?.present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
+            } else {
+                self?.present(error, title: "Carbon couldn't transcribe a Meeting")
+            }
+        }
+        let recorder = recorder
+        Task {
+            guard await MicrophoneSource.requestAccess() else {
+                DiagnosticLog.shared.write("Detection is off: no microphone access")
+                return
+            }
+            recorder.detectionLanguage = await SpeechTranscriber.supportedLocale(equivalentTo: .current)
+            await recorder.runDetection(SignalSampler())
+        }
     }
 
     /// Show Carbon: brings the main window forward, or hides Carbon when it is already in front.

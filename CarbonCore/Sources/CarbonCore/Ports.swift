@@ -41,6 +41,22 @@ public protocol Transcriber: Sendable {
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession
 }
 
+/// What the microphone looked like at one moment: the apps holding it, each resolved to its owning app.
+public struct MicSnapshot: Equatable, Sendable {
+    public var time: Date
+    public var micHolders: [MeetingApp]
+
+    public init(time: Date, micHolders: [MeetingApp]) {
+        self.time = time
+        self.micHolders = micHolders
+    }
+}
+
+/// Detection's signals, such as Core Audio's process list. Snapshots arrive at least once a second.
+public protocol SignalSource: Sendable {
+    func micSnapshots() -> AsyncStream<MicSnapshot>
+}
+
 /// One stream being transcribed live.
 public protocol TranscriptionSession: AnyObject, Sendable {
     /// The format `append` expects (the analyzer format).
