@@ -142,6 +142,10 @@ struct EventRecorderTests {
             **Sam Rivera** [0:02] Hello there.
 
             """))
+        #expect(try entries().first?["speakers"] as? [NSDictionary] == [[
+            "label": "Sam Rivera", "cluster": "Them", "name": "Sam Rivera", "voicePrintId": NSNull(),
+            "match": "attendee1to1", "speechSeconds": 0,
+        ]])
     }
 
     @Test func inA1To1TheLoneSpeakerIsWrittenAsTheOtherAttendee() async throws {

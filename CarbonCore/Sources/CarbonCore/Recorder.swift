@@ -533,12 +533,16 @@ public final class Recorder {
             speakers[0].match = "attendee1to1"
         }
         var turns = TranscriptBuilder.turns(me: me, them: them, diarization: split, labels: labels)
-        if let attendee, split == nil {
+        if let attendee, split == nil, turns.contains(where: { $0.speaker == TranscriptBuilder.them }) {
             turns = turns.map { turn in
                 var turn = turn
                 if turn.speaker == TranscriptBuilder.them { turn.speaker = attendee }
                 return turn
             }
+            // As `renameSpeaker` records a named Them, so the label reads as a Speaker named after the attendee.
+            speakers = [MeetingIndex.Speaker(
+                label: attendee, cluster: TranscriptBuilder.them, name: attendee, match: "attendee1to1",
+                speechSeconds: 0)]
         }
         let transcript = TranscriptBuilder.body(turns)
         let file = try library.create(
