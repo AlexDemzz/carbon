@@ -21,7 +21,11 @@ struct MenuBarMenu: View {
             Button("Start Transcribing") { model.start() }
         case .live(let meeting):
             Text("Transcribing \u{201C}\(meeting.title)\u{201D}")
-            Text("since \(meeting.start.formatted(date: .omitted, time: .shortened))")
+            if meeting.app != nil {
+                Text("\(meeting.provider) \u{00B7} since \(meeting.start.formatted(date: .omitted, time: .shortened))")
+            } else {
+                Text("since \(meeting.start.formatted(date: .omitted, time: .shortened))")
+            }
             Button("Stop") { model.stop() }
             Button("Discard") { model.discard() }
         case .finishing(let meeting):

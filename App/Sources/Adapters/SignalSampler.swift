@@ -1,0 +1,123 @@
+import CarbonCore
+import CoreAudio
+import Foundation
+import Synchronization
+
+/// Detection's mic signal: which apps hold the microphone, from Core Audio's process list.
+/// Property listeners on the list and on each process's `IsRunningInput` / `IsRunningOutput` sample at once;
+/// a 1 s poll is the backstop, so a snapshot arrives at least every second for the Detector's timers.
+final class SignalSampler: SignalSource {
+    private let vendorTable: VendorTable
+    private let log: DiagnosticLog
+
+    init(vendorTable: VendorTable = .shipped, log: DiagnosticLog = .shared) {
+        self.vendorTable = vendorTable
+        self.log = log
+    }
+
+    func micSnapshots() -> AsyncStream<MicSnapshot> {
+        let (stream, continuation) = AsyncStream.makeStream(of: MicSnapshot.self, bufferingPolicy: .bufferingNewest(4))
+        let running = Running(vendorTable: vendorTable, log: log) { continuation.yield($0) }
+        continuation.onTermination = { _ in running.stop() }
+        running.start()
+        return stream
+    }
+
+    private final class Running: Sendable {
+        private let vendorTable: VendorTable
+        private let log: DiagnosticLog
+        private let emit: @Sendable (MicSnapshot) -> Void
+        private let queue = DispatchQueue(label: "me.alexandrejoly.carbon.signal-sampler")
+        private let state = Mutex(State())
+
+        private struct State: @unchecked Sendable {
+            var timer: DispatchSourceTimer?
+            var listListener: AudioObjectPropertyListenerBlock?
+            /// The listeners installed on each process, to remove them when the process goes. Never read for sampling.
+            var processListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
+            var stopped = false
+        }
+
+        private static let watched = [kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyIsRunningOutput]
+
+        init(vendorTable: VendorTable, log: DiagnosticLog, emit: @escaping @Sendable (MicSnapshot) -> Void) {
+            self.vendorTable = vendorTable
+            self.log = log
+            self.emit = emit
+        }
+
+        func start() {
+            let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                self?.relisten()
+                self?.sample()
+            }
+            var address = AudioProcesses.address(kAudioHardwarePropertyProcessObjectList)
+            AudioObjectAddPropertyListenerBlock(AudioProcesses.system, &address, queue, listener)
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now(), repeating: 1)
+            timer.setEventHandler { [weak self] in self?.sample() }
+            state.withLock {
+                $0.listListener = listener
+                $0.timer = timer
+            }
+            queue.async { [weak self] in self?.relisten() }
+            timer.resume()
+        }
+
+        func stop() {
+            // Listener blocks take the lock: remove them outside it.
+            let stopped = state.withLock { state in
+                defer { state = State(stopped: true) }
+                return state
+            }
+            stopped.timer?.cancel()
+            if let listener = stopped.listListener {
+                var address = AudioProcesses.address(kAudioHardwarePropertyProcessObjectList)
+                AudioObjectRemovePropertyListenerBlock(AudioProcesses.system, &address, queue, listener)
+            }
+            for (id, listener) in stopped.processListeners {
+                for selector in Self.watched {
+                    var address = AudioProcesses.address(selector)
+                    AudioObjectRemovePropertyListenerBlock(id, &address, queue, listener)
+                }
+            }
+        }
+
+        /// Moves the per-process listeners onto the current process list.
+        private func relisten() {
+            let current = Set(AudioProcesses.ids())
+            state.withLock { state in
+                guard !state.stopped else { return }
+                for (id, listener) in state.processListeners where !current.contains(id) {
+                    for selector in Self.watched {
+                        var address = AudioProcesses.address(selector)
+                        AudioObjectRemovePropertyListenerBlock(id, &address, queue, listener)
+                    }
+                    state.processListeners[id] = nil
+                }
+                for id in current where state.processListeners[id] == nil {
+                    let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.sample() }
+                    for selector in Self.watched {
+                        var address = AudioProcesses.address(selector)
+                        AudioObjectAddPropertyListenerBlock(id, &address, queue, listener)
+                    }
+                    state.processListeners[id] = listener
+                }
+            }
+        }
+
+        private func sample() {
+            var holders: [MeetingApp] = []
+            for process in AudioProcesses.all() where process.isRunningInput {
+                guard let owner = process.owner, !holders.contains(owner) else { continue }
+                holders.append(owner)
+                if !vendorTable.knows(owner.bundleID) {
+                    log.writeOnce(
+                        key: "mic-holder:\(owner.bundleID)",
+                        "Unmatched mic holder: \(owner.bundleID) (\(owner.name))")
+                }
+            }
+            emit(MicSnapshot(time: Date(), micHolders: holders))
+        }
+    }
+}
