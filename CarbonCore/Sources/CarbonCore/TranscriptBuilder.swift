@@ -21,6 +21,7 @@ public enum TranscriptBuilder {
     static let sentencePause: TimeInterval = 1.5
     static let turnSilence: TimeInterval = 10
     static let longestTurn: TimeInterval = 90
+    static let nearestSegment: TimeInterval = 1
     static let sentenceEnds: Set<Character> = [".", "?", "!", "…"]
     static let closingMarks: Set<Character> = ["\"", "'", ")"]
     static let escaped: Set<Character> = ["\\", "`", "*", "_", "[", "]", "<", ">"]
@@ -32,8 +33,25 @@ public enum TranscriptBuilder {
 
     /// The Me / Them Turns of a Meeting from both streams' words, each timed from the start of the Meeting.
     public static func turns(me: [TranscribedWord], them: [TranscribedWord]) -> [Turn] {
-        let sentences = sentences(me.map { Word(speaker: Self.me, word: $0) })
-            + sentences(them.map { Word(speaker: Self.them, word: $0) })
+        turns(me: me, them: them, diarization: nil)
+    }
+
+    /// The Turns of a Meeting with the Them words split by Speaker: `Speaker A`, `Speaker B`… unless `labels`
+    /// names a cluster letter. Without a diarization, the Me / Them fallback.
+    public static func turns(
+        me: [TranscribedWord], them: [TranscribedWord], diarization: Diarization?, labels: [String: String] = [:]
+    ) -> [Turn] {
+        let themWords: [Word]
+        if let diarization, let clusters = clusters(of: them, in: diarization.segments) {
+            let letters = letters(ofClustersInOrder: clusters)
+            themWords = zip(them, clusters).map { word, cluster in
+                let letter = letters[cluster]!
+                return Word(speaker: labels[letter] ?? "Speaker \(letter)", word: word)
+            }
+        } else {
+            themWords = them.map { Word(speaker: Self.them, word: $0) }
+        }
+        let sentences = sentences(me.map { Word(speaker: Self.me, word: $0) }) + sentences(themWords)
         let ordered = sentences.enumerated().sorted { lhs, rhs in
             let (left, right) = (lhs.element[0], rhs.element[0])
             if left.word.start != right.word.start { return left.word.start < right.word.start }
@@ -72,6 +90,54 @@ public enum TranscriptBuilder {
         guard !cleaned.isEmpty else { return nil }
         let reserved = [me, them].contains { $0.caseInsensitiveCompare(cleaned) == .orderedSame }
         return reserved ? nil : cleaned
+    }
+
+    /// The letter (`A`, `B`…) of each diarization cluster heard in the Them words, in order of its first word.
+    /// Empty when no word could be attributed.
+    public static func clusterLetters(them: [TranscribedWord], diarization: Diarization) -> [String: String] {
+        clusters(of: them, in: diarization.segments).map(letters(ofClustersInOrder:)) ?? [:]
+    }
+
+    /// Each word's cluster: the most-overlapping segment, else the nearest one within 1 s of the word's middle,
+    /// else the previous word's (the next one's before the first attributed word). Nil when no word is reached.
+    private static func clusters(of words: [TranscribedWord], in segments: [Diarization.Segment]) -> [String]? {
+        var found = words.map { cluster(of: $0, in: segments) }
+        guard let first = found.firstIndex(where: { $0 != nil }) else { return nil }
+        var previous = found[first]
+        for index in found.indices {
+            if found[index] == nil { found[index] = previous } else { previous = found[index] }
+        }
+        return found.map { $0! }
+    }
+
+    private static func cluster(of word: TranscribedWord, in segments: [Diarization.Segment]) -> String? {
+        var best: (cluster: String, overlap: TimeInterval)?
+        for segment in segments {
+            let overlap = min(word.end, segment.end) - max(word.start, segment.start)
+            if overlap > (best?.overlap ?? 0) { best = (segment.cluster, overlap) }
+        }
+        if let best { return best.cluster }
+        let middle = (word.start + word.end) / 2
+        func distance(_ segment: Diarization.Segment) -> TimeInterval {
+            max(segment.start - middle, middle - segment.end, 0)
+        }
+        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= nearestSegment
+        else { return nil }
+        return nearest.cluster
+    }
+
+    private static func letters(ofClustersInOrder clusters: [String]) -> [String: String] {
+        var letters: [String: String] = [:]
+        for cluster in clusters where letters[cluster] == nil {
+            letters[cluster] = letter(letters.count)
+        }
+        return letters
+    }
+
+    /// `A`…`Z`, then `AA`, `AB`…
+    private static func letter(_ index: Int) -> String {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        return index < 26 ? String(alphabet[index]) : letter(index / 26 - 1) + String(alphabet[index % 26])
     }
 
     private static func sentences(_ words: [Word]) -> [[Word]] {

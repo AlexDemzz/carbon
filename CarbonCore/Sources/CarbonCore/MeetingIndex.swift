@@ -88,6 +88,28 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
         public var match: String?
         public var distance: Double?
         public var speechSeconds: Double
+        /// The cluster's L2-normalized centroid embedding, base64 of little-endian Float32s, kept to enroll a
+        /// Voice Print when the Speaker is named. Nil when diarization gave none.
+        public var centroid: String?
+
+        public init(
+            label: String, cluster: String, name: String? = nil, voicePrintId: UUID? = nil, match: String? = nil,
+            distance: Double? = nil, speechSeconds: Double, centroid: String? = nil
+        ) {
+            self.label = label
+            self.cluster = cluster
+            self.name = name
+            self.voicePrintId = voicePrintId
+            self.match = match
+            self.distance = distance
+            self.speechSeconds = speechSeconds
+            self.centroid = centroid
+        }
+
+        /// Encodes an embedding the way `centroid` stores it.
+        public static func encode(centroid: [Float]) -> String {
+            centroid.map(\.bitPattern.littleEndian).withUnsafeBytes { Data($0) }.base64EncodedString()
+        }
 
         public func encode(to encoder: any Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
@@ -98,11 +120,17 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
             try container.encode(match, forKey: .match)
             try container.encodeIfPresent(distance, forKey: .distance)
             try container.encode(speechSeconds, forKey: .speechSeconds)
+            try container.encodeIfPresent(centroid, forKey: .centroid)
         }
     }
 
     public struct Tombstone: Equatable, Sendable, Codable {
         public var id: UUID
         public var deletedAt: String
+
+        public init(id: UUID, deletedAt: String) {
+            self.id = id
+            self.deletedAt = deletedAt
+        }
     }
 }

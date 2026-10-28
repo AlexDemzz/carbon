@@ -99,6 +99,42 @@ final class ReplayTranscriber: Transcriber {
     }
 }
 
+/// Stands in for the diarization helper process: each call plays the next scripted outcome.
+final class ScriptedDiarizer: Diarizer {
+    enum Outcome: Sendable {
+        /// Returns recorded FluidAudio segments and embeddings.
+        case replay(Diarization)
+        case fail
+        /// Never answers until cancelled, like a stalled CoreML prediction.
+        case hang
+    }
+
+    struct Failed: Error {}
+
+    private let outcomes: Mutex<[Outcome]>
+    private let heard = Mutex<[URL]>([])
+
+    init(_ outcomes: [Outcome]) {
+        self.outcomes = Mutex(outcomes)
+    }
+
+    var audioHeard: [URL] { heard.withLock { $0 } }
+
+    func diarize(_ audio: URL) async throws -> Diarization {
+        heard.withLock { $0.append(audio) }
+        let outcome = outcomes.withLock { $0.isEmpty ? .fail : $0.removeFirst() }
+        switch outcome {
+        case .replay(let diarization):
+            return diarization
+        case .fail:
+            throw Failed()
+        case .hang:
+            try await Task.sleep(for: .seconds(3600))
+            throw Failed()
+        }
+    }
+}
+
 /// A clock the test moves by hand.
 final class TestClock: Sendable {
     private let current: Mutex<Date>

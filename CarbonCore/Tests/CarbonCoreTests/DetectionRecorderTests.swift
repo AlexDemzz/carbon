@@ -55,6 +55,8 @@ struct DetectionRecorderTests {
             },
             systemAudioPermission: { .granted },
             transcriber: try ReplayTranscriber(me: "me-words"),
+            diarizer: ScriptedDiarizer([.fail, .fail]),
+            diarizationTimeout: { _ in .milliseconds(100) },
             library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }),
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
