@@ -224,6 +224,9 @@ public final class Recorder {
         try await begin(language: language, app: app, mode: .manual)
     }
 
+    /// The app of the offer waiting for an answer.
+    public var pendingOffer: MeetingApp? { detector.pendingOffer }
+
     /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
     public func acceptOffer(language: Locale) async throws {
         guard state == .idle, recording == nil, let app = detector.offerAccepted() else { return }

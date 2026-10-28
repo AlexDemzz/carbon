@@ -32,7 +32,7 @@ struct CarbonApp: App {
         .menuBarExtraStyle(.menu)
 
         Settings {
-            SettingsView(updater: updater)
+            SettingsView(model: model, updater: updater)
         }
     }
 }
