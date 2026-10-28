@@ -84,4 +84,4 @@ Try system audio capture from the built app, not from a terminal: launched from 
 
 ## Acknowledgements
 
-Speaker diarization by [FluidAudio](https://github.com/FluidInference/FluidAudio). Models licensed CC BY 4.0.
+Speaker diarization by [FluidAudio](https://github.com/FluidInference/FluidAudio). Its models ship inside Carbon (`App/DiarizationModels`): [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/speaker-diarization-coreml) of pyannote's [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), modified for Apple platforms, with work by pyannote, WeSpeaker and BUT Speech@FIT. The models are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); see `App/DiarizationModels/speaker-diarization/NOTICE.md`.

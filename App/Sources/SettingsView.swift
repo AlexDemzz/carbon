@@ -261,8 +261,9 @@ private struct AboutSettings: View {
             LabeledContent("Carbon", value: model.version)
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Speaker diarization by FluidAudio. Models licensed CC BY 4.0.")
-                    Link("FluidAudio models and license", destination: AboutLinks.fluidAudio)
+                    Text("Speaker diarization by FluidAudio, with models built into Carbon: Fluid Inference's modified Core ML conversion of pyannote's speaker-diarization-community-1 (pyannote, WeSpeaker, BUT Speech@FIT). Models licensed CC BY 4.0.")
+                    Link("FluidAudio models", destination: AboutLinks.fluidAudio)
+                    Link("CC BY 4.0 license", destination: AboutLinks.ccBy)
                 }
             }
             Section {
@@ -277,6 +278,7 @@ private struct AboutSettings: View {
 
 private enum AboutLinks {
     static let fluidAudio = URL(string: "https://huggingface.co/FluidInference/speaker-diarization-coreml")!
+    static let ccBy = URL(string: "https://creativecommons.org/licenses/by/4.0/")!
     static let privacy = URL(string: "https://carbon.alexandrejoly.me/privacy")!
     static let website = URL(string: "https://carbon.alexandrejoly.me")!
 }
