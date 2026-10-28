@@ -80,17 +80,18 @@ public final class Recorder {
     private let microphone: any AudioSource
     private let systemAudio: @Sendable (MeetingApp?) -> any AudioSource
     private let systemAudioPermission: @Sendable () -> SystemAudioPermission
-    private let transcriber: any Transcriber
+    let transcriber: any Transcriber
     private let diarizer: any Diarizer
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let library: Library
-    private let vendorTable: VendorTable
-    private let inProgressRoot: URL
-    private let timeZone: TimeZone
+    private let keepAudio: @Sendable () -> Bool
+    let vendorTable: VendorTable
+    let inProgressRoot: URL
+    let timeZone: TimeZone
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
     private var detector: Detector
-    private var recording: Recording?
+    var recording: Recording?
     /// The last time the stream that tells whether the Meeting is still going was not silent.
     private let lastSound = LastSound()
 
@@ -103,14 +104,14 @@ public final class Recorder {
         }
     }
 
-    private struct Recording {
+    struct Recording {
         var meeting: LiveMeeting
         var folder: InProgressMeeting
         var me: Stream
         var them: Stream
     }
 
-    private struct Stream {
+    struct Stream {
         var source: any AudioSource
         var session: any TranscriptionSession
         var recorder: StreamRecorder
@@ -122,7 +123,7 @@ public final class Recorder {
     }
 
     /// `systemAudio` makes the Them stream for a Meeting App: a tap on every process it owns, or, for nil,
-    /// everything the Mac plays except Carbon.
+    /// everything the Mac plays except Carbon. `keepAudio` is the Keep audio setting, read as each Meeting ends.
     public init(
         microphone: any AudioSource,
         systemAudio: @escaping @Sendable (MeetingApp?) -> any AudioSource,
@@ -131,6 +132,7 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
+        keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         vendorTable: VendorTable = .shipped,
         timeZone: TimeZone = .current,
@@ -144,6 +146,7 @@ public final class Recorder {
         self.diarizer = diarizer
         self.diarizationTimeout = diarizationTimeout
         self.library = library
+        self.keepAudio = keepAudio
         self.vendorTable = vendorTable
         detector = Detector(vendorTable: vendorTable)
         inProgressRoot = inProgressFolder
@@ -161,6 +164,7 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         library: Library,
+        keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         timeZone: TimeZone = .current,
         now: @escaping @Sendable () -> Date = Date.init,
@@ -169,7 +173,7 @@ public final class Recorder {
         self.init(
             microphone: microphone, systemAudio: { _ in systemAudio }, systemAudioPermission: systemAudioPermission,
             transcriber: transcriber, diarizer: diarizer, diarizationTimeout: diarizationTimeout, library: library,
-            inProgressFolder: inProgressFolder, timeZone: timeZone, now: now, makeID: makeID)
+            keepAudio: keepAudio, inProgressFolder: inProgressFolder, timeZone: timeZone, now: now, makeID: makeID)
     }
 
     /// Runs Detection on `source` until its snapshots end: starts and ends Meetings without a click.
@@ -314,12 +318,25 @@ public final class Recorder {
         }
         try recording.me.close()
         try recording.them.close()
-        async let meWords = recording.me.session.finish()
-        async let themWords = recording.them.session.finish()
+        let (me, them) = (recording.me.session, recording.them.session)
+        let file = try await file(meeting, end: end, folder: recording.folder) {
+            async let meWords = me.finish()
+            async let themWords = them.finish()
+            return (try await meWords, try await themWords)
+        }
+        onEvent?(.transcriptReady(id: meeting.id, title: meeting.title, file: file))
+        return file
+    }
+
+    /// The end of a Meeting, live or recovered: diarization, Library write, kept audio, cleanup.
+    func file(
+        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
+        words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
+    ) async throws -> URL {
         async let diarized = Self.diarize(
-            recording.folder.themAudio, with: diarizer,
-            timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
-        let (me, them, diarization) = (try await meWords, try await themWords, await diarized)
+            folder.themAudio, with: diarizer, timeout: diarizationTimeout(end.timeIntervalSince(meeting.start)))
+        let (me, them) = try await words()
+        let diarization = await diarized
         let letters = diarization.map { TranscriptBuilder.clusterLetters(them: them, diarization: $0) } ?? [:]
         // A diarization that reaches no Them word has nothing to split: the file stays Me / Them.
         let split = letters.isEmpty ? nil : diarization
@@ -331,8 +348,11 @@ public final class Recorder {
                 transcriptKind: split == nil ? .fallback : .speakers,
                 speakers: split.map { Self.speakers($0, letters: letters) } ?? []),
             transcript: transcript)
-        recording.folder.remove()
-        onEvent?(.transcriptReady(id: meeting.id, title: meeting.title, file: file))
+        if keepAudio() {
+            // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
+            try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)
+        }
+        folder.remove()
         return file
     }
 

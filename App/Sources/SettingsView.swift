@@ -15,9 +15,11 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @Bindable var updater: Updater
+    @AppStorage(SettingsKey.keepAudio) private var keepAudio = false
 
     var body: some View {
         Form {
+            Toggle("Keep audio after transcribing", isOn: $keepAudio)
             Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
         }
         .formStyle(.grouped)

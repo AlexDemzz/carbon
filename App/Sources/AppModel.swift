@@ -37,12 +37,29 @@ final class AppModel {
             transcriber: SpeechTranscriberAdapter(),
             diarizer: HelperProcessDiarizer(),
             library: library,
+            keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
         libraryWatcher = FolderWatcher(folder: library.folder) { [weak self] in self?.reconcileLibrary() }
         showCarbonShortcut = GlobalHotKey { [weak self] in self?.toggleMainWindow() }
+        Task { await recoverInterruptedMeetings() }
         startDetection()
+    }
+
+    /// Finishes the Meetings a crash interrupted, from the audio already on disk, and says what happened to each.
+    private func recoverInterruptedMeetings() async {
+        for recovery in await recorder.recover() {
+            switch recovery {
+            case .recovered(let title, _):
+                await Notifier.post("Recovered “\(title)” after Carbon quit unexpectedly.")
+            case .discarded(let title):
+                await Notifier.post("Carbon couldn't read the audio of “\(title)”, so it was discarded.")
+            case .failed(let title):
+                let meeting = title.map { "“\($0)”" } ?? "a Meeting"
+                await Notifier.post("Carbon couldn't recover \(meeting) and stopped trying.")
+            }
+        }
     }
 
     /// Detection runs for the whole launch: a Meeting App holding the mic starts and ends Meetings on its own.
@@ -202,6 +219,11 @@ final class AppModel {
         NSApp.activate()
         alert.runModal()
     }
+}
+
+/// UserDefaults keys of Settings.
+enum SettingsKey {
+    static let keepAudio = "keepAudio"
 }
 
 enum AppError: LocalizedError {

@@ -56,7 +56,7 @@ final class StreamRecorder: Sendable {
         }
     }
 
-    private static func convert(
+    static func convert(
         _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?
     ) throws -> AVAudioPCMBuffer {
         if buffer.format == format { return buffer }
