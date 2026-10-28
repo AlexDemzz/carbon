@@ -23,7 +23,7 @@
 
 **Notes (implementation):**
 - Model id is `fluidaudio/community-1@0.17.7` (`VoicePrint.currentModel`): the FluidAudio package version stands in for the weights revision. Bump it with FluidAudio.
-- "Excluded from backups": Carbon's `Backups/` only ever copy `meetings.json`; `voiceprints.json` is also marked `isExcludedFromBackup` (Time Machine).
+- "Excluded from backups": Carbon's `Backups/` only ever copy `meetings.json`, never `voiceprints.json`. (Not marked `isExcludedFromBackup`: the spec asks only that Carbon's own backups leave it out.)
 - Prints are updated when auto-matched (in `Recorder.file`, so recovered Meetings too) and when the person names a Speaker. A new print starts with `recent: []`. An auto-matched name is added to the Meeting's participants with the print's email. A voice match wins over the 1:1 attendee naming.
 - Renaming a linked Speaker to another name moves the link and takes one Meeting off the old print (deleted at 0). Deferred: the old print's recent embeddings and centroid are not rolled back.
 - Diagnostic log lines carry no names: "Voice Print best distance 0.123 for Speaker A: matched|not matched".

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// `voiceprints.json`: the Voice Prints, kept apart from `meetings.json` so that forgetting voices is one clear
-/// action. The file stays on this Mac: it is outside the Library folder, out of Carbon's backups and Time Machine's.
+/// action. The file stays on this Mac: it is outside the Library folder and out of Carbon's backups.
 @MainActor
 @Observable
 public final class VoicePrintStore {
@@ -31,10 +31,6 @@ public final class VoicePrintStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(contents).write(to: file, options: .atomic)
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        var url = file
-        try url.setResourceValues(values)
     }
 
     private func read() throws -> File {

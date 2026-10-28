@@ -87,7 +87,7 @@ struct VoicePrintTests {
         #expect(library.voicePrints.prints.map(\.name) == ["Dana Park"])
     }
 
-    @Test func theVoicePrintsFileIsKeptOutOfBackups() throws {
+    @Test func theVoicePrintsFileIsKeptOutOfCarbonsBackups() throws {
         let library = makeLibrary()
         try createMeeting(library, speaker: speakerA())
 
@@ -95,7 +95,6 @@ struct VoicePrintTests {
         // The next launch's first save takes a backup.
         try makeLibrary().setColor(id, color: "red")
 
-        #expect(try printsFile.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
         let backups = try FileManager.default.contentsOfDirectory(atPath: support.url.appending(path: "Backups").path)
         #expect(!backups.isEmpty)
         #expect(backups.allSatisfy { $0.hasPrefix("meetings-") })
