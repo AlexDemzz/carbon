@@ -19,7 +19,7 @@ public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
     public var meetings: Int
     public var createdAt: Date
     public var lastHeardAt: Date
-    /// The person's own voice, learnt from the mic of their solo Meetings and written as `Me`.
+    /// The person's own voice, learnt from the mic of their Meetings on headphones and written as `Me`.
     public var owner: Bool
 
     public init(

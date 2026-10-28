@@ -52,7 +52,9 @@ extension Recorder {
             return .discarded(title: meeting.title)
         }
         let (transcriber, language) = (transcriber, meeting.language)
-        let written = try? await file(meeting, end: start + seconds, folder: folder) {
+        let written = try? await file(
+            meeting, end: start + seconds, folder: folder, micIsolated: saved.isMicIsolated
+        ) {
             async let meWords = Self.transcribe(
                 me == nil ? nil : folder.meAudio, as: .me, in: language, with: transcriber)
             async let themWords = Self.transcribe(

@@ -45,7 +45,7 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         label == TranscriptBuilder.them || speakers.contains { $0.label == label && $0.name == nil }
     }
 
-    /// True for a Speaker heard on the mic of a meeting room: the one kind that can be named `Me`, or renamed from it.
+    /// True for a Speaker heard on a shared mic: the one kind that can be named `Me`, or renamed from it.
     public func isOnMic(_ label: String) -> Bool {
         let named = speakers.filter { $0.label == label }
         return !named.isEmpty && named.allSatisfy { $0.stream == .me }

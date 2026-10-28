@@ -24,8 +24,8 @@ extension Library {
         }
     }
 
-    /// Updates the owner's print with the mic voice of a solo Meeting, or enrolls it from that voice. A voice too
-    /// far from the print to match it is someone else's: it leaves the print as it was.
+    /// Updates the owner's print with the mic voice of a Meeting on headphones, or enrolls it from that voice. A voice
+    /// too far from the print to match it is someone else's: it leaves the print as it was.
     func hearOwner(_ embedding: [Float], at date: Date) throws {
         guard recognizesVoices else { return }
         try voicePrints.update { prints in
@@ -81,7 +81,7 @@ extension Library {
                         continue
                     }
                     // Only auto-matched or person-confirmed Speakers update a print: this one no longer is.
-                    // A room's auto match never updated the owner's print, so there is nothing to take back.
+                    // A shared mic's auto match never updated the owner's print, so there is nothing to take back.
                     if !(prints[position].owner && speaker.match == .auto) {
                         if let embedding = speaker.embedding { prints[position].unhear(embedding) }
                         prints[position].meetings -= 1

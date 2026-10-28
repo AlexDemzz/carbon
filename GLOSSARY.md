@@ -45,7 +45,7 @@ One stretch of a Transcript attributed to a single Speaker, stamped with the tim
 _Avoid_: Segment, utterance, line
 
 **Voice Print**:
-The remembered signature of a named Speaker's voice, used to recognize them in later Meetings. The person's own Voice Print is learnt from the mic of Meetings where they were alone at it, and recognizes them as `Me` in a meeting room.
+The remembered signature of a named Speaker's voice, used to recognize them in later Meetings. The person's own Voice Print is learnt from the mic of Meetings held on headphones, where the mic hears only them, and recognizes them as `Me` when the mic is shared.
 _Avoid_: Embedding, voice profile
 
 **Summary**:

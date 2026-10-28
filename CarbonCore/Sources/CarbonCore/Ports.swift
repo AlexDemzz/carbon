@@ -83,6 +83,16 @@ public protocol SignalSource: Sendable {
     func micSnapshots() -> AsyncStream<MicSnapshot>
 }
 
+/// Where the Meeting's sound plays. Headphones keep the call out of the mic, so the mic hears only the person;
+/// `speakers` is the Mac's speakers, or any output not known to be headphones, where the mic may be shared.
+public enum OutputRoute: Sendable, Equatable { case headphones, speakers }
+
+/// Watches where sound plays, such as Core Audio's output devices.
+public protocol OutputRouteSource: Sendable {
+    /// The route now, then each settled change, until the stream is dropped.
+    func routes() -> AsyncStream<OutputRoute>
+}
+
 /// Offline speaker diarization of one recorded stream, such as FluidAudio in a helper process.
 public protocol Diarizer: Sendable {
     /// Diarizes the audio file. Each call starts afresh (a new process); cancelling the call must stop it.

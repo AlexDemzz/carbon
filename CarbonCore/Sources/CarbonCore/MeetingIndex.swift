@@ -93,7 +93,7 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
 
         public var label: String
         public var cluster: String
-        /// The stream the cluster was heard on: the mic's in a meeting room, else the call's.
+        /// The stream the cluster was heard on: the mic's when it was shared, else the call's.
         public var stream: AudioStream
         public var name: String?
         public var voicePrintId: UUID?

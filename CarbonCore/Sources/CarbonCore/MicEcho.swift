@@ -1,15 +1,12 @@
 import Foundation
 
-/// Tells a meeting room, where several people share the Mac's mic, from one person at the mic, as
-/// "Hybrid-room diarization" measured it. The call's echo is left out before the room is judged: otherwise a
-/// solo call on speakers looks like a room.
-enum MicRoom {
+/// Finds the call heard back through the mic when sound plays on speakers, as "Hybrid-room diarization" measured
+/// it, so a shared mic's split leaves the call's voices out.
+enum MicEcho {
     /// Echo clusters sat at ≤ 0.134 from the call's voice, real people in the room at ≥ 0.329.
     static let echoDistance = 0.25
     /// Echo clusters overlapped Them speech ≥ 82 % of the time, real people in the room ≤ 19 %.
     static let echoOverlap = 0.5
-    /// Speech each of at least 2 voices needs for the mic to count as a room.
-    static let roomSpeechSeconds = 20.0
 
     private typealias Span = (start: TimeInterval, end: TimeInterval)
 
@@ -26,18 +23,6 @@ enum MicRoom {
             let seconds = speech.reduce(0) { $0 + $1.end - $1.start }
             return seconds > 0 && overlap(speech, themSpeech) / seconds > echoOverlap
         }.map(\.id))
-    }
-
-    /// At least 2 voices other than the echo each spoke `roomSpeechSeconds`.
-    static func isRoom(_ me: Diarization, echo: Set<String>) -> Bool {
-        me.clusters.filter { !echo.contains($0.id) && $0.speechSeconds >= roomSpeechSeconds }.count >= 2
-    }
-
-    /// The voice of the one person at the mic, which is the owner's: the main voice other than the echo, when it
-    /// spoke enough to be remembered.
-    static func owner(_ me: Diarization, echo: Set<String>) -> Diarization.Cluster? {
-        me.clusters.filter { !echo.contains($0.id) }.max { $0.speechSeconds < $1.speechSeconds }
-            .flatMap { $0.speechSeconds >= VoicePrintMatcher.minimumSpeechSeconds ? $0 : nil }
     }
 
     /// Sorted, disjoint intervals covering the same time.

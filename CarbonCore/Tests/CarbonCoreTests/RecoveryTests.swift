@@ -15,7 +15,8 @@ struct RecoveryTests {
     var folder: URL { inProgress.appending(path: meetingID.uuidString) }
 
     func makeRecorder(
-        transcriber: any Transcriber, me: Double = 3, them: Double = 3
+        transcriber: any Transcriber, me: Double = 3, them: Double = 3,
+        diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]), outputRoute: (any OutputRouteSource)? = nil
     ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
@@ -24,9 +25,10 @@ struct RecoveryTests {
             systemAudio: { _ in FakeAudioSource(seconds: them) },
             systemAudioPermission: { .granted },
             transcriber: transcriber,
-            diarizer: ScriptedDiarizer([.fail, .fail]),
+            diarizer: diarizer,
             diarizationTimeout: { _ in .milliseconds(100) },
             library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }),
+            outputRoute: outputRoute ?? UnknownOutputRoute(),
             inProgressFolder: inProgress,
             timeZone: TimeZone(identifier: "America/New_York")!,
             now: { clock.now },
@@ -34,9 +36,12 @@ struct RecoveryTests {
     }
 
     /// Records a Meeting and leaves its in-progress folder as a crash would: what was flushed, never closed.
-    func crashDuringAMeeting(me: Double, them: Double, language: String = "en_US") async throws {
-        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: [:]), me: me, them: them)
+    func crashDuringAMeeting(
+        me: Double, them: Double, language: String = "en_US", route: ScriptedOutputRoute? = nil
+    ) async throws {
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: [:]), me: me, them: them, outputRoute: route)
         try await recorder.start(language: Locale(identifier: language))
+        try await route?.heard()
         let onDisk = crashed.url.appending(path: meetingID.uuidString)
         try FileManager.default.copyItem(at: folder, to: onDisk)
         await recorder.discard()
@@ -175,6 +180,53 @@ struct RecoveryTests {
             id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: date("2026-10-23T13:15:00Z"),
             language: Locale(identifier: "en_US"))))
         #expect(try FileManager.default.contentsOfDirectory(atPath: inProgress.path) == [meetingID.uuidString])
+    }
+
+    /// The owner on headphones, over the `me-words` fixture.
+    static let ownerOnTheMic = Diarization(
+        segments: [.init(start: 0.5, end: 20, cluster: "S1")],
+        clusters: [.init(id: "S1", centroid: [0, 0, 1], speechSeconds: 19.5)])
+
+    @Test func aMeetingRecordedOnHeadphonesIsRecoveredWithTheMicAsTheOwner() async throws {
+        try await crashDuringAMeeting(me: 12, them: 7, route: ScriptedOutputRoute([.headphones]))
+
+        let recoveries = await makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"),
+            diarizer: ScriptedDiarizer([], me: [.replay(Self.ownerOnTheMic)])
+        ).recover()
+
+        let file = library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")
+        #expect(recoveries == [.recovered(title: "Meeting Oct 23, 9:15 AM", file: file)])
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ## Transcript
+
+            **Me** [0:01] Hello everybody, can you hear me?
+
+            **Me** [0:15] Okay, let's start with the agenda.
+
+            """))
+        let prints = try #require(try jsonObject(at: support.url.appending(path: "voiceprints.json"))["prints"] as? [NSDictionary])
+        #expect(prints.map { $0["owner"] as? Bool } == [true])
+    }
+
+    @Test func aMeetingLanguageSwitchKeepsTheHeadphonesForRecovery() async throws {
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(transcriber: ReplayTranscriber(words: [:]), me: 12, them: 7, outputRoute: route)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        try await recorder.switchLanguage(to: Locale(identifier: "fr_FR"))
+        let onDisk = crashed.url.appending(path: meetingID.uuidString)
+        try FileManager.default.copyItem(at: folder, to: onDisk)
+        await recorder.discard()
+        try FileManager.default.copyItem(at: onDisk, to: folder)
+
+        _ = await makeRecorder(
+            transcriber: try ReplayTranscriber(me: "me-words"),
+            diarizer: ScriptedDiarizer([], me: [.replay(Self.ownerOnTheMic)])
+        ).recover()
+
+        let file = library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md")
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Me** [0:01] Hello everybody, can you hear me?"))
     }
 
     func jsonObject(at url: URL) throws -> NSDictionary {

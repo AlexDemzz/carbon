@@ -6,7 +6,7 @@ extension Library {
     ///
     /// A Speaker with at least 10 s of speech is remembered as a Voice Print of `name`; `email` is the attendee's.
     ///
-    /// In a meeting room, a Speaker heard on the mic may be named `Me`, which remembers the owner's voice, and a `Me`
+    /// On a shared mic, a Speaker heard on the mic may be named `Me`, which remembers the owner's voice, and a `Me`
     /// the owner's print got wrong may be named someone else. Elsewhere `Me` is neither renamed nor given.
     public func renameSpeaker(_ id: UUID, label: String, name: String, email: String? = nil) throws {
         let entry = try entry(id, in: loadIndex())
@@ -27,7 +27,7 @@ extension Library {
                 && !entry.participants.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
             if isNewParticipant { entry.participants.append(Participant(name: name)) }
             // A Them stream that isn't split has no `speakers` entry yet: its first naming records it as cluster `Them`.
-            // That is every fallback Speaker, and Them in a meeting room whose call couldn't be diarized.
+            // That is every fallback Speaker, and Them on a shared mic whose call couldn't be diarized.
             if entry.transcript == .fallback || label == TranscriptBuilder.them,
                !entry.speakers.contains(where: { $0.label == label }) {
                 entry.speakers.append(MeetingIndex.Speaker(label: label, cluster: TranscriptBuilder.them, speechSeconds: 0))

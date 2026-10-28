@@ -106,6 +106,7 @@ public final class Recorder {
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let summarizer: any Summarizer
     private let library: Library
+    private let outputRoute: any OutputRouteSource
     private let keepAudio: @Sendable () -> Bool
     let vendorTable: VendorTable
     let matcher: EventMatcher
@@ -138,6 +139,8 @@ public final class Recorder {
         var mode: InProgressMeeting.State.Mode
         var me: Stream
         var them: Stream
+        var micIsolated: Bool?
+        var routeWatch: Task<Void, Never>?
     }
 
     struct Stream {
@@ -168,6 +171,7 @@ public final class Recorder {
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         summarizer: any Summarizer = NoSummarizer(),
         library: Library,
+        outputRoute: any OutputRouteSource = UnknownOutputRoute(),
         keepAudio: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         vendorTable: VendorTable = .shipped,
@@ -183,6 +187,7 @@ public final class Recorder {
         self.diarizationTimeout = diarizationTimeout
         self.summarizer = summarizer
         self.library = library
+        self.outputRoute = outputRoute
         self.keepAudio = keepAudio
         self.vendorTable = vendorTable
         matcher = EventMatcher(vendorTable: vendorTable)
@@ -297,6 +302,7 @@ public final class Recorder {
         try? await languageSwitch?.value
         guard let liveCapture else { return }
         detector.meetingStopped()
+        liveCapture.routeWatch?.cancel()
         for stream in [liveCapture.me, liveCapture.them] { await stream.tearDown() }
         liveCapture.folder.remove()
         self.liveCapture = nil
@@ -326,7 +332,7 @@ public final class Recorder {
         lastSound.value = nil
         var opened: [Stream] = []
         do {
-            try folder.create(state(of: meeting, mode: mode))
+            try folder.create(state(of: meeting, mode: mode, micIsolated: nil))
             let me = try await open(.me, from: microphone, into: folder.meAudio, language: language)
             opened.append(me)
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
@@ -334,12 +340,31 @@ public final class Recorder {
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, tracksSound: app == nil)
             try capture(them, tracksSound: app != nil)
-            liveCapture = LiveCapture(meeting: meeting, folder: folder, mode: mode, me: me, them: them)
+            liveCapture = LiveCapture(
+                meeting: meeting, folder: folder, mode: mode, me: me, them: them, routeWatch: watchRoute(of: meeting.id))
         } catch {
             for stream in opened { await stream.tearDown() }
             folder.remove()
             state = .idle
             throw error
+        }
+    }
+
+    /// Takes in where sound plays until the Meeting ends, which cancels it. One route other than headphones
+    /// shares the mic for the whole Meeting.
+    private func watchRoute(of id: UUID) -> Task<Void, Never> {
+        let routes = outputRoute.routes()
+        return Task { [weak self] in
+            var isolated: Bool?
+            for await route in routes {
+                isolated = isolated != false && route == .headphones
+                // Without this Meeting's capture there is nothing to write to: the next route brings it up to date.
+                guard let self, var capture = liveCapture, capture.meeting.id == id,
+                    capture.micIsolated != isolated
+                else { continue }
+                capture.micIsolated = isolated
+                try? goOn(with: capture)
+            }
         }
     }
 
@@ -356,11 +381,13 @@ public final class Recorder {
             ?? MeetingFormat.defaultTitle(start: start, in: timeZone)
     }
 
-    private func state(of meeting: LiveMeeting, mode: InProgressMeeting.State.Mode) -> InProgressMeeting.State {
+    private func state(
+        of meeting: LiveMeeting, mode: InProgressMeeting.State.Mode, micIsolated: Bool?
+    ) -> InProgressMeeting.State {
         InProgressMeeting.State(
             id: meeting.id, start: MeetingFormat.timestamp(meeting.start, in: timeZone),
             meetingApp: meeting.app?.bundleID, language: MeetingFormat.bcp47(meeting.language), mode: mode,
-            event: meeting.event)
+            event: meeting.event, micIsolated: micIsolated)
     }
 
     /// Changes the live Meeting's Meeting Language: a new pair of sessions in `language` hears both streams again
@@ -409,6 +436,8 @@ public final class Recorder {
             _ = try? await them.finish()
             throw error
         }
+        // An Event or an output route may have come in meanwhile.
+        if let current = liveCapture, current.meeting.id == id { capture = current }
         capture.me.session = me
         capture.them.session = them
         capture.meeting.language = language
@@ -427,7 +456,7 @@ public final class Recorder {
     private func goOn(with capture: LiveCapture) throws {
         liveCapture = capture
         state = .live(capture.meeting)
-        try capture.folder.write(state(of: capture.meeting, mode: capture.mode))
+        try capture.folder.write(state(of: capture.meeting, mode: capture.mode, micIsolated: capture.micIsolated))
     }
 
     @discardableResult
@@ -460,6 +489,7 @@ public final class Recorder {
         let end = now()
         state = .finishing(meeting)
         liveCapture = nil
+        capture.routeWatch?.cancel()
         // Both captures stop whatever happens to the other: a failed Me must not leave the call's tap running.
         var failure: (any Error)?
         for stream in [capture.me, capture.them] {
@@ -471,8 +501,9 @@ public final class Recorder {
             throw failure
         }
         let (me, them) = (capture.me.session, capture.them.session)
+        let micIsolated = state(of: meeting, mode: capture.mode, micIsolated: capture.micIsolated).isMicIsolated
         return (meeting, {
-            let file = try await self.file(meeting, end: end, folder: capture.folder) {
+            let file = try await self.file(meeting, end: end, folder: capture.folder, micIsolated: micIsolated) {
                 async let meWords = me.finish()
                 async let themWords = them.finish()
                 return (try await meWords, try await themWords)
@@ -489,10 +520,10 @@ public final class Recorder {
 
     /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, cleanup.
     func file(
-        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
+        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting, micIsolated: Bool,
         words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
     ) async throws -> URL {
-        let heard = try await diarize(meeting, end: end, folder: folder, words: words)
+        let heard = try await diarize(meeting, end: end, folder: folder, micIsolated: micIsolated, words: words)
         var naming = nameSpeakers(of: meeting, in: heard)
         let transcript = transcript(of: heard, naming: &naming)
         let file = try write(
@@ -500,7 +531,7 @@ public final class Recorder {
             naming: naming)
         // The file is what matters: a print that couldn't be updated stays as it was.
         try? library.hearVoices(naming.heard, at: meeting.start)
-        if let owner = heard.owner { try? library.hearOwner(owner.centroid, at: meeting.start) }
+        if let owner = heard.owner { try? library.hearOwner(owner, at: meeting.start) }
         // v1 inserts no Summary: NoSummarizer answers nil, and a failure leaves `summary: "off"` too.
         _ = try? await summarizer.summarize(transcript: transcript, language: meeting.language)
         if keepAudio() {
@@ -518,12 +549,12 @@ public final class Recorder {
     private struct Heard {
         var me: [TranscribedWord]
         var them: [TranscribedWord]
-        /// How the streams are split into Speakers: Them when diarized, Me only in a meeting room.
+        /// How the streams are split into Speakers: Them when diarized, Me only when the mic is shared.
         var split: TranscriptBuilder.Split
         /// Each cluster that reaches a word, with the letter it is written as, in letter order.
         var clusters: [HeardCluster]
-        /// The voice of the one person at the mic, which feeds the owner's Voice Print.
-        var owner: Diarization.Cluster?
+        /// The owner's voice, from an isolated mic, which feeds their Voice Print.
+        var owner: [Float]?
     }
 
     /// Who the Speakers are: their `meetings.json` entries, the label each cluster letter is written as, and the
@@ -538,10 +569,10 @@ public final class Recorder {
         var heard: [(print: UUID, embedding: [Float])] = []
     }
 
-    /// The words of both streams, with both audio files diarized meanwhile, each under the watchdog. The mic is
-    /// split only when it was a meeting room.
+    /// The words of both streams, with both audio files diarized meanwhile, each under the watchdog. A shared mic
+    /// is split by Speaker, less the call's echo; an isolated one stays `Me` and only tells the owner's voice.
     private func diarize(
-        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting,
+        _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting, micIsolated: Bool,
         words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
     ) async throws -> Heard {
         let (diarizer, timeout) = (diarizer, diarizationTimeout(end.timeIntervalSince(meeting.start)))
@@ -552,15 +583,13 @@ public final class Recorder {
         let (me, them) = try await words()
         let (themDiarization, micDiarization) = await diarized
         var split = TranscriptBuilder.Split(them: themDiarization)
-        var owner: Diarization.Cluster?
+        var owner: [Float]?
         if let micDiarization {
-            let echo = MicRoom.echo(in: micDiarization, them: themDiarization, themWords: them)
-            if MicRoom.isRoom(micDiarization, echo: echo) {
+            if micIsolated {
+                owner = Self.ownerVoice(micDiarization)
+            } else {
                 split.me = micDiarization
-                split.echo = echo
-            } else if echo.isEmpty, themDiarization != nil || them.isEmpty {
-                // Never learn the owner's voice from a Meeting the call may have echoed into.
-                owner = MicRoom.owner(micDiarization, echo: echo)
+                split.echo = MicEcho.echo(in: micDiarization, them: themDiarization, themWords: them)
             }
         }
         let letters = TranscriptBuilder.clusterLetters(me: me, them: them, split: split)
@@ -574,6 +603,21 @@ public final class Recorder {
         }
         .sorted { ($0.letter.count, $0.letter) < ($1.letter.count, $1.letter) }
         return Heard(me: me, them: them, split: split, clusters: clusters, owner: owner)
+    }
+
+    /// The voice of an isolated mic, which is all the owner's however the diarizer split it: every cluster's
+    /// centroid weighed by its speech. Nil under `VoicePrintMatcher.minimumSpeechSeconds` in all.
+    private static func ownerVoice(_ mic: Diarization) -> [Float]? {
+        guard let length = mic.clusters.max(by: { $0.speechSeconds < $1.speechSeconds })?.centroid.count else {
+            return nil
+        }
+        // A centroid of another length can't be weighed in with the main voice: it is left out.
+        let clusters = mic.clusters.filter { $0.centroid.count == length }
+        guard clusters.reduce(0, { $0 + $1.speechSeconds }) >= VoicePrintMatcher.minimumSpeechSeconds else { return nil }
+        let sum = clusters.reduce(into: [Float](repeating: 0, count: length)) { sum, cluster in
+            for (index, value) in cluster.centroid.enumerated() { sum[index] += value * Float(cluster.speechSeconds) }
+        }
+        return VoicePrint.normalized(sum)
     }
 
     /// Names the diarized Speakers after their Voice Print, or after the other attendee of a 1:1 Event.
@@ -654,7 +698,7 @@ public final class Recorder {
             naming.speakers[position].voicePrintId = print.id
             naming.speakers[position].match = .auto
             if print.owner {
-                // Written as in a solo Meeting. A room never updates the owner's print: a wrong cluster can't poison it.
+                // Written as on headphones. A shared mic never updates the owner's print: a wrong match can't poison it.
                 naming.speakers[position].label = TranscriptBuilder.me
                 naming.speakers[position].name = TranscriptBuilder.me
                 naming.labels[letter] = TranscriptBuilder.me

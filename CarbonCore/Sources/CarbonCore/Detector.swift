@@ -85,7 +85,7 @@ public struct Detector: Sendable {
     public static let callSilenceToEnd: TimeInterval = 30
     /// A call released this long and then back is a new call.
     public static let backToBackGap: TimeInterval = 5
-    /// A hold that began this long before the next Event belongs to the earlier call (Hyprnote's rule).
+    /// A hold that began this long before the next Event belongs to the earlier call, not to that Event.
     public static let holdBeforeNextEvent: TimeInterval = 10 * 60
     /// After Detection ends a Meeting, nothing starts for this long.
     public static let cooldown: TimeInterval = 5

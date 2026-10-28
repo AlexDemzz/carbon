@@ -16,6 +16,12 @@ struct InProgressMeeting {
         /// The matched calendar Event, as Detection last saw it.
         var event: CalendarEvent?
         var recoveryAttempts = 0
+        /// Whether every output route sampled during the Meeting was headphones. Nil until the first sample, and
+        /// in a state file written before routes were watched.
+        var micIsolated: Bool?
+
+        /// The mic heard only the owner: some route was sampled, and every one was headphones.
+        var isMicIsolated: Bool { micIsolated == true }
     }
 
     let folder: URL

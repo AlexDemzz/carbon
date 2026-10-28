@@ -171,6 +171,45 @@ final class ScriptedDiarizer: Diarizer {
     }
 }
 
+/// Stands in for the output route watcher: each Meeting (each `routes()` call) hears the next script, then
+/// nothing more until the Recorder drops the stream. A Meeting with no script left hears nothing.
+final class ScriptedOutputRoute: OutputRouteSource {
+    private final class Box<Value: Sendable>: Sendable {
+        let value: Mutex<Value>
+
+        init(_ value: Value) {
+            self.value = Mutex(value)
+        }
+    }
+
+    private let scripts: Box<[[OutputRoute]]>
+    private let drained = Box(0)
+
+    init(_ scripts: [OutputRoute]...) {
+        self.scripts = Box(scripts)
+    }
+
+    func routes() -> AsyncStream<OutputRoute> {
+        let script = Box(scripts.value.withLock { $0.isEmpty ? [] : $0.removeFirst() })
+        let drained = drained
+        return AsyncStream {
+            if let route = script.value.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) { return route }
+            drained.value.withLock { $0 += 1 }
+            try? await Task.sleep(for: .seconds(3600))
+            return nil
+        }
+    }
+
+    /// Waits until the Recorder took in every route of the first `meetings` scripts.
+    func heard(meetings: Int = 1) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while drained.value.withLock({ $0 }) < meetings, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(drained.value.withLock { $0 } >= meetings, "the Recorder never took in its routes")
+    }
+}
+
 /// A clock the test moves by hand.
 final class TestClock: Sendable {
     private let current: Mutex<Date>
