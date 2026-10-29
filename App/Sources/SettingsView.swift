@@ -75,7 +75,7 @@ private struct GeneralSettings: View {
                 Button("Show debug files in Finder") { model.revealDebugFiles() }
             } footer: {
                 Text(
-                    "Each new Meeting also gets a debug file, kept out of the Library folder, with every word heard, who it went to and why any was left out. Turn on Keep audio to keep the recording too."
+                    "Each new Meeting also gets a debug file, kept out of the Library folder, with every word heard, who it went to and why any was left out. Turn on \u{201C}Keep audio after transcribing\u{201D} to keep the recording too."
                 )
                 .foregroundStyle(.secondary)
             }
