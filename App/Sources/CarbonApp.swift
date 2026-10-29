@@ -50,6 +50,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(windowDidBecomeMain), name: NSWindow.didBecomeMainNotification, object: nil)
+        center.addObserver(self, selector: #selector(windowWillClose), name: NSWindow.willCloseNotification, object: nil)
+    }
+
+    /// Carbon is a menu bar app (LSUIElement); it joins the Dock only while one of its windows is open.
+    @objc private func windowDidBecomeMain(_ notification: Notification) {
+        guard NSApp.activationPolicy() != .regular else { return }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate()
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing.canBecomeMain else { return }
+        let othersOpen = NSApp.windows.contains {
+            $0 !== closing && $0.canBecomeMain && ($0.isVisible || $0.isMiniaturized)
+        }
+        if !othersOpen { NSApp.setActivationPolicy(.accessory) }
     }
 }
 
