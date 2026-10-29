@@ -48,7 +48,10 @@ final class AppModel {
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
         let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
-            .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
+            .map { URL(filePath: $0, directoryHint: .isDirectory) }
+            ?? Library.defaultFolder(home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
+        // Saved, so the first Meeting's `meetings.json` doesn't send a new Library to `~/Documents/Carbon` next launch.
+        UserDefaults.standard.set(libraryFolder.path, forKey: SettingsKey.libraryFolder)
         library = Library(folder: libraryFolder, supportFolder: support)
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
@@ -407,7 +410,7 @@ enum SettingsKey {
     static let autoTranscribe = "autoTranscribe"
     /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
     static let ignoredApps = "ignoredApps"
-    /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
+    /// The Library folder's path, saved on the first launch and changed by Settings' Change….
     static let libraryFolder = "libraryFolder"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"

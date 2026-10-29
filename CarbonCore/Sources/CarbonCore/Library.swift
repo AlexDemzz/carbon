@@ -29,7 +29,7 @@ public final class Library {
     public internal(set) var meetings: [ListedMeeting] = []
 
     /// - Parameters:
-    ///   - folder: the Library folder, `~/Documents/Carbon` by default.
+    ///   - folder: the Library folder, `defaultFolder(home:documents:supportFolder:)` unless the person moved it.
     ///   - supportFolder: where `meetings.json`, `Backups/` and `Debug/` live, `~/Library/Application Support/Carbon`.
     ///   - moveToTrash: how Delete gets rid of a file, the Finder's Trash by default.
     public init(
@@ -49,6 +49,15 @@ public final class Library {
         backupsFolder = supportFolder.appending(path: "Backups")
         debugFolder = supportFolder.appending(path: "Debug")
         self.now = now
+    }
+
+    /// Where a Library the person never moved lives: `~/Carbon`, outside the folders macOS asks permission for, so
+    /// the first launch shows no prompt. A Library from before that change, which `meetings.json` gives away, stays in
+    /// `~/Documents/Carbon`, the folder its files are already in.
+    nonisolated public static func defaultFolder(home: URL, documents: URL, supportFolder: URL) -> URL {
+        let index = supportFolder.appending(path: "meetings.json")
+        let folder = FileManager.default.fileExists(atPath: index.path) ? documents : home
+        return folder.appending(path: "Carbon", directoryHint: .isDirectory)
     }
 
     /// Writes a new Meeting's Markdown file and its entry in `meetings.json`. Returns the file's URL.

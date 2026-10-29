@@ -18,7 +18,7 @@ I wanted the transcript without the bot, as a plain file I could hand to an AI a
 - **It hears both sides.** Carbon records your microphone as "Me" and the call's audio as the other participants, and transcribes both on your Mac with Apple's SpeechTranscriber.
 - **It tells voices apart.** The other participants become Speaker A, Speaker B, Speaker C. Name a speaker once and Carbon remembers their Voice Print, so it names them in later meetings. On headphones, your microphone hears only you, so it stays Me, and Carbon learns your voice from it. When the sound plays on speakers, your microphone may be shared, as in a meeting room: each voice on it becomes its own Speaker, the call heard back through the speakers is left out, and Carbon recognizes you as Me from the voice it learnt on headphones. When it can't tell the voices apart, it falls back to Me and Them.
 - **It names the meeting.** With calendar access, Carbon takes the title and participants from the matching event.
-- **It files a Markdown file.** When the call ends, each meeting becomes one file in `~/Documents/Carbon`, organized by year. Press <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> to copy its path and paste it into Claude Code, Codex or whatever you use.
+- **It files a Markdown file.** When the call ends, each meeting becomes one file in `~/Carbon`, organized by year. Press <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> to copy its path and paste it into Claude Code, Codex or whatever you use.
 
 Everything in this diagram happens on your Mac:
 
@@ -31,7 +31,7 @@ flowchart LR
         diar["CarbonDiarizer helper<br/>FluidAudio, models included in the app"]
         prints[("Voice Prints")]
         cal["Calendar"]
-        file["Markdown file<br/>~/Documents/Carbon"]
+        file["Markdown file<br/>~/Carbon"]
     end
     mic --> stt
     them --> stt
