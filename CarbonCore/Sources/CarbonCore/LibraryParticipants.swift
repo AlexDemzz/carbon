@@ -68,7 +68,9 @@ extension Library {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !name.isEmpty || !email.isEmpty else { throw LibraryError.missingNameAndEmail }
-        guard email.isEmpty || email.contains("@") else { throw LibraryError.invalidEmail }
+        // The frontmatter writes `Name <email>`: whitespace or angle brackets would not read back.
+        guard email.isEmpty || email.contains("@") && !email.contains(where: { $0.isWhitespace || "<>".contains($0) })
+        else { throw LibraryError.invalidEmail }
         if !email.isEmpty, let other = voicePrints.prints.first(where: {
             !own.contains($0.id) && $0.email?.caseInsensitiveCompare(email) == .orderedSame
         }) {
@@ -101,7 +103,8 @@ extension Library {
         let people = [target] + (source.map { [$0] } ?? [])
         guard people.allSatisfy(entry.participants.contains) else { return }
         guard let label = TranscriptBuilder.label(forName: edited.name) else { throw LibraryError.invalidSpeakerName }
-        let labels = Set(people.map(\.name).compactMap(TranscriptBuilder.label(forName:)) + [label])
+        // Only their own labels: a Speaker already called `label` may be someone else.
+        let labels = Set(people.map(\.name).compactMap(TranscriptBuilder.label(forName:)))
         if let markdown = try? String(contentsOf: folder.appending(path: entry.file), encoding: .utf8),
            MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: markdown) == nil {
             throw LibraryError.participantsNotInFile
@@ -131,30 +134,16 @@ extension Library {
     private func mergeVoicePrints(
         of people: [Participant], as merged: Participant, linked: Set<UUID>, keepingEmail: Bool
     ) throws {
+        let theirs = voicePrints.prints.filter { isVoicePrint($0, of: people, linked: linked) }
+        guard let survivor = theirs.max(by: { $0.meetings < $1.meetings }) else { return }
+        let ids = Set(theirs.map(\.id))
+        let gone = ids.subtracting([survivor.id])
         var index = try loadIndex()
-        var survivorID: UUID?
-        var gone: Set<UUID> = []
-        try voicePrints.update { prints in
-            let theirs = prints.indices.filter { isVoicePrint(prints[$0], of: people, linked: linked) }
-            guard let survivor = theirs.max(by: { prints[$0].meetings < prints[$1].meetings }) else { return }
-            let ids = Set(theirs.map { prints[$0].id })
-            // A Meeting that heard two of them counts once.
-            let overlap = index.meetings.reduce(0) { count, meeting in
-                count + max(0, ids.intersection(meeting.speakers.compactMap(\.voicePrintId)).count - 1)
-            }
-            for position in theirs where position != survivor {
-                prints[survivor].meetings += prints[position].meetings
-                prints[survivor].createdAt = min(prints[survivor].createdAt, prints[position].createdAt)
-                prints[survivor].lastHeardAt = max(prints[survivor].lastHeardAt, prints[position].lastHeardAt)
-            }
-            prints[survivor].meetings -= overlap
-            prints[survivor].name = merged.name
-            prints[survivor].email = keepingEmail ? merged.email ?? prints[survivor].email : merged.email
-            survivorID = prints[survivor].id
-            gone = ids.subtracting([prints[survivor].id])
-            prints.removeAll { gone.contains($0.id) }
+        // A Meeting that heard two of them counts once.
+        let overlap = index.meetings.reduce(0) { count, meeting in
+            count + max(0, ids.intersection(meeting.speakers.compactMap(\.voicePrintId)).count - 1)
         }
-        guard let survivorID, !gone.isEmpty else { return }
+        // Relinked before any print goes: a failed save leaves every link pointing at a print that exists.
         var changed: [MeetingIndex.Entry] = []
         for meeting in index.meetings.indices {
             var relinked = false
@@ -162,14 +151,27 @@ extension Library {
                 guard let link = index.meetings[meeting].speakers[speaker].voicePrintId, gone.contains(link) else {
                     continue
                 }
-                index.meetings[meeting].speakers[speaker].voicePrintId = survivorID
+                index.meetings[meeting].speakers[speaker].voicePrintId = survivor.id
                 relinked = true
             }
             if relinked { changed.append(index.meetings[meeting]) }
         }
-        guard !changed.isEmpty else { return }
-        try save(index)
-        changed.forEach(refreshListed)
+        if !changed.isEmpty {
+            try save(index)
+            changed.forEach(refreshListed)
+        }
+        try voicePrints.update { prints in
+            guard let kept = prints.firstIndex(where: { $0.id == survivor.id }) else { return }
+            for print in prints where gone.contains(print.id) {
+                prints[kept].meetings += print.meetings
+                prints[kept].createdAt = min(prints[kept].createdAt, print.createdAt)
+                prints[kept].lastHeardAt = max(prints[kept].lastHeardAt, print.lastHeardAt)
+            }
+            prints[kept].meetings -= overlap
+            prints[kept].name = merged.name
+            prints[kept].email = keepingEmail ? merged.email ?? prints[kept].email : merged.email
+            prints.removeAll { gone.contains($0.id) }
+        }
     }
 }
 

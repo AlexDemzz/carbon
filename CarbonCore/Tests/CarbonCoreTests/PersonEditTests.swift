@@ -107,6 +107,8 @@ struct PersonEditTests {
     @Test(arguments: [
         ("", " ", LibraryError.missingNameAndEmail),
         ("Romain", "romain.yoojo.com", .invalidEmail),
+        ("Romain", "romain @yoojo.com", .invalidEmail),
+        ("Romain", "<romain@yoojo.com>", .invalidEmail),
         ("Romain", "ADIF@yoojo.com", .emailInUse("Adif")),
         ("Them", "", .invalidSpeakerName),
     ])
@@ -129,6 +131,33 @@ struct PersonEditTests {
         try library.editParticipant(id, romain, name: "Romain D", email: "romain@yoojo.com")
 
         #expect(try entry(library).participants.last == Participant(name: "Romain D", email: "romain@yoojo.com"))
+    }
+
+    @Test func takingAnotherSpeakersNameLeavesTheirVoicePrintAlone() throws {
+        try rememberPeople()
+        let library = makeLibrary()
+        try library.create(
+            FinishedMeeting(
+                id: id, title: "Remote sync", start: date("2026-10-27T14:00:00Z"), end: date("2026-10-27T14:17:29Z"),
+                timeZone: TimeZone(identifier: "Europe/Paris")!, language: Locale(identifier: "fr_FR"),
+                provider: "Google Meet", participants: [romain, Participant(name: "Adif", email: "adif@yoojo.com")],
+                transcriptKind: .speakers,
+                speakers: [
+                    MeetingIndex.Speaker(
+                        label: "Romain", cluster: "A", name: "Romain", voicePrintId: romainPrint, match: .auto,
+                        speechSeconds: 12),
+                    MeetingIndex.Speaker(
+                        label: "Adif", cluster: "B", name: "Adif", voicePrintId: adifPrint, match: .auto,
+                        speechSeconds: 12),
+                ]),
+            transcript: "## Transcript\n\n**Romain** [0:02] Salut.\n\n**Adif** [0:05] Bonjour.\n")
+
+        try library.editParticipant(id, romain, name: "Adif", email: "romain@yoojo.com")
+
+        #expect(library.voicePrints.prints.filter { !$0.owner }.map { "\($0.name) \($0.email ?? "-")" }.sorted() == [
+            "Adif adif@yoojo.com", "Adif romain@yoojo.com",
+        ])
+        #expect(try entry(library).speakers.map { $0.voicePrintId == adifPrint } == [false, true])
     }
 
     @Test func editingAVoicePrintChangesOnlyThePrint() throws {
