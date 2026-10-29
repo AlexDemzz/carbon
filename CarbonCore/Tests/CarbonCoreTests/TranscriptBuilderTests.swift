@@ -218,6 +218,30 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func anEchoWordEndingASentenceIsNotSnappedOntoTheSpeakerBeforeIt() {
+        let me = timed([
+            ("I", 1, 1.2), ("think", 1.2, 1.5),
+            ("Hello?", 1.6, 2),  // the call heard back, right after the boundary
+            ("Are", 2.1, 2.3), ("you", 2.3, 2.5), ("there?", 2.5, 2.9),
+        ])
+        let them = timed([("Hello?", 1.6, 2), ("Are", 2.1, 2.3), ("you", 2.3, 2.5), ("there?", 2.5, 2.9)])
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.55, cluster: "S1"), .init(start: 1.55, end: 3, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] I think
+
+            **Them** [0:01] Hello? Are you there?
+
+            """)
+    }
+
     @Test func everyTurnWrittenForARealMeetingReadsBackThroughTheHeaderParser() throws {
         let me = try words(fixture: "ami-ES2004a-me-words")
         let them = try words(fixture: "ami-ES2004a-them-words")

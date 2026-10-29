@@ -186,7 +186,7 @@ public enum TranscriptBuilder {
 
     /// Each stream's words with their cluster, nil for a stream that is not split. A word of an echo cluster heard
     /// while Them speaks is left out; one heard while Them is silent takes the cluster it would have had without
-    /// the echo clusters, as someone in the room spoke over a quiet call.
+    /// the echo clusters, as someone in the room spoke over a quiet call. Clusters are then snapped to sentence ends.
     private static func attributed(
         me: [TranscribedWord], them: [TranscribedWord], split: Split
     ) -> [AudioStream: [HeardWord]] {
@@ -196,9 +196,9 @@ public enum TranscriptBuilder {
             let found = segments.flatMap { clusters(of: words, in: $0) } ?? words.map { _ in nil }
             return zip(words, found).map { HeardWord(stream: stream, word: $0, cluster: $1) }
         }
-        let heardThem = attributed(.them, them, split.them?.segments)
+        let heardThem = snapped(attributed(.them, them, split.them?.segments))
         guard let mic = split.me, !split.echo.isEmpty else {
-            return [.me: attributed(.me, me, split.me?.segments), .them: heardThem]
+            return [.me: snapped(attributed(.me, me, split.me?.segments)), .them: heardThem]
         }
         let themSpeech = MicEcho.themSpeech(them: split.them, themWords: them)
         let withoutEcho = attributed(.me, me, mic.segments.filter { !split.echo.contains($0.cluster) })
@@ -209,7 +209,17 @@ public enum TranscriptBuilder {
             dropped.echo = echo
             return dropped
         }
-        return [.me: heardMe, .them: heardThem]
+        return [.me: snapped(heardMe), .them: heardThem]
+    }
+
+    /// Snaps the clusters of the words written to sentence ends. Echo words take no part: none is moved to the
+    /// Speaker next to it, and none takes a neighbour's words with it out of the Transcript.
+    private static func snapped(_ heard: [HeardWord]) -> [HeardWord] {
+        let written = heard.indices.filter { heard[$0].echo == nil && heard[$0].cluster != nil }
+        let clusters = snapped(written.map { heard[$0].cluster! }, of: written.map { heard[$0].word })
+        var snapped = heard
+        for (index, cluster) in zip(written, clusters) { snapped[index].cluster = cluster }
+        return snapped
     }
 
     /// Letters in order of each cluster's first word, Me first on a tie.
@@ -231,8 +241,7 @@ public enum TranscriptBuilder {
     }
 
     /// Each word's cluster: the most-overlapping segment, else the nearest one within 1 s of the word's middle,
-    /// else the previous word's (the next one's before the first attributed word), then snapped to sentence ends.
-    /// Nil when no word is reached.
+    /// else the previous word's (the next one's before the first attributed word). Nil when no word is reached.
     private static func clusters(of words: [TranscribedWord], in segments: [Diarization.Segment]) -> [String]? {
         var found = words.map { cluster(of: $0, in: segments) }
         guard let first = found.firstIndex(where: { $0 != nil }) else { return nil }
@@ -240,7 +249,7 @@ public enum TranscriptBuilder {
         for index in found.indices {
             if found[index] == nil { found[index] = previous } else { previous = found[index] }
         }
-        return snapped(found.map { $0! }, of: words)
+        return found.map { $0! }
     }
 
     /// Moves a change of cluster that falls inside a sentence to the nearest sentence end, when at most 2 words
