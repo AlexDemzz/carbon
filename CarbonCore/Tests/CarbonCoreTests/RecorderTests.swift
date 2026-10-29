@@ -998,7 +998,9 @@ struct RecorderTests {
         ])
     }
 
-    @Test func inDebugModeWhatTheTranscriptWasBuiltFromIsWrittenBesideItsFileAndTrashedWithIt() async throws {
+    @Test func inDebugModeWhatTheTranscriptWasBuiltFromIsWrittenToApplicationSupportAndTrashedWithTheMeeting()
+        async throws
+    {
         let trash = try TemporaryFolder()
         let recorder = makeRecorder(
             transcriber: ReplayTranscriber(words: Self.groupCall), debugMode: true, trash: trash.url)
@@ -1009,16 +1011,33 @@ struct RecorderTests {
 
         let debug = try JSONDecoder().decode(
             MeetingDebug.self,
-            from: Data(contentsOf: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.debug.json")))
+            from: Data(contentsOf: support.url.appending(path: "Debug/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json")))
         #expect(debug.me.words == [.init(text: "Hi.", start: 1, end: 1.4, cluster: nil, speaker: "Me")])
         #expect(debug.them.words.map(\.speaker) == ["Them", "Them", "Them"])
-        let reread = makeLibrary(trash: trash.url)
-        try reread.reconcile()
-        #expect(reread.meetings.count == 1, "the sidecar is no Meeting of its own")
+        #expect(
+            try FileManager.default.subpathsOfDirectory(atPath: library.url.path).sorted() == [
+                "2026", "2026/2026-10-23-meeting-oct-23-9-15-am.md",
+            ], "the Library folder holds only Markdown")
 
-        try reread.delete(meetingID)
+        try makeLibrary(trash: trash.url).delete(meetingID)
         #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
-            "2026-10-23-meeting-oct-23-9-15-am.debug.json", "2026-10-23-meeting-oct-23-9-15-am.md",
+            "2026-10-23-meeting-oct-23-9-15-am.md", "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json",
+        ])
+    }
+
+    @Test func aMeetingDeletedInTheFinderTakesItsDebugModeFileToTheTrash() async throws {
+        let trash = try TemporaryFolder()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), debugMode: true, trash: trash.url)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        try FileManager.default.removeItem(at: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md"))
+        try makeLibrary(trash: trash.url).reconcile()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path) == [
+            "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json"
         ])
     }
 

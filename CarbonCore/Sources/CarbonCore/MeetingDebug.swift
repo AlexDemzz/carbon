@@ -1,7 +1,7 @@
 import Foundation
 
-/// What the Transcript of a Meeting was built from, written beside it in Debug mode: each stream's words and
-/// diarization, the Speaker each word is written as, and why any word was left out.
+/// What the Transcript of a Meeting was built from, written to `Library.debugFolder` in Debug mode: each stream's
+/// words and diarization, the Speaker each word is written as, and why any word was left out.
 public struct MeetingDebug: Equatable, Sendable, Codable {
     public struct Stream: Equatable, Sendable, Codable {
         /// The stream's diarization, nil when it is not split by Speaker.

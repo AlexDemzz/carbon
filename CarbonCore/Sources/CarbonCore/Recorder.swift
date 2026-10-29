@@ -522,7 +522,7 @@ public final class Recorder {
         if state == .finishing(meeting) { state = .idle }
     }
 
-    /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, debug sidecar,
+    /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, Debug mode file,
     /// cleanup.
     func file(
         _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting, micIsolated: Bool,
