@@ -12,7 +12,7 @@ extension AppModel {
             recorder.detectionLanguage = meetingLanguages.defaultLanguage
             languageAssets.keep(meetingLanguages.chosen)
         } else {
-            let system = await SpeechTranscriber.supportedLocale(equivalentTo: .current) ?? Locale(identifier: "en_US")
+            let system = await supportedSystemLanguage() ?? Locale(identifier: "en_US")
             meetingLanguages = MeetingLanguages(default: system)
         }
     }
@@ -27,7 +27,16 @@ extension AppModel {
     /// The language a manual Meeting starts in.
     func nextMeetingLanguage() async -> Locale? {
         if let meetingLanguages { return meetingLanguages.defaultLanguage }
-        return await SpeechTranscriber.supportedLocale(equivalentTo: .current)
+        return await supportedSystemLanguage()
+    }
+
+    /// `supportedLocale(equivalentTo:)` has been seen echoing unsupported tags such as nb-NO, so its answer must
+    /// also be in `supportedLocales`.
+    private func supportedSystemLanguage() async -> Locale? {
+        guard let language = await SpeechTranscriber.supportedLocale(equivalentTo: .current) else { return nil }
+        let tag = language.identifier(.bcp47)
+        guard await SpeechTranscriber.supportedLocales.contains(where: { $0.identifier(.bcp47) == tag }) else { return nil }
+        return language
     }
 
     /// The language the Meeting Language submenu checks: the live Meeting's, or the next Meeting's.
