@@ -231,7 +231,14 @@ private struct PermissionsSettings: View {
                     case .allowed:
                         Label("Allowed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                    case .notAllowed:
+                    case .notAsked:
+                        // System Settings lists Carbon only once the system has asked, so a skipped one asks here.
+                        HStack {
+                            Text("Not allowed").foregroundStyle(.secondary)
+                            Button("Allow\u{2026}") { Task { await model.allow(permission) } }
+                                .accessibilityLabel("Allow \(permission.name)\u{2026}")
+                        }
+                    case .denied:
                         HStack {
                             Text("Not allowed").foregroundStyle(.secondary)
                             OpenSystemSettingsButton(permission: permission)

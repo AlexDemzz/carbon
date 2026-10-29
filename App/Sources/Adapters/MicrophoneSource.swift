@@ -22,6 +22,8 @@ final class MicrophoneSource: AudioSource {
         await AVAudioApplication.requestRecordPermission()
     }
 
+    static var isAllowed: Bool { AVAudioApplication.shared.recordPermission == .granted }
+
     func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
         try running.withLock { running in
             running.onBuffer = onBuffer

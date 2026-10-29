@@ -16,12 +16,18 @@ final class AppModel {
     var pendingRename: ListedMeeting?
     /// The Settings tab in front, so the menu's missing-permission item can open Permissions.
     var settingsTab: SettingsTab = .general
-    /// What Settings › Permissions and the menu bar menu show. Refreshed on launch, on activation and every minute.
+    /// What Settings › Permissions, the menu bar menu and the onboarding show. Refreshed on launch, on activation and
+    /// every minute, and every second while the onboarding is open.
     var permissions = Permissions(
         microphone: .allowed, systemAudioRecording: .allowed, calendar: .allowed, notifications: .allowed)
     /// Set by a view that can open SwiftUI windows, for the model's callers outside SwiftUI.
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored var openEditor: ((UUID) -> Void)?
+    @ObservationIgnored var openOnboarding: (() -> Void)? {
+        didSet { if onboardingPending { showOnboarding() } }
+    }
+    /// The first launch asked for the onboarding before a view handed over `openOnboarding`.
+    @ObservationIgnored private var onboardingPending = false
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored let notifier = Notifier()
     /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
@@ -68,9 +74,8 @@ final class AppModel {
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
         recorder.onNotice = { [weak self] notice in self?.announce(notice) }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
-        let notifier = notifier
         Task {
-            await FirstLaunch.run(notifier: notifier)
+            if FirstLaunch.run() { showOnboarding() }
             Task { [weak self] in await self?.watchPermissions() }
             async let recovered: Void = recoverInterruptedMeetings()
             await startDetection()
@@ -204,9 +209,11 @@ final class AppModel {
                 self?.present(error, title: "Carbon couldn't transcribe a Meeting")
             }
         }
-        guard await MicrophoneSource.requestAccess() else {
-            DiagnosticLog.shared.write("Detection is off: no microphone access")
-            return
+        // Detection never prompts: the onboarding asks, and a skipped permission stays skipped until answered.
+        // An unasked System Audio Recording would otherwise prompt from the first Meeting's audio tap.
+        if !detectionMayCapture {
+            DiagnosticLog.shared.write("Detection waits for microphone and System Audio Recording access")
+            while !detectionMayCapture { try? await Task.sleep(for: .seconds(1)) }
         }
         await loadMeetingLanguages()
         await recorder.runDetection(SignalSampler())
@@ -217,8 +224,39 @@ final class AppModel {
         NSApp.activate()
     }
 
+    private var detectionMayCapture: Bool {
+        MicrophoneSource.isAllowed && SystemAudioRecordingPermission.current() != .notDetermined
+    }
+
+    /// The first launch's window, which asks for each permission in turn.
+    func showOnboarding() {
+        guard let openOnboarding else {
+            onboardingPending = true
+            return
+        }
+        onboardingPending = false
+        // At launch, a menu bar app isn't active and SwiftUI may not open a window yet: the window would land behind
+        // other apps, or not at all. Ask again until it exists, then bring it forward.
+        Task {
+            for _ in 0..<20 {
+                NSApp.activate()
+                openOnboarding()
+                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix(Self.onboardingWindowID) == true }),
+                    window.isVisible
+                {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            DiagnosticLog.shared.write("The onboarding window didn't open")
+        }
+    }
+
     static let mainWindowID = "main"
     static let editorWindowID = "editor"
+    static let onboardingWindowID = "onboarding"
 
     /// The "Transcript ready." notification's Show action: the Meeting, selected in the main window.
     func showMeeting(_ id: UUID) {
