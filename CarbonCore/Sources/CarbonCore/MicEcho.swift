@@ -16,9 +16,9 @@ enum MicEcho {
     typealias Span = (start: TimeInterval, end: TimeInterval)
 
     /// The Me clusters that are the call heard back through the mic: close to a Them voice, or mostly spoken
-    /// over Them speech. Them speech is the Them diarization's, else the Them words' when it failed.
+    /// over Them speech.
     static func echo(in me: Diarization, them: Diarization?, themWords: [TranscribedWord]) -> Set<String> {
-        let themSpeech = merged(them.map { $0.segments.map { ($0.start, $0.end) } } ?? themWords.map { ($0.start, $0.end) })
+        let themSpeech = themSpeech(them: them, themWords: themWords)
         let themVoices = them?.clusters.map(\.centroid) ?? []
         return Set(me.clusters.filter { cluster in
             if themVoices.contains(where: {
