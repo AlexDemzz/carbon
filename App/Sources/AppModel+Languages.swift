@@ -24,6 +24,15 @@ extension AppModel {
         if meetingLanguages.chosen != old?.chosen { languageAssets.keep(meetingLanguages.chosen) }
     }
 
+    /// The checked languages a Meeting may turn out to be spoken in: those whose assets are ready. None when
+    /// "Detect the Meeting Language automatically" is off.
+    var meetingLanguageCandidates: [Locale] {
+        guard UserDefaults.standard.bool(forKey: SettingsKey.identifyMeetingLanguage), let meetingLanguages else {
+            return []
+        }
+        return meetingLanguages.chosen.filter { languageAssets.state(of: $0) == .ready }
+    }
+
     /// The language a manual Meeting starts in.
     func nextMeetingLanguage() async -> Locale? {
         if let meetingLanguages { return meetingLanguages.defaultLanguage }
@@ -73,13 +82,16 @@ extension AppModel {
         Task {
             do {
                 try await recorder.switchLanguage(to: language)
-                if case .live(let meeting) = recorder.state {
-                    notifier.restateStarted(meeting, languages: meetingLanguages)
-                    AccessibilityNotification.Announcement("Transcribing in \(languageName(language))").post()
-                }
+                if case .live(let meeting) = recorder.state { meetingLanguageChanged(meeting) }
             } catch {
                 present(error, title: "Carbon couldn't switch to \(languageName(language))")
             }
         }
+    }
+
+    /// The live Meeting is now transcribed in another language, picked by the person or identified.
+    func meetingLanguageChanged(_ meeting: LiveMeeting) {
+        notifier.restateStarted(meeting, languages: meetingLanguages)
+        AccessibilityNotification.Announcement("Transcribing in \(languageName(meeting.language))").post()
     }
 }

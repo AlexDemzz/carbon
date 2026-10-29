@@ -1,0 +1,87 @@
+{
+  "artifact": "SpeechBrainECAPAVoxLingua107.mlmodelc",
+  "artifact_manifest": "artifact_manifest.json",
+  "artifact_manifest_sha256": "b3906193117d2d199af92c7a1426470aa8f57890e25152322ea1004758dbb4f5",
+  "artifact_size_bytes": 42749556,
+  "artifact_tree_sha256": "f4d2a215d1e5ec15a165d16d790900e26369566e96df00ec9065e730b34f2c08",
+  "center_padding": "constant_zero",
+  "class_count": 107,
+  "classifier_checkpoint_sha256": "a50d9024ff58d317031c9787d4c6c614d454a87a8ef32f9d36338cd3ff57adbc",
+  "embedding_checkpoint_sha256": "ab750d5c06d713477045fa798fab5d33e959dbc0dfe4de510a9a47844c79a19a",
+  "embedding_dimension": 256,
+  "format": "coreml",
+  "hop_length": 160,
+  "labels_file": "labels.json",
+  "log_scale": "10*log10(max(x,1e-10)), top_db=80",
+  "maximum_mel_frames": 3001,
+  "mel_filterbank": "speechbrain_symmetric_triangular",
+  "minimum_mel_frames": 10,
+  "model_type": "speechbrain-ecapa-voxlingua107-language-id",
+  "n_fft": 400,
+  "n_mels": 60,
+  "output_name": "log_probabilities",
+  "parameter_count": 21246443,
+  "precision": "float16",
+  "sample_rate": 16000,
+  "sentence_mean_normalization": true,
+  "source_model": "speechbrain/lang-id-voxlingua107-ecapa",
+  "source_revision": "0253049ae131d6a4be1c4f0d8b0ff483a0f8c8e9",
+  "speechbrain_source_revision": "36c180c7bfad3bf5c48bd76a24799812952c4565",
+  "speechbrain_version": "1.1.0",
+  "task": "audio-classification",
+  "validation": {
+    "all_top1_predictions_match": true,
+    "maximum_absolute_error": 0.2172389030456543,
+    "maximum_probability_error": 0.008734524250030518,
+    "minimum_output_cosine": 0.999967393929063,
+    "parity_cases": [
+      {
+        "maximum_absolute_error": 0.01996612548828125,
+        "maximum_probability_error": 0.0008377283811569214,
+        "mel_frames": 10,
+        "output_cosine": 0.9999993334104466,
+        "top1_match": true
+      },
+      {
+        "maximum_absolute_error": 0.009352684020996094,
+        "maximum_probability_error": 0.001735389232635498,
+        "mel_frames": 101,
+        "output_cosine": 0.9999998804671212,
+        "top1_match": true
+      },
+      {
+        "maximum_absolute_error": 0.00892496109008789,
+        "maximum_probability_error": 0.0015727579593658447,
+        "mel_frames": 301,
+        "output_cosine": 0.9999998611212574,
+        "top1_match": true
+      },
+      {
+        "maximum_absolute_error": 0.008654594421386719,
+        "maximum_probability_error": 0.00038208067417144775,
+        "mel_frames": 1001,
+        "output_cosine": 0.9999999183849442,
+        "top1_match": true
+      },
+      {
+        "maximum_absolute_error": 0.2172389030456543,
+        "maximum_probability_error": 0.008734524250030518,
+        "mel_frames": 3001,
+        "output_cosine": 0.999967393929063,
+        "top1_match": true
+      }
+    ],
+    "speechbrain_frontend_cosine": 0.9999999999993286,
+    "speechbrain_frontend_maximum_absolute_error": 0.000171661376953125,
+    "upstream_examples": {
+      "udhr_th.wav": {
+        "top1_index": 94,
+        "top1_log_probability": -0.011258760467171669
+      }
+    },
+    "warm_latency_median_ms": 3.7067499943077564,
+    "warm_latency_min_ms": 3.3819159725680947
+  },
+  "win_length": 400,
+  "window": "periodic_hamming"
+}

@@ -89,6 +89,7 @@ private struct GeneralSettings: View {
 /// state, and the default among the checked ones.
 private struct LanguagesSettings: View {
     let model: AppModel
+    @AppStorage(SettingsKey.identifyMeetingLanguage) private var identifiesMeetingLanguage = true
 
     var body: some View {
         Form {
@@ -99,8 +100,11 @@ private struct LanguagesSettings: View {
                             Text(languages.name(of: language)).tag(language.identifier(.bcp47))
                         }
                     }
+                    if languages.chosen.count > 1 {
+                        Toggle("Detect the Meeting Language automatically", isOn: $identifiesMeetingLanguage)
+                    }
                 } footer: {
-                    Text("Meetings start in the default language. Switch while transcribing from the menu bar or the notification.")
+                    Text(footer(languages))
                         .foregroundStyle(.secondary)
                 }
                 Section("Meeting Languages") {
@@ -121,6 +125,13 @@ private struct LanguagesSettings: View {
         .task {
             if model.languageAssets.supported.isEmpty { await model.languageAssets.loadSupported() }
         }
+    }
+
+    private func footer(_ languages: MeetingLanguages) -> String {
+        guard languages.chosen.count > 1, identifiesMeetingLanguage else {
+            return "Meetings start in the default language. Switch while transcribing from the menu bar or the notification."
+        }
+        return "Meetings start in the default language. After a few seconds of speech, Carbon switches to the checked language it hears, on your Mac. Switch by hand from the menu bar or the notification."
     }
 
     private var defaultLanguage: Binding<String> {

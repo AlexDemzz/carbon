@@ -59,6 +59,7 @@ final class AppModel {
             transcriber: SpeechTranscriberAdapter(),
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
+            languageClassifier: CoreMLLanguageClassifier(),
             library: library,
             outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
@@ -67,12 +68,15 @@ final class AppModel {
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
         watchLibrary()
-        UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true])
+        UserDefaults.standard.register(defaults: [
+            SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true, SettingsKey.identifyMeetingLanguage: true,
+        ])
         library.recognizesVoices = UserDefaults.standard.bool(forKey: SettingsKey.recognizeVoices)
         recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
         recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
         recorder.onNotice = { [weak self] notice in self?.announce(notice) }
+        recorder.meetingLanguageCandidates = { [weak self] in self?.meetingLanguageCandidates ?? [] }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
         Task {
             if FirstLaunch.run() { showOnboarding() }
@@ -127,6 +131,8 @@ final class AppModel {
         case .switchOffered(let offer):
             switchOffer = offer
             notifier.postSwitchOffer(offer)
+        case .languageIdentified(let meeting):
+            meetingLanguageChanged(meeting)
         }
     }
 
@@ -411,6 +417,8 @@ enum SettingsKey {
     static let libraryFolder = "libraryFolder"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"
+    /// "Detect the Meeting Language automatically", on by default. Read as each Meeting starts.
+    static let identifyMeetingLanguage = "identifyMeetingLanguage"
     /// "Recognize voices", on by default.
     static let recognizeVoices = "recognizeVoices"
 }
