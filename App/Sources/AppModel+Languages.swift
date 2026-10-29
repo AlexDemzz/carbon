@@ -6,9 +6,14 @@ import SwiftUI
 extension AppModel {
     /// Once permissions allow Detection, or when the onboarding's Languages step appears, whichever comes first: the
     /// saved Meeting Languages, or, the first time, the Mac's languages. Their assets are reserved and downloaded.
+    /// The second caller waits for the first one's load.
     func loadMeetingLanguages() async {
-        guard !languagesLoaded else { return }
-        languagesLoaded = true
+        let load = meetingLanguagesLoad ?? Task { await loadMeetingLanguagesOnce() }
+        meetingLanguagesLoad = load
+        await load.value
+    }
+
+    private func loadMeetingLanguagesOnce() async {
         await languageAssets.loadSupported()
         if let meetingLanguages {
             recorder.detectionLanguage = meetingLanguages.defaultLanguage
@@ -47,7 +52,7 @@ extension AppModel {
         return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
     }
 
-    /// The language the Meeting Language submenu checks: the live Meeting's, or the next Meeting's.
+    /// The language the menu bar's language submenu checks: the live Meeting's, or the next Meeting's.
     var menuLanguage: Locale? {
         switch recorder.state {
         case .live(let meeting), .finishing(let meeting): meeting.language

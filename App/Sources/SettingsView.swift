@@ -166,7 +166,7 @@ struct LanguageRow: View {
 
     private var isChosen: Binding<Bool> {
         Binding(
-            get: { model.meetingLanguages?.isChosen(language) ?? false },
+            get: { languages.isChosen(language) },
             set: { model.meetingLanguages?.set(language, chosen: $0) })
     }
 }

@@ -35,7 +35,7 @@ final class AppModel {
         didSet { meetingLanguagesChanged(from: oldValue) }
     }
     let languageAssets = MeetingLanguageAssets()
-    @ObservationIgnored var languagesLoaded = false
+    @ObservationIgnored var meetingLanguagesLoad: Task<Void, Never>?
     /// The last "Switch to <app>" offer posted, which its banner's action refers to.
     @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
 

@@ -110,7 +110,7 @@ struct MeetingLanguagesTests {
         #expect(languages.defaultLanguage.identifier(.bcp47) == "de-DE")
     }
 
-    @Test func aMacWithNoLanguageSpeechTranscriberHasStartsInUSEnglish() {
+    @Test func aMacWhoseLanguagesSpeechTranscriberLacksStartsInUSEnglish() {
         let languages = MeetingLanguages.seeded(from: locales("nb-NO"), supported: locales("en-US", "fr-FR"), cap: 5)
 
         #expect(bcp47(languages.chosen) == ["en-US"])
@@ -124,6 +124,13 @@ struct MeetingLanguagesTests {
 
         #expect(bcp47(languages.chosen) == ["en-US", "de-DE", "zh-TW"])
         #expect(languages.defaultLanguage.identifier(.bcp47) == "en-US")
+    }
+
+    @Test func aMacLanguageWithNoRegionAndItsVariantsInOtherRegionsAreOneLanguage() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("en", "en-FR", "en-US"), supported: locales("en-IN", "en-GB", "en-US"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-US"])
     }
 
     @Test func aMacLanguageWhoseMainRegionSpeechTranscriberLacksTakesItsFirstListedVariant() {
