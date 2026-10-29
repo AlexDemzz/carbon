@@ -14,7 +14,8 @@ extension AppModel {
             languageAssets.keep(meetingLanguages.chosen)
         } else {
             let system = await SpeechTranscriber.supportedLocale(equivalentTo: .current) ?? Locale(identifier: "en_US")
-            meetingLanguages = MeetingLanguages(default: system)
+            // The onboarding and detection can both wait here on the first launch: a late one keeps what's chosen.
+            if meetingLanguages == nil { meetingLanguages = MeetingLanguages(default: system) }
         }
     }
 
