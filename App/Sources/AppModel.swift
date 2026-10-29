@@ -234,8 +234,23 @@ final class AppModel {
             return
         }
         onboardingPending = false
-        openOnboarding()
-        NSApp.activate()
+        // At launch, a menu bar app isn't active and SwiftUI may not open a window yet: the window would land behind
+        // other apps, or not at all. Ask again until it exists, then bring it forward.
+        Task {
+            for _ in 0..<20 {
+                NSApp.activate()
+                openOnboarding()
+                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix(Self.onboardingWindowID) == true }),
+                    window.isVisible
+                {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            DiagnosticLog.shared.write("The onboarding window didn't open")
+        }
     }
 
     static let mainWindowID = "main"
