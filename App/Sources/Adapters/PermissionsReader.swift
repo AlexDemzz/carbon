@@ -7,12 +7,27 @@ import UserNotifications
 /// Reads the four permissions without prompting, and opens their System Settings pane.
 enum PermissionsReader {
     static func current() async -> Permissions {
-        let notifications = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        let notifications: PermissionStatus =
+            switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+            case .authorized, .provisional: .allowed
+            case .notDetermined: .notAsked
+            default: .denied
+            }
+        let microphone: PermissionStatus =
+            switch AVAudioApplication.shared.recordPermission {
+            case .granted: .allowed
+            case .undetermined: .notAsked
+            default: .denied
+            }
+        let calendar: PermissionStatus =
+            switch EKEventStore.authorizationStatus(for: .event) {
+            case .fullAccess: .allowed
+            case .notDetermined: .notAsked
+            default: .denied
+            }
         return Permissions(
-            microphone: AVAudioApplication.shared.recordPermission == .granted ? .allowed : .notAllowed,
-            systemAudioRecording: PermissionStatus(SystemAudioRecordingPermission.current()),
-            calendar: EKEventStore.authorizationStatus(for: .event) == .fullAccess ? .allowed : .notAllowed,
-            notifications: [.authorized, .provisional].contains(notifications) ? .allowed : .notAllowed)
+            microphone: microphone, systemAudioRecording: PermissionStatus(SystemAudioRecordingPermission.current()),
+            calendar: calendar, notifications: notifications)
     }
 
     static func openSystemSettings(for permission: Permission) {

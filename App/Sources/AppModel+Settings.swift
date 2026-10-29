@@ -87,7 +87,9 @@ extension AppModel {
     // MARK: Permissions
 
     func refreshPermissions() async {
-        permissions = await PermissionsReader.current()
+        let fresh = await PermissionsReader.current()
+        // The onboarding rereads every second: an unchanged read redraws nothing.
+        if fresh != permissions { permissions = fresh }
     }
 
     /// The menu's "Carbon needs <permission> access…": Settings, on the Permissions tab.
@@ -96,6 +98,23 @@ extension AppModel {
         NSApp.activate()
         openSettings()
         Task { await refreshPermissions() }
+    }
+
+    /// The onboarding's primary action. Never asked, it shows the system prompt, the only way into System Settings'
+    /// list; once answered, only System Settings can change it.
+    func allow(_ permission: Permission) async {
+        guard permissions[permission] == .notAsked else {
+            PermissionsReader.openSystemSettings(for: permission)
+            return
+        }
+        NSApp.activate()
+        switch permission {
+        case .microphone: _ = await MicrophoneSource.requestAccess()
+        case .systemAudioRecording: await SystemAudioRecordingPermission.requestAccess()
+        case .calendar: await CalendarEvents.requestAccess()
+        case .notifications: await notifier.requestAuthorization()
+        }
+        await refreshPermissions()
     }
 
     // MARK: About

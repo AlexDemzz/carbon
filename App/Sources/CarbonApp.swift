@@ -23,6 +23,14 @@ struct CarbonApp: App {
         .windowResizability(.contentMinSize)
         .restorationBehavior(.disabled)
 
+        Window("Welcome to Carbon", id: AppModel.onboardingWindowID) {
+            OnboardingWindow(model: model)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         MenuBarExtra {
             MenuBarMenu(model: model, updater: updater)
         } label: {
@@ -53,7 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Gives the model SwiftUI's `openWindow`, so the global shortcut can show the main window.
+/// Gives the model SwiftUI's `openWindow`, so the global shortcut can show the main window and the first launch
+/// the onboarding.
 private struct HandsOpenWindowToModel: ViewModifier {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
@@ -62,6 +71,7 @@ private struct HandsOpenWindowToModel: ViewModifier {
         content.task {
             model.openMainWindow = { [openWindow] in openWindow(id: AppModel.mainWindowID) }
             model.openEditor = { [openWindow] id in openWindow(id: AppModel.editorWindowID, value: id) }
+            model.openOnboarding = { [openWindow] in openWindow(id: AppModel.onboardingWindowID) }
         }
     }
 }

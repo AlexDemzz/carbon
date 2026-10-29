@@ -5,7 +5,7 @@ import Testing
 struct PermissionsTests {
     @Test func theMenuFlagsEachPermissionThatIsNotAllowedInTheSettingsOrder() {
         let permissions = Permissions(
-            microphone: .allowed, systemAudioRecording: .notAllowed, calendar: .notAllowed, notifications: .allowed)
+            microphone: .allowed, systemAudioRecording: .denied, calendar: .notAsked, notifications: .allowed)
 
         #expect(permissions.menuWarnings.map(\.title) == [
             "Carbon needs System Audio Recording access\u{2026}",

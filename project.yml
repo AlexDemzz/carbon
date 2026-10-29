@@ -49,11 +49,11 @@ targets:
         LSUIElement: true
         NSHumanReadableCopyright: "© 2026 Alexandre Joly"
         NSMicrophoneUsageDescription: Carbon transcribes your side of a Meeting from the microphone, on this Mac.
-        NSAudioCaptureUsageDescription: Carbon transcribes the other participants of a Meeting from the call's audio, on this Mac.
+        NSAudioCaptureUsageDescription: Carbon transcribes everyone else in a Meeting from the call's audio, on this Mac.
         SUFeedURL: https://carbon.alexandrejoly.me/appcast.xml
         SUPublicEDKey: DmKfoKmWRW4yVkZNN0nq1w3x4uu6e/qkz5YXE1zN+ZE=
         SUEnableAutomaticChecks: true
-        NSCalendarsFullAccessUsageDescription: Carbon takes a Meeting's title and participants from its calendar event.
+        NSCalendarsFullAccessUsageDescription: Carbon names each Meeting and lists its participants from the matching calendar event, on this Mac.
     entitlements:
       path: App/Carbon.entitlements
       properties:

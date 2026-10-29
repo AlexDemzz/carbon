@@ -1,18 +1,25 @@
-/// What Settings › Permissions shows for one permission.
+/// One permission as the system reports it. Settings › Permissions and the menu bar menu show never asked and
+/// denied alike, as not allowed; the onboarding tells them apart.
 public enum PermissionStatus: Equatable, Sendable {
     case allowed
-    /// Denied, or not asked yet: either way Carbon goes without it.
-    case notAllowed
+    /// The system never asked: only its prompt gets Carbon listed in System Settings.
+    case notAsked
+    /// Answered without allowing: only System Settings can change it.
+    case denied
     /// The private preflight is missing, so Carbon can't tell.
     case unknown
 
     public init(_ systemAudio: SystemAudioPermission) {
         self = switch systemAudio {
         case .granted: .allowed
-        case .denied, .notDetermined: .notAllowed
+        case .notDetermined: .notAsked
+        case .denied: .denied
         case .unknown: .unknown
         }
     }
+
+    /// Never asked or denied: either way Carbon goes without it.
+    public var isNotAllowed: Bool { self == .notAsked || self == .denied }
 }
 
 public enum Permission: CaseIterable, Sendable {
@@ -59,6 +66,6 @@ public struct Permissions: Equatable, Sendable {
 
     /// The permissions to flag at the top of the menu bar menu. An unknown status is not flagged.
     public var menuWarnings: [Permission] {
-        Permission.allCases.filter { self[$0] == .notAllowed }
+        Permission.allCases.filter { self[$0].isNotAllowed }
     }
 }

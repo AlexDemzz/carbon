@@ -54,7 +54,7 @@ final class Notifier: NSObject {
             intentIdentifiers: []))
     }
 
-    /// The first-launch prompt. Later calls return the stored answer without asking.
+    /// The onboarding's prompt. Later calls return the stored answer without asking.
     func requestAuthorization() async {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
     }

@@ -221,7 +221,7 @@ private struct PermissionsSettings: View {
                     case .allowed:
                         Label("Allowed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                    case .notAllowed:
+                    case .notAsked, .denied:
                         HStack {
                             Text("Not allowed").foregroundStyle(.secondary)
                             OpenSystemSettingsButton(permission: permission)
