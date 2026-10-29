@@ -62,7 +62,7 @@ public struct Detector: Sendable {
         case silence
         /// The call assertion and the mic were released for the grace period, then 30 s passed in silence.
         case callEnded
-        /// The browser's WebRTC assertion and the mic were released for `webRTCReleaseGrace`. No silence is needed:
+        /// The Meeting App's WebRTC assertion and the mic were released for `webRTCReleaseGrace`. No silence is needed:
         /// the browser's other tabs keep playing after the call.
         case webRTCEnded
         /// A new call began: its Event ended and another one started while the mic stayed held, a new
@@ -86,7 +86,7 @@ public struct Detector: Sendable {
     /// The Event, if any, need not be over.
     public static let callReleaseGrace: TimeInterval = 15
     public static let callSilenceToEnd: TimeInterval = 30
-    /// With the browser's WebRTC assertion seen during the Meeting: the assertion and the mic released this long.
+    /// With the Meeting App's WebRTC assertion seen during the Meeting: the assertion and the mic released this long.
     public static let webRTCReleaseGrace: TimeInterval = 10
     /// A call released this long and then back is a new call.
     public static let backToBackGap: TimeInterval = 5
@@ -121,10 +121,13 @@ public struct Detector: Sendable {
         var event: CalendarEvent?
         /// The `AssertionId`s of the Meeting App's call, once confirmed during the Meeting: the call stop rule applies.
         var callIDs: Set<Int>?
-        /// When the Meeting App's WebRTC assertion was last seen released, nil while held or never seen.
-        var webRTCReleasedAt: Date?
-        /// The Meeting App held a WebRTC assertion during the Meeting: the WebRTC stop rule applies.
-        var hadWebRTC = false
+        /// The Meeting App's WebRTC assertion, once seen during the Meeting: the WebRTC stop rule applies.
+        var webRTC: WebRTC?
+    }
+
+    private enum WebRTC {
+        case held
+        case released(at: Date)
     }
 
     private let vendorTable: VendorTable
@@ -135,7 +138,7 @@ public struct Detector: Sendable {
     private var holds: [String: Hold] = [:]
     private var calls: [String: Call] = [:]
     /// The apps holding a WebRTC assertion, by bundle ID, from the polls.
-    private var webRTC: Set<String> = []
+    private var webRTCHolders: Set<String> = []
     /// Holds a manual Stop ended: they must be released before they can start a Meeting again.
     private var spent: Set<String> = []
     /// The `AssertionId`s of calls a manual Stop ended: only a new call can start a Meeting.
@@ -165,7 +168,7 @@ public struct Detector: Sendable {
         let time = signals.time
         updateHolds(signals.micHolders, at: time, ignoredApps: signals.ignoredApps)
         if let assertions = signals.assertions {
-            updateCalls(assertions, at: time, ignoredApps: signals.ignoredApps)
+            updateAssertions(assertions, at: time, ignoredApps: signals.ignoredApps)
         }
         events = signals.events
         offeredSwitch = offeredSwitch.filter(isSignaling)
@@ -225,11 +228,10 @@ public struct Detector: Sendable {
         if let call, meeting.callIDs != nil || call.polls >= Self.callPollsToStart { meeting.callIDs = call.ids }
         let hasCall = meeting.callIDs != nil
         if let app = meeting.app {
-            if webRTC.contains(app.bundleID) {
-                meeting.hadWebRTC = true
-                meeting.webRTCReleasedAt = nil
-            } else if meeting.hadWebRTC, meeting.webRTCReleasedAt == nil {
-                meeting.webRTCReleasedAt = time
+            if webRTCHolders.contains(app.bundleID) {
+                meeting.webRTC = .held
+            } else if case .held = meeting.webRTC {
+                meeting.webRTC = .released(at: time)
             }
         }
         if micHeld || (hasCall && call != nil) {
@@ -246,7 +248,7 @@ public struct Detector: Sendable {
             let silentSince = max(graceEnd, signals.lastSound ?? graceEnd)
             return time.timeIntervalSince(silentSince) >= Self.callSilenceToEnd ? .callEnded : nil
         }
-        if let webRTCReleasedAt = meeting.webRTCReleasedAt,
+        if case .released(let webRTCReleasedAt) = meeting.webRTC,
             time.timeIntervalSince(max(releasedAt, webRTCReleasedAt)) >= Self.webRTCReleaseGrace
         {
             return .webRTCEnded
@@ -371,8 +373,8 @@ public struct Detector: Sendable {
             .min { $0.since < $1.since }
     }
 
-    private mutating func updateCalls(_ assertions: [PowerAssertion], at time: Date, ignoredApps: Set<String>) {
-        webRTC = Set(assertions.filter { vendorTable.kind(of: $0) == .webRTC }.map(\.app.bundleID))
+    private mutating func updateAssertions(_ assertions: [PowerAssertion], at time: Date, ignoredApps: Set<String>) {
+        webRTCHolders = Set(assertions.filter { vendorTable.kind(of: $0) == .webRTC }.map(\.app.bundleID))
         var current: [String: Call] = [:]
         for assertion in assertions where vendorTable.kind(of: assertion) == .call {
             guard !isIgnored(assertion.app.bundleID, ignoredApps: ignoredApps) else { continue }
