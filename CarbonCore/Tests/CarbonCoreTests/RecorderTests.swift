@@ -1025,6 +1025,24 @@ struct RecorderTests {
         ])
     }
 
+    @Test func aMeetingDeletedWhileItIsStillBeingFiledLeavesNoDebugModeFileBehind() async throws {
+        let trash = try TemporaryFolder()
+        let meetingID = meetingID
+        let shown = makeLibrary(trash: trash.url)
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            microphone: FakeAudioSource(seconds: 4), systemAudio: FakeAudioSource(seconds: 0),
+            keepAudio: true, debugMode: true, trash: trash.url,
+            summarizer: MeanwhileSummarizer { try? shown.delete(meetingID) })
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 4)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(
+            atPath: support.url.appending(path: "Debug/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json").path))
+    }
+
     @Test func aMeetingDeletedInTheFinderTakesItsDebugModeFileToTheTrash() async throws {
         let trash = try TemporaryFolder()
         let recorder = makeRecorder(

@@ -291,3 +291,13 @@ final class SpySummarizer: Summarizer {
         return nil
     }
 }
+
+/// A Summarizer during whose work the person does something else in Carbon, like Delete the Meeting being filed.
+struct MeanwhileSummarizer: Summarizer {
+    let meanwhile: @MainActor @Sendable () -> Void
+
+    func summarize(transcript: String, language: Locale) async throws -> Summary? {
+        await meanwhile()
+        return nil
+    }
+}

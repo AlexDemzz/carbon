@@ -522,7 +522,7 @@ public final class Recorder {
         if state == .finishing(meeting) { state = .idle }
     }
 
-    /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, Debug mode file,
+    /// The end of a Meeting, live or recovered: diarization, Library write, Debug mode file, Summary, kept audio,
     /// cleanup.
     func file(
         _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting, micIsolated: Bool,
@@ -534,6 +534,11 @@ public final class Recorder {
         let file = try write(
             meeting, end: end, transcript: transcript, split: heard.split.me != nil || heard.split.them != nil,
             naming: naming)
+        // Before anything awaits: a Meeting deleted meanwhile would leave its file behind, out of the index.
+        if debugMode() {
+            try? library.writeDebug(
+                MeetingDebug(me: heard.me, them: heard.them, split: heard.split, labels: naming.labels), of: meeting.id)
+        }
         // The file is what matters: a print that couldn't be updated stays as it was.
         try? library.hearVoices(naming.heard, at: meeting.start)
         if let owner = heard.owner { try? library.hearOwner(owner, at: meeting.start) }
@@ -542,10 +547,6 @@ public final class Recorder {
         if keepAudio() {
             // The Transcript is what matters: a Meeting whose audio couldn't be encoded is kept without it.
             try? await library.keepAudio(meeting.id, me: folder.meAudio, them: folder.themAudio)
-        }
-        if debugMode() {
-            try? library.writeDebug(
-                MeetingDebug(me: heard.me, them: heard.them, split: heard.split, labels: naming.labels), of: meeting.id)
         }
         folder.remove()
         return file
