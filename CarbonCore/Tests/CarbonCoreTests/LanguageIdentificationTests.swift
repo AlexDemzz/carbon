@@ -61,13 +61,14 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         speak()
-        try await eventually { recorder.state.liveLanguage == french }
+        try await eventually { !notices.isEmpty }
+        #expect(notices == [.languageIdentified(LiveMeeting(
+            id: meetingID, title: "Meeting Oct 23, 9:15 AM", start: date("2026-10-23T13:15:00Z"), language: french))])
         let file = try await recorder.stop()
 
         let markdown = try String(contentsOf: file, encoding: .utf8)
         #expect(markdown.contains("language: fr-FR"))
         #expect(markdown.hasSuffix("**Me** [0:01] Bonjour à tous.\n\n**Them** [0:02] Salut.\n"))
-        #expect(notices.contains { if case .languageIdentified(let meeting) = $0 { meeting.language == french } else { false } })
         #expect(classifier.released, "the model is let go once the Meeting Language is decided")
     }
 
@@ -130,12 +131,6 @@ struct LanguageIdentificationTests {
         await recorder.discard()
 
         #expect(classifier.peaks.first! > 0.1, "the first window scored is the speech after 10 s of silence")
-    }
-}
-
-extension Recorder.State {
-    var liveLanguage: Locale? {
-        if case .live(let meeting) = self { meeting.language } else { nil }
     }
 }
 
