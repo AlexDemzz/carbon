@@ -22,6 +22,8 @@ public enum TranscriptBuilder {
     static let turnSilence: TimeInterval = 10
     static let longestTurn: TimeInterval = 90
     static let nearestSegment: TimeInterval = 1
+    static let snapWords = 2
+    static let snapSpan: TimeInterval = 1
     static let sentenceEnds: Set<Character> = [".", "?", "!", "…"]
     static let closingMarks: Set<Character> = ["\"", "'", ")"]
     static let escaped: Set<Character> = ["\\", "`", "*", "_", "[", "]", "<", ">"]
@@ -173,7 +175,8 @@ public enum TranscriptBuilder {
     }
 
     /// Each word's cluster: the most-overlapping segment, else the nearest one within 1 s of the word's middle,
-    /// else the previous word's (the next one's before the first attributed word). Nil when no word is reached.
+    /// else the previous word's (the next one's before the first attributed word), then snapped to sentence ends.
+    /// Nil when no word is reached.
     private static func clusters(of words: [TranscribedWord], in segments: [Diarization.Segment]) -> [String]? {
         var found = words.map { cluster(of: $0, in: segments) }
         guard let first = found.firstIndex(where: { $0 != nil }) else { return nil }
@@ -181,7 +184,32 @@ public enum TranscriptBuilder {
         for index in found.indices {
             if found[index] == nil { found[index] = previous } else { previous = found[index] }
         }
-        return found.map { $0! }
+        return snapped(found.map { $0! }, of: words)
+    }
+
+    /// Moves a change of cluster that falls inside a sentence to the nearest sentence end, when at most 2 words
+    /// and 1 s away: the words are contiguous and the segment boundaries a fraction of a second off, so a change
+    /// often lands a word early or late.
+    private static func snapped(_ clusters: [String], of words: [TranscribedWord]) -> [String] {
+        var clusters = clusters
+        func ends(_ index: Int) -> Bool { endsSentence(words[index].text) }
+        for change in words.indices.dropFirst() where clusters[change] != clusters[change - 1] && !ends(change - 1) {
+            let (before, after) = (clusters[change - 1], clusters[change])
+            let finishing = (change..<min(change + snapWords, words.count - 1)).first { last in
+                ends(last) && clusters[change...last + 1].allSatisfy { $0 == after }
+                    && words[last].end - words[change].start <= snapSpan
+            }
+            let starting = stride(from: change - 1, through: max(change - snapWords, 1), by: -1).first { first in
+                ends(first - 1) && clusters[first - 1..<change].allSatisfy { $0 == before }
+                    && words[change].start - words[first].start <= snapSpan
+            }
+            if let finishing {
+                clusters.replaceSubrange(change...finishing, with: repeatElement(before, count: finishing - change + 1))
+            } else if let starting {
+                clusters.replaceSubrange(starting..<change, with: repeatElement(after, count: change - starting))
+            }
+        }
+        return clusters
     }
 
     private static func cluster(of word: TranscribedWord, in segments: [Diarization.Segment]) -> String? {
