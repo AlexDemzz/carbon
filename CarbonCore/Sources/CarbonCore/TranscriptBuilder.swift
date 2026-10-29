@@ -254,7 +254,7 @@ public enum TranscriptBuilder {
 
     /// Moves a change of cluster that falls inside a sentence to the nearest sentence end, when at most 2 words
     /// and 1 s away: the words are contiguous and the segment boundaries a fraction of a second off, so a change
-    /// often lands a word early or late.
+    /// often lands a word early or late. Nearest is in words moved; on a tie the words finish the sentence they are in.
     private static func snapped(_ clusters: [String], of words: [TranscribedWord]) -> [String] {
         var clusters = clusters
         func ends(_ index: Int) -> Bool { endsSentence(words[index].text) }
@@ -268,10 +268,12 @@ public enum TranscriptBuilder {
                 ends(first - 1) && clusters[first - 1..<change].allSatisfy { $0 == before }
                     && words[change].start - words[first].start <= snapSpan
             }
-            if let finishing {
-                clusters.replaceSubrange(change...finishing, with: repeatElement(before, count: finishing - change + 1))
+            let finished = finishing.map { $0 - change + 1 } ?? .max
+            let started = starting.map { change - $0 } ?? .max
+            if let finishing, finished <= started {
+                clusters.replaceSubrange(change...finishing, with: repeatElement(before, count: finished))
             } else if let starting {
-                clusters.replaceSubrange(starting..<change, with: repeatElement(after, count: change - starting))
+                clusters.replaceSubrange(starting..<change, with: repeatElement(after, count: started))
             }
         }
         return clusters

@@ -157,6 +157,28 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func whenBothSentenceEndsAreInReachTheSpeakerChangeMovesToTheNearerOne() {
+        let them = timed([
+            ("Done.", 0, 0.4), ("Are", 0.5, 0.7),  // starts B's sentence: 1 word away
+            ("you", 0.7, 0.9), ("ready?", 0.9, 1.3),  // finishes it: 2 words away
+            ("Yes.", 1.5, 1.9),
+        ])
+        let diarization = Diarization(
+            segments: [.init(start: 0, end: 0.7, cluster: "S1"), .init(start: 0.7, end: 3, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:00] Done.
+
+            **Speaker B** [0:00] Are you ready? Yes.
+
+            """)
+    }
+
     @Test func aSpeakerChangeStaysPutAtASentenceEndOrWhenTheSentenceEndIsOverASecondAway() {
         let them = timed([
             ("Oui.", 1, 1.4), ("D'accord", 1.4, 1.8),  // already at a sentence end
