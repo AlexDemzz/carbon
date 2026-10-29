@@ -8,9 +8,10 @@ enum MicEcho {
     /// Echo clusters overlapped Them speech ≥ 82 % of the time, real people in the room ≤ 19 %.
     static let echoOverlap = 0.5
 
-    /// How far a word heard back through the mic can sit from the Them speech it repeats: the speakers' and
-    /// the mic's latency, and each stream's word timings.
-    static let echoDrift: TimeInterval = 0.5
+    /// How long after Them speech ends a word heard back through the mic can start: the speakers' latency, up to
+    /// ~0.2 s on Bluetooth, plus the mic's. Echo never comes before the Them speech it repeats, and a word that
+    /// does is someone in the room.
+    static let echoLag: TimeInterval = 0.25
 
     typealias Span = (start: TimeInterval, end: TimeInterval)
 
@@ -35,10 +36,10 @@ enum MicEcho {
         merged((them?.segments.map { ($0.start, $0.end) } ?? []) + themWords.map { ($0.start, $0.end) })
     }
 
-    /// The stretch of Them speech a mic word was heard over, within `echoDrift`. Nil while Them is silent: the
-    /// call can't be heard back then, so the word is someone in the room.
+    /// The stretch of Them speech a mic word was heard over, up to `echoLag` after it. Nil while Them is silent:
+    /// the call can't be heard back then, so the word is someone in the room.
     static func themSpeech(over word: TranscribedWord, in speech: [Span]) -> Span? {
-        speech.first { $0.start - echoDrift < word.end && word.start < $0.end + echoDrift }
+        speech.first { $0.start < word.end && word.start < $0.end + echoLag }
     }
 
     /// Sorted, disjoint intervals covering the same time.

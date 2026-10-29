@@ -191,7 +191,7 @@ struct TranscriptBuilderTests {
         let me = timed([
             ("Hi.", 1, 1.4),
             ("can", 5, 5.3), ("you", 5.3, 5.5), ("hear", 5.5, 5.8), ("me?", 5.8, 6.5),
-            ("Hello?", 6.7, 6.9),  // 0.2 s after Them stops: still the call, heard late
+            ("Hello?", 6.6, 6.9),  // 0.1 s after Them stops: still the call, heard late through the speakers
             ("Sorry,", 9.8, 10.1), ("go", 10.1, 10.3), ("ahead.", 10.3, 10.6),  // talking over a silent call
             ("Sure.", 13.2, 13.6),
         ])
@@ -214,6 +214,32 @@ struct TranscriptBuilderTests {
             **Them** [0:05] Can you hear me?
 
             **Speaker B** [0:09] Sorry, go ahead. Sure.
+
+            """)
+    }
+
+    @Test func aReplyInTheRoomJustAfterThemStopsIsKeptInAnEchoCluster() {
+        let me = timed([
+            ("Hi.", 1, 1.4),
+            ("are", 5, 5.3), ("you", 5.3, 5.5), ("there?", 5.5, 6.5),
+            ("Yes.", 6.8, 7.2),  // 0.3 s after Them stops
+        ])
+        let them = timed([("Are", 5, 5.3), ("you", 5.3, 5.5), ("there?", 5.5, 6.5)])
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 4, end: 8, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] Hi.
+
+            **Them** [0:05] Are you there?
+
+            **Speaker A** [0:06] Yes.
 
             """)
     }
