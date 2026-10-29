@@ -4,17 +4,25 @@ import Speech
 import SwiftUI
 
 extension AppModel {
-    /// At launch: the saved Meeting Languages, or, the first time, the system's language (en-US when
-    /// SpeechTranscriber doesn't have it). Their assets are reserved and downloaded.
+    /// Once permissions allow Detection, or when the onboarding's Languages step appears, whichever comes first: the
+    /// saved Meeting Languages, or, the first time, the Mac's languages. Their assets are reserved and downloaded.
     func loadMeetingLanguages() async {
+        guard !languagesLoaded else { return }
+        languagesLoaded = true
         await languageAssets.loadSupported()
         if let meetingLanguages {
             recorder.detectionLanguage = meetingLanguages.defaultLanguage
             languageAssets.keep(meetingLanguages.chosen)
         } else {
-            let system = await supportedSystemLanguage() ?? Locale(identifier: "en_US")
-            meetingLanguages = MeetingLanguages(default: system)
+            meetingLanguages = Self.macLanguages(supported: languageAssets.supported)
         }
+    }
+
+    /// System Settings › General › Language & Region's languages.
+    private static func macLanguages(supported: [Locale]) -> MeetingLanguages {
+        MeetingLanguages.seeded(
+            from: Locale.preferredLanguages.map(Locale.init(identifier:)), supported: supported,
+            cap: AssetInventory.maximumReservedLocales)
     }
 
     func meetingLanguagesChanged(from old: MeetingLanguages?) {
@@ -25,7 +33,7 @@ extension AppModel {
     }
 
     /// The checked languages a Meeting may turn out to be spoken in: those whose assets are ready. None when
-    /// "Detect the Meeting Language automatically" is off.
+    /// "Identify the Meeting Language automatically" is off.
     var meetingLanguageCandidates: [Locale] {
         guard UserDefaults.standard.bool(forKey: SettingsKey.identifyMeetingLanguage), let meetingLanguages else {
             return []
@@ -34,18 +42,9 @@ extension AppModel {
     }
 
     /// The language a manual Meeting starts in.
-    func nextMeetingLanguage() async -> Locale? {
+    func nextMeetingLanguage() async -> Locale {
         if let meetingLanguages { return meetingLanguages.defaultLanguage }
-        return await supportedSystemLanguage()
-    }
-
-    /// `supportedLocale(equivalentTo:)` has been seen echoing unsupported tags such as nb-NO, so its answer must
-    /// also be in `supportedLocales`.
-    private func supportedSystemLanguage() async -> Locale? {
-        guard let language = await SpeechTranscriber.supportedLocale(equivalentTo: .current) else { return nil }
-        let tag = language.identifier(.bcp47)
-        guard await SpeechTranscriber.supportedLocales.contains(where: { $0.identifier(.bcp47) == tag }) else { return nil }
-        return language
+        return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
     }
 
     /// The language the Meeting Language submenu checks: the live Meeting's, or the next Meeting's.

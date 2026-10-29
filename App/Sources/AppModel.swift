@@ -30,11 +30,12 @@ final class AppModel {
     @ObservationIgnored private var onboardingPending = false
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored let notifier = Notifier()
-    /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
+    /// Settings › Languages. Nil on the very first launch until `loadMeetingLanguages()` seeds it from the Mac's languages.
     var meetingLanguages: MeetingLanguages? {
         didSet { meetingLanguagesChanged(from: oldValue) }
     }
     let languageAssets = MeetingLanguageAssets()
+    @ObservationIgnored var languagesLoaded = false
     /// The last "Switch to <app>" offer posted, which its banner's action refers to.
     @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
 
@@ -359,10 +360,7 @@ final class AppModel {
                 guard await MicrophoneSource.requestAccess() else {
                     throw AppError.microphoneDenied
                 }
-                guard let language = await nextMeetingLanguage() else {
-                    throw AppError.languageUnsupported(Locale.current)
-                }
-                try await recorder.start(language: language)
+                try await recorder.start(language: await nextMeetingLanguage())
             } catch Recorder.Failure.systemAudioRecordingDenied {
                 present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
             } catch {
@@ -417,7 +415,7 @@ enum SettingsKey {
     static let libraryFolder = "libraryFolder"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"
-    /// "Detect the Meeting Language automatically", on by default. Read as each Meeting starts.
+    /// "Identify the Meeting Language automatically", on by default. Read as each Meeting starts.
     static let identifyMeetingLanguage = "identifyMeetingLanguage"
     /// "Recognize voices", on by default.
     static let recognizeVoices = "recognizeVoices"
@@ -426,7 +424,6 @@ enum SettingsKey {
 enum AppError: LocalizedError {
     case microphoneDenied
     case systemAudioRecordingDenied
-    case languageUnsupported(Locale)
 
     var errorDescription: String? {
         switch self {
@@ -434,8 +431,6 @@ enum AppError: LocalizedError {
             "Carbon needs microphone access. Allow it in System Settings › Privacy & Security › Microphone."
         case .systemAudioRecordingDenied:
             "Carbon needs System Audio Recording access to hear the other participants. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording."
-        case .languageUnsupported(let locale):
-            "On-device transcription doesn't support \(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)."
         }
     }
 }

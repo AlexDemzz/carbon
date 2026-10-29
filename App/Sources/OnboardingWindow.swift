@@ -2,7 +2,8 @@ import AppKit
 import CarbonCore
 import SwiftUI
 
-/// The first launch's window: Welcome, a step per permission, then Done, which says whether Carbon can transcribe.
+/// The first launch's window: Welcome, a step per permission, the Meeting Languages, then Done, which says whether
+/// Carbon can transcribe.
 /// Only the system's own containers and controls: margins, section gaps and row insets are Form's, as in Settings.
 struct OnboardingWindow: View {
     let model: AppModel
@@ -13,14 +14,17 @@ struct OnboardingWindow: View {
     @State private var formHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
     @State private var welcomeHeight: CGFloat = 0
+    /// The Languages step's rows: the languages checked when it first showed, so an unchecked one can be checked again.
+    @State private var seededLanguages: [Locale] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openSettings) private var openSettings
 
     private enum Step: Equatable {
-        case welcome, permission(Permission), done
+        case welcome, permission(Permission), languages, done
     }
 
-    private let steps: [Step] = [.welcome] + Permission.allCases.map(Step.permission) + [.done]
+    private let steps: [Step] = [.welcome] + Permission.allCases.map(Step.permission) + [.languages, .done]
 
     /// Fits each step, never shorter than Welcome so the buttons don't jump, and past 680 pt the Form scrolls.
     private var height: CGFloat {
@@ -90,7 +94,12 @@ struct OnboardingWindow: View {
                 title: "Welcome to Carbon",
                 subtitle: "Meeting transcripts that stay on your Mac. Carbon needs two permissions to hear both sides of a Meeting, and two optional ones to name it and tell you when it\u{2019}s transcribing.")
         case .permission(let permission):
-            OnboardingHero(permission: permission, title: permission.stepTitle, subtitle: permission.reason)
+            OnboardingHero(
+                symbol: permission.symbol, tint: permission.tint, title: permission.stepTitle, subtitle: permission.reason)
+        case .languages:
+            OnboardingHero(
+                symbol: "globe", tint: .blue, title: "Languages You Speak in Meetings",
+                subtitle: "Carbon transcribes each Meeting in whichever of these it hears, on your Mac. They come from your Mac\u{2019}s languages.")
         case .done:
             let conclusion = model.permissions.onboardingConclusion
             OnboardingHero(title: conclusion.title, subtitle: conclusion.subtitle)
@@ -120,6 +129,8 @@ struct OnboardingWindow: View {
             if permission == .calendar {
                 CalendarAccountsSection(accounts: calendarAccounts, isAllowed: model.permissions.calendar == .allowed)
             }
+        case .languages:
+            languagesSection
         case .done:
             Section {
                 ForEach(Permission.allCases, id: \.self) { permission in
@@ -148,13 +159,39 @@ struct OnboardingWindow: View {
             case .permission(let permission) where model.permissions[permission] != .allowed:
                 Button("Skip") { go(1) }
                 AllowButton(model: model, permission: permission, isDefault: true)
-            case .permission:
+            case .permission, .languages:
                 Button("Continue") { go(1) }.keyboardShortcut(.defaultAction)
             case .done:
                 Button("Done") { dismissWindow(id: AppModel.onboardingWindowID) }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
+    }
+
+    /// Reserving and downloading start here, unless Detection already started them once permissions allowed it.
+    private var languagesSection: some View {
+        Section {
+            if let languages = model.meetingLanguages {
+                ForEach(seededLanguages, id: \.self) { language in
+                    LanguageRow(model: model, language: language, languages: languages)
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        } footer: {
+            HStack(spacing: 4) {
+                Text("Missing a language?").foregroundStyle(.secondary)
+                Button("Add Languages\u{2026}") {
+                    model.settingsTab = .languages
+                    openSettings()
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .task { await model.loadMeetingLanguages() }
+        .onChange(of: model.meetingLanguages == nil, initial: true) {
+            if seededLanguages.isEmpty, let languages = model.meetingLanguages { seededLanguages = languages.chosen }
+        }
     }
 }
 
@@ -178,20 +215,21 @@ private extension Permission {
     }
 }
 
-/// The app icon on Welcome and Done, the permission's symbol on its step.
+/// The app icon on Welcome and Done, the step's symbol on the others.
 private struct OnboardingHero: View {
-    var permission: Permission?
+    var symbol: String?
+    var tint: Color = .accentColor
     let title: String
     let subtitle: String
 
     var body: some View {
         VStack(spacing: 8) {
             Group {
-                if let permission {
-                    Image(systemName: permission.symbol)
+                if let symbol {
+                    Image(systemName: symbol)
                         .font(.system(size: 44))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(permission.tint)
+                        .foregroundStyle(tint)
                         .frame(height: 64)
                 } else {
                     Image(nsImage: NSApp.applicationIconImage)
