@@ -23,6 +23,7 @@ private struct ParticipantToken: View {
     let participant: Participant
 
     @State private var isHovered = false
+    @State private var isEditing = false
 
     private var others: [Participant] { meeting.participants.filter { $0 != participant } }
 
@@ -36,6 +37,9 @@ private struct ParticipantToken: View {
             .onHover { isHovered = $0 }
             .help(participant.email ?? participant.name)
             .accessibilityHint("Shows actions")
+            .popover(isPresented: $isEditing, arrowEdge: .bottom) {
+                ParticipantEditPopover(model: model, meeting: meeting, participant: participant)
+            }
     }
 
     @ViewBuilder private var actions: some View {
@@ -50,6 +54,7 @@ private struct ParticipantToken: View {
             }
             Divider()
         }
+        Button("Edit Participant\u{2026}") { isEditing = true }
         Menu("Same Person As") {
             ForEach(Array(others.enumerated()), id: \.offset) { _, other in
                 Button(other.isNamedByEmail ? other.name : other.email.map { "\(other.name) (\($0))" } ?? other.name) {

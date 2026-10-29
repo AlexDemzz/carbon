@@ -329,6 +329,12 @@ final class AppModel {
         }
     }
 
+    func editParticipant(_ meeting: ListedMeeting, _ participant: Participant, name: String, email: String) {
+        perform("Carbon couldn't edit the participant") {
+            try library.editParticipant(meeting.id, participant, name: name, email: email)
+        }
+    }
+
     func delete(_ meeting: ListedMeeting) {
         let list = library.meetings
         perform("Carbon couldn't delete the Meeting") {

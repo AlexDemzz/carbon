@@ -27,7 +27,7 @@ extension [Participant] {
 
 extension VoicePrint {
     /// The person the print names, as a Participant.
-    var person: Participant { Participant(name: name, email: email) }
+    public var person: Participant { Participant(name: name, email: email) }
 }
 
 extension Library {
@@ -38,46 +38,104 @@ extension Library {
     /// Throws when the file's `participants` isn't a block list holding both, e.g. a flow list the person wrote:
     /// the file and `meetings.json` would no longer agree.
     public func mergeParticipant(_ id: UUID, _ source: Participant, into target: Participant) throws {
+        guard source != target else { return }
+        try replace(target, with: target.merging(source), removing: source, in: id)
+    }
+
+    /// "Edit Participant…": the Participant takes `name` and `email` as `person(name:email:voicePrints:)` reads
+    /// them, and so do their Turn headers in this Meeting and their Voice Print.
+    public func editParticipant(_ id: UUID, _ participant: Participant, name: String, email: String) throws {
+        let edited = try person(
+            name: name, email: email, voicePrints: Set(voicePrints(of: participant, in: id).map(\.id)))
+        guard edited != participant else { return }
+        try replace(participant, with: edited, removing: nil, in: id)
+    }
+
+    /// Settings › Voice Prints: the print takes `name` and `email` as `person(name:email:voicePrints:)` reads them.
+    /// Meetings that named the voice keep the name they wrote.
+    public func editVoicePrint(_ printID: UUID, name: String, email: String) throws {
+        let edited = try person(name: name, email: email, voicePrints: [printID])
+        try voicePrints.update { prints in
+            guard let position = prints.firstIndex(where: { $0.id == printID && !$0.owner }) else { return }
+            prints[position].name = edited.name
+            prints[position].email = edited.email
+        }
+    }
+
+    /// A person as typed: trimmed, the email lowercased, named by their email when the name is empty. Throws when
+    /// both are empty, the email has no `@`, another Voice Print than `own` has the email, or the name is reserved.
+    public func person(name: String, email: String, voicePrints own: Set<UUID>) throws -> Participant {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !name.isEmpty || !email.isEmpty else { throw LibraryError.missingNameAndEmail }
+        guard email.isEmpty || email.contains("@") else { throw LibraryError.invalidEmail }
+        if !email.isEmpty, let other = voicePrints.prints.first(where: {
+            !own.contains($0.id) && $0.email?.caseInsensitiveCompare(email) == .orderedSame
+        }) {
+            throw LibraryError.emailInUse(other.name)
+        }
+        let person = Participant(name: name.isEmpty ? email : name, email: email.isEmpty ? nil : email)
+        guard TranscriptBuilder.label(forName: person.name) != nil else { throw LibraryError.invalidSpeakerName }
+        return person
+    }
+
+    /// The Voice Prints `participant` was heard as in the Meeting, or is by email, or by name for a print with none.
+    public func voicePrints(of participant: Participant, in id: UUID) -> [VoicePrint] {
+        let linked = (try? entry(id, in: loadIndex())).map { entry in
+            Set(entry.speakers.filter { $0.label == TranscriptBuilder.label(forName: participant.name) }
+                .compactMap(\.voicePrintId))
+        } ?? []
+        return voicePrints.prints.filter { isVoicePrint($0, of: [participant], linked: linked) }
+    }
+
+    private func isVoicePrint(_ print: VoicePrint, of people: [Participant], linked: Set<UUID>) -> Bool {
+        !print.owner && (linked.contains(print.id) || people.contains {
+            (print.email == nil || $0.email != nil) && $0.isPerson(print.person)
+        })
+    }
+
+    /// Writes `edited` in `target`'s place and removes `source`, in the index and surgically in the file; renames
+    /// their Turn headers; makes their Voice Prints one, named as `edited`.
+    private func replace(_ target: Participant, with edited: Participant, removing source: Participant?, in id: UUID) throws {
         let entry = try entry(id, in: loadIndex())
-        guard source != target, entry.participants.contains(source), entry.participants.contains(target) else { return }
-        let merged = target.merging(source)
-        guard let label = TranscriptBuilder.label(forName: merged.name) else { throw LibraryError.invalidSpeakerName }
-        let labels = Set([source.name, target.name].compactMap(TranscriptBuilder.label(forName:)) + [label])
+        let people = [target] + (source.map { [$0] } ?? [])
+        guard people.allSatisfy(entry.participants.contains) else { return }
+        guard let label = TranscriptBuilder.label(forName: edited.name) else { throw LibraryError.invalidSpeakerName }
+        let labels = Set(people.map(\.name).compactMap(TranscriptBuilder.label(forName:)) + [label])
         if let markdown = try? String(contentsOf: folder.appending(path: entry.file), encoding: .utf8),
-           MarkdownFile.mergingParticipant(source, into: target, as: merged, in: markdown) == nil {
+           MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: markdown) == nil {
             throw LibraryError.participantsNotInFile
         }
         let linked = Set(entry.speakers.filter { labels.contains($0.label) }.compactMap(\.voicePrintId))
         try writeSurgically(id, updating: { entry in
             // Only the first of each, as in the file.
-            if let position = entry.participants.firstIndex(of: target) { entry.participants[position] = merged }
-            if let position = entry.participants.firstIndex(of: source) { entry.participants.remove(at: position) }
+            if let position = entry.participants.firstIndex(of: target) { entry.participants[position] = edited }
+            if let source, let position = entry.participants.firstIndex(of: source) {
+                entry.participants.remove(at: position)
+            }
             for position in entry.speakers.indices where labels.contains(entry.speakers[position].label) {
                 entry.speakers[position].label = label
                 entry.speakers[position].name = label
             }
         }) { markdown in
-            MarkdownFile.mergingParticipant(source, into: target, as: merged, in: markdown).map { rewritten in
+            MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: markdown).map { rewritten in
                 labels.subtracting([label]).reduce(rewritten) { TranscriptBuilder.renamingSpeaker($1, to: label, in: $0) }
             }
         }
-        try mergeVoicePrints(of: [source, target], as: merged, linked: linked)
+        try mergeVoicePrints(of: people, as: edited, linked: linked, keepingEmail: source != nil)
     }
 
     /// Makes the Voice Prints of `people`, and those `linked`, one. The one heard in the most Meetings keeps its
-    /// voice and takes `merged`'s name and email; every Meeting that linked another links it instead. A print with
-    /// an email is someone's only by that email.
-    private func mergeVoicePrints(of people: [Participant], as merged: Participant, linked: Set<UUID>) throws {
+    /// voice and takes `merged`'s name and email, or keeps its own email when `merged` has none and `keepingEmail`;
+    /// every Meeting that linked another links it instead.
+    private func mergeVoicePrints(
+        of people: [Participant], as merged: Participant, linked: Set<UUID>, keepingEmail: Bool
+    ) throws {
         var index = try loadIndex()
         var survivorID: UUID?
         var gone: Set<UUID> = []
         try voicePrints.update { prints in
-            let theirs = prints.indices.filter { position in
-                let print = prints[position]
-                return !print.owner && (linked.contains(print.id) || people.contains {
-                    (print.email == nil || $0.email != nil) && $0.isPerson(print.person)
-                })
-            }
+            let theirs = prints.indices.filter { isVoicePrint(prints[$0], of: people, linked: linked) }
             guard let survivor = theirs.max(by: { prints[$0].meetings < prints[$1].meetings }) else { return }
             let ids = Set(theirs.map { prints[$0].id })
             // A Meeting that heard two of them counts once.
@@ -91,7 +149,7 @@ extension Library {
             }
             prints[survivor].meetings -= overlap
             prints[survivor].name = merged.name
-            prints[survivor].email = merged.email ?? prints[survivor].email
+            prints[survivor].email = keepingEmail ? merged.email ?? prints[survivor].email : merged.email
             survivorID = prints[survivor].id
             gone = ids.subtracting([prints[survivor].id])
             prints.removeAll { gone.contains($0.id) }
@@ -116,10 +174,10 @@ extension Library {
 }
 
 extension MarkdownFile {
-    /// The file with `target`'s frontmatter `participants` item written as `merged` and `source`'s removed, every
-    /// other line as it was. Nil unless `participants` is a block list holding both.
-    static func mergingParticipant(
-        _ source: Participant, into target: Participant, as merged: Participant, in markdown: String
+    /// The file with `target`'s frontmatter `participants` item written as `edited` and `source`'s removed, every
+    /// other line as it was. Nil unless `participants` is a block list holding them.
+    static func replacingParticipant(
+        _ target: Participant, with edited: Participant, removing source: Participant?, in markdown: String
     ) -> String? {
         guard let frontmatter = frontmatterLines(markdown),
               let key = frontmatter.firstIndex(where: { $0.hasPrefix("participants:") }),
@@ -130,13 +188,13 @@ extension MarkdownFile {
             self.participant(scalar(frontmatter[position].trimmingCharacters(in: .whitespaces).dropFirst(2)))
                 == participant
         }
-        guard let targetLine = items.indices.first(where: { isItem($0, of: target) }),
-              let sourceLine = items.indices.first(where: { isItem($0, of: source) })
-        else { return nil }
+        guard let targetLine = items.indices.first(where: { isItem($0, of: target) }) else { return nil }
+        let sourceLine = source.flatMap { source in items.indices.first { isItem($0, of: source) } }
+        guard source == nil || sourceLine != nil else { return nil }
         var lines = markdown.linesKeepingEnds
         let lineEnd = lines[targetLine].hasSuffix("\r") ? "\r" : ""
-        lines[targetLine] = "  - \(yaml(item(merged)))\(lineEnd)"
-        lines.remove(at: sourceLine)
+        lines[targetLine] = "  - \(yaml(item(edited)))\(lineEnd)"
+        if let sourceLine { lines.remove(at: sourceLine) }
         return lines.joined(separator: "\n")
     }
 }
