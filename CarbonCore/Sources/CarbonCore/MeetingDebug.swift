@@ -74,11 +74,13 @@ public struct MeetingDebug: Equatable, Sendable, Codable {
         func stream(_ stream: AudioStream, _ diarization: Diarization?, echo: Set<String>) -> Stream {
             Stream(
                 segments: diarization?.segments, echo: echo.sorted(),
-                words: heard[stream, default: []].map { heard in
+                words: heard[stream, default: []].map { word in
                     Word(
-                        text: heard.word.text, start: heard.word.start, end: heard.word.end, cluster: heard.cluster,
-                        speaker: heard.speaker,
-                        dropped: heard.echo.map { Drop(reason: .echo, themSpeech: Span(start: $0.start, end: $0.end)) })
+                        text: word.word.text, start: word.word.start, end: word.word.end, cluster: word.cluster,
+                        speaker: word.speaker,
+                        dropped: word.themSpeech.map {
+                            Drop(reason: .echo, themSpeech: Span(start: $0.start, end: $0.end))
+                        })
                 })
         }
         self.me = stream(.me, split.me, echo: split.echo)

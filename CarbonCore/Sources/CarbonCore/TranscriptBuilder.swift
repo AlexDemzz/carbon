@@ -147,14 +147,14 @@ public enum TranscriptBuilder {
     static func heard(
         me: [TranscribedWord], them: [TranscribedWord], split: Split, labels: [String: String]
     ) -> [AudioStream: [HeardWord]] {
-        let heard = attributed(me: me, them: them, split: split)
-        let letters = letters(of: kept(heard))
-        return heard.mapValues { words in
+        let attributed = attributed(me: me, them: them, split: split)
+        let letters = letters(of: kept(attributed))
+        return attributed.mapValues { words in
             words.map { word in
-                guard word.echo == nil else { return word }
-                var heard = word
-                heard.speaker = speaker(of: word.cluster, on: word.stream, letters: letters, labels: labels)
-                return heard
+                guard word.themSpeech == nil else { return word }
+                var written = word
+                written.speaker = speaker(of: word.cluster, on: word.stream, letters: letters, labels: labels)
+                return written
             }
         }
     }
@@ -164,7 +164,7 @@ public enum TranscriptBuilder {
         var word: TranscribedWord
         var cluster: String?
         /// The Them speech this word was heard over, when it is left out as echo.
-        var echo: MicEcho.Span?
+        var themSpeech: MicEcho.Span?
         var speaker: String?
     }
 
@@ -181,7 +181,7 @@ public enum TranscriptBuilder {
     private static func kept(
         _ heard: [AudioStream: [HeardWord]]
     ) -> [AudioStream: [(word: TranscribedWord, cluster: String?)]] {
-        heard.mapValues { $0.filter { $0.echo == nil }.map { ($0.word, $0.cluster) } }
+        heard.mapValues { $0.filter { $0.themSpeech == nil }.map { ($0.word, $0.cluster) } }
     }
 
     /// Each stream's words with their cluster, nil for a stream that is not split. A word of an echo cluster heard
@@ -204,9 +204,9 @@ public enum TranscriptBuilder {
         let withoutEcho = attributed(.me, me, mic.segments.filter { !split.echo.contains($0.cluster) })
         let heardMe = zip(attributed(.me, me, mic.segments), withoutEcho).map { heard, alone in
             guard let cluster = heard.cluster, split.echo.contains(cluster) else { return heard }
-            guard let echo = MicEcho.themSpeech(over: heard.word, in: themSpeech) else { return alone }
+            guard let heardOver = MicEcho.themSpeech(over: heard.word, in: themSpeech) else { return alone }
             var dropped = heard
-            dropped.echo = echo
+            dropped.themSpeech = heardOver
             return dropped
         }
         return [.me: snapped(heardMe), .them: heardThem]
@@ -215,7 +215,7 @@ public enum TranscriptBuilder {
     /// Snaps the clusters of the words written to sentence ends. Echo words take no part: none is moved to the
     /// Speaker next to it, and none takes a neighbour's words with it out of the Transcript.
     private static func snapped(_ heard: [HeardWord]) -> [HeardWord] {
-        let written = heard.indices.filter { heard[$0].echo == nil && heard[$0].cluster != nil }
+        let written = heard.indices.filter { heard[$0].themSpeech == nil && heard[$0].cluster != nil }
         let clusters = snapped(written.map { heard[$0].cluster! }, of: written.map { heard[$0].word })
         var snapped = heard
         for (index, cluster) in zip(written, clusters) { snapped[index].cluster = cluster }
