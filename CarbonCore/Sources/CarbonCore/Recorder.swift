@@ -226,10 +226,12 @@ public final class Recorder {
                         continue
                     }
                     try await begin(language: language, app: app, event: event, mode: .auto)
+                    onDiagnostic?("Detection started a Meeting on \(app.bundleID)")
                     if case .live(let meeting) = state { onNotice?(.started(meeting)) }
                 case .event(let event):
                     try retarget(to: event)
-                case .end:
+                case .end(let reason):
+                    onDiagnostic?("Detection ended the Meeting: \(reason)")
                     if liveCapture != nil { try await finishInBackground() }
                 case .offerSwitch(let app):
                     guard case .live(let meeting) = state else { continue }

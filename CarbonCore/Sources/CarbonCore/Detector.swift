@@ -62,6 +62,9 @@ public struct Detector: Sendable {
         case silence
         /// The call assertion and the mic were released for the grace period, then 30 s passed in silence.
         case callEnded
+        /// The browser's WebRTC assertion and the mic were released for `webRTCReleaseGrace`. No silence is needed:
+        /// the browser's other tabs keep playing after the call.
+        case webRTCEnded
         /// A new call began: its Event ended and another one started while the mic stayed held, a new
         /// `AssertionId` while the mic stayed held, or a start signal after the Meeting App's mic and call
         /// assertion were both released for `backToBackGap`. A new Meeting follows.
@@ -83,6 +86,8 @@ public struct Detector: Sendable {
     /// The Event, if any, need not be over.
     public static let callReleaseGrace: TimeInterval = 15
     public static let callSilenceToEnd: TimeInterval = 30
+    /// With the browser's WebRTC assertion seen during the Meeting: the assertion and the mic released this long.
+    public static let webRTCReleaseGrace: TimeInterval = 10
     /// A call released this long and then back is a new call.
     public static let backToBackGap: TimeInterval = 5
     /// A hold that began this long before the next Event belongs to the earlier call, not to that Event.
@@ -116,6 +121,10 @@ public struct Detector: Sendable {
         var event: CalendarEvent?
         /// The `AssertionId`s of the Meeting App's call, once confirmed during the Meeting: the call stop rule applies.
         var callIDs: Set<Int>?
+        /// When the Meeting App's WebRTC assertion was last seen released, nil while held or never seen.
+        var webRTCReleasedAt: Date?
+        /// The Meeting App held a WebRTC assertion during the Meeting: the WebRTC stop rule applies.
+        var hadWebRTC = false
     }
 
     private let vendorTable: VendorTable
@@ -125,6 +134,8 @@ public struct Detector: Sendable {
     private var cooldown: (until: Date, event: CalendarEvent?)?
     private var holds: [String: Hold] = [:]
     private var calls: [String: Call] = [:]
+    /// The apps holding a WebRTC assertion, by bundle ID, from the polls.
+    private var webRTC: Set<String> = []
     /// Holds a manual Stop ended: they must be released before they can start a Meeting again.
     private var spent: Set<String> = []
     /// The `AssertionId`s of calls a manual Stop ended: only a new call can start a Meeting.
@@ -213,6 +224,14 @@ public struct Detector: Sendable {
         if let known = meeting.callIDs, let call, known.isDisjoint(with: call.ids), micHeld { return .backToBack }
         if let call, meeting.callIDs != nil || call.polls >= Self.callPollsToStart { meeting.callIDs = call.ids }
         let hasCall = meeting.callIDs != nil
+        if let app = meeting.app {
+            if webRTC.contains(app.bundleID) {
+                meeting.hadWebRTC = true
+                meeting.webRTCReleasedAt = nil
+            } else if meeting.hadWebRTC, meeting.webRTCReleasedAt == nil {
+                meeting.webRTCReleasedAt = time
+            }
+        }
         if micHeld || (hasCall && call != nil) {
             if hasCall, let releasedAt = meeting.releasedAt, time.timeIntervalSince(releasedAt) >= Self.backToBackGap {
                 return .backToBack
@@ -226,6 +245,11 @@ public struct Detector: Sendable {
             let graceEnd = releasedAt + Self.callReleaseGrace
             let silentSince = max(graceEnd, signals.lastSound ?? graceEnd)
             return time.timeIntervalSince(silentSince) >= Self.callSilenceToEnd ? .callEnded : nil
+        }
+        if let webRTCReleasedAt = meeting.webRTCReleasedAt,
+            time.timeIntervalSince(max(releasedAt, webRTCReleasedAt)) >= Self.webRTCReleaseGrace
+        {
+            return .webRTCEnded
         }
         let silence = time.timeIntervalSince(max(releasedAt, signals.lastSound ?? releasedAt))
         let eventOver = meeting.event.map { $0.end <= time } ?? false
@@ -348,6 +372,7 @@ public struct Detector: Sendable {
     }
 
     private mutating func updateCalls(_ assertions: [PowerAssertion], at time: Date, ignoredApps: Set<String>) {
+        webRTC = Set(assertions.filter { vendorTable.kind(of: $0) == .webRTC }.map(\.app.bundleID))
         var current: [String: Call] = [:]
         for assertion in assertions where vendorTable.kind(of: assertion) == .call {
             guard !isIgnored(assertion.app.bundleID, ignoredApps: ignoredApps) else { continue }

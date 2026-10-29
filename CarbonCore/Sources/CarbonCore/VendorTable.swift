@@ -20,7 +20,7 @@ public struct VendorTable: Sendable, Decodable {
     public var links: [LinkRule]
     /// Native call assertions: one means a call is live in that app.
     public var callAssertions: [AssertionMatcher]
-    /// Chromium's WebRTC assertion: logged only, it never starts anything.
+    /// Chromium's WebRTC assertion: it never starts anything; once gone with the mic, it ends a browser Meeting.
     public var webRTCAssertions: [AssertionMatcher]
 
     /// Matches an assertion on its owning app, its name and its type. A field left out matches anything.
