@@ -208,10 +208,11 @@ final class AppModel {
                 self?.present(error, title: "Carbon couldn't transcribe a Meeting")
             }
         }
-        // Detection never prompts: the onboarding asks, and a skipped microphone stays skipped until allowed.
-        if !MicrophoneSource.isAllowed {
-            DiagnosticLog.shared.write("Detection waits for microphone access")
-            while !MicrophoneSource.isAllowed { try? await Task.sleep(for: .seconds(1)) }
+        // Detection never prompts: the onboarding asks, and a skipped permission stays skipped until answered.
+        // An unasked System Audio Recording would otherwise prompt from the first Meeting's audio tap.
+        if !detectionMayCapture {
+            DiagnosticLog.shared.write("Detection waits for microphone and System Audio Recording access")
+            while !detectionMayCapture { try? await Task.sleep(for: .seconds(1)) }
         }
         await loadMeetingLanguages()
         await recorder.runDetection(SignalSampler())
@@ -220,6 +221,10 @@ final class AppModel {
     func showMainWindow() {
         openMainWindow?()
         NSApp.activate()
+    }
+
+    private var detectionMayCapture: Bool {
+        MicrophoneSource.isAllowed && SystemAudioRecordingPermission.current() != .notDetermined
     }
 
     /// The first launch's window, which asks for each permission in turn.

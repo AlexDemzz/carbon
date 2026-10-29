@@ -27,7 +27,7 @@ extension Permission {
     private var without: String {
         switch self {
         case .microphone: "Without it, Carbon can\u{2019}t transcribe any Meeting."
-        case .systemAudioRecording: "Without it, the Transcript only has your side of the call."
+        case .systemAudioRecording: "Without it, Carbon can\u{2019}t transcribe any Meeting."
         case .calendar: "Without it, Meetings are named after their Meeting App, with no Participants."
         case .notifications:
             "Without them, only the red dot in the menu bar shows Carbon is transcribing, and with automatic transcription off, Carbon can\u{2019}t offer you Meetings."
