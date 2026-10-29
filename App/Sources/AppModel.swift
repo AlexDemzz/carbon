@@ -47,11 +47,9 @@ final class AppModel {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
-        let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
-            .map { URL(filePath: $0, directoryHint: .isDirectory) }
-            ?? Library.defaultFolder(home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
-        // Saved, so the first Meeting's `meetings.json` doesn't send a new Library to `~/Documents/Carbon` next launch.
-        UserDefaults.standard.set(libraryFolder.path, forKey: SettingsKey.libraryFolder)
+        let libraryFolder = Library.folder(
+            savedIn: .standard, key: SettingsKey.libraryFolder,
+            home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
         library = Library(folder: libraryFolder, supportFolder: support)
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
