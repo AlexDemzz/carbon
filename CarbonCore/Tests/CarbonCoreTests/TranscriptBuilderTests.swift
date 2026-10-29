@@ -240,6 +240,38 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func aWordKeptFromAnEchoClusterGoesToTheNearestSpeakerInTheRoomHoweverFar() {
+        let me = timed([
+            ("Hi.", 0.5, 1),
+            ("hello.", 10.2, 10.8),  // the call heard back
+            ("Right.", 19, 19.4),  // 17 s after the first Speaker in the room, 10.6 s before the second
+            ("Bye.", 30.5, 31),
+        ])
+        let them = timed([("Hello.", 10.2, 10.8)])
+        let mic = Diarization(
+            segments: [
+                .init(start: 0, end: 2, cluster: "S1"), .init(start: 10, end: 25, cluster: "S2"),
+                .init(start: 30, end: 32, cluster: "S3"),
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:00] Hi.
+
+            **Them** [0:10] Hello.
+
+            **Speaker B** [0:19] Right.
+
+            **Speaker B** [0:30] Bye.
+
+            """)
+    }
+
     @Test func aReplyInTheRoomJustAfterThemStopsIsKeptInAnEchoCluster() {
         let me = timed([
             ("Hi.", 1, 1.4),

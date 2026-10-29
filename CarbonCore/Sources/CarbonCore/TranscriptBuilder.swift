@@ -185,8 +185,9 @@ public enum TranscriptBuilder {
     }
 
     /// Each stream's words with their cluster, nil for a stream that is not split. A word of an echo cluster heard
-    /// while Them speaks is left out; one heard while Them is silent takes the cluster it would have had without
-    /// the echo clusters, as someone in the room spoke over a quiet call. Clusters are then snapped to sentence ends.
+    /// while Them speaks is left out; one heard while Them is silent takes the nearest cluster in the room however
+    /// far, as someone in the room spoke over a quiet call, or none without one. Clusters are then snapped to
+    /// sentence ends.
     private static func attributed(
         me: [TranscribedWord], them: [TranscribedWord], split: Split
     ) -> [AudioStream: [HeardWord]] {
@@ -201,10 +202,14 @@ public enum TranscriptBuilder {
             return [.me: snapped(attributed(.me, me, split.me?.segments)), .them: heardThem]
         }
         let themSpeech = MicEcho.themSpeech(them: split.them, themWords: them)
-        let withoutEcho = attributed(.me, me, mic.segments.filter { !split.echo.contains($0.cluster) })
-        let heardMe = zip(attributed(.me, me, mic.segments), withoutEcho).map { heard, alone in
+        let room = mic.segments.filter { !split.echo.contains($0.cluster) }
+        let heardMe = attributed(.me, me, mic.segments).map { heard in
             guard let cluster = heard.cluster, split.echo.contains(cluster) else { return heard }
-            guard let heardOver = MicEcho.themSpeech(over: heard.word, in: themSpeech) else { return alone }
+            guard let heardOver = MicEcho.themSpeech(over: heard.word, in: themSpeech) else {
+                var inTheRoom = heard
+                inTheRoom.cluster = Self.cluster(of: heard.word, in: room, within: .infinity)
+                return inTheRoom
+            }
             var dropped = heard
             dropped.themSpeech = heardOver
             return dropped
@@ -279,7 +284,9 @@ public enum TranscriptBuilder {
         return clusters
     }
 
-    private static func cluster(of word: TranscribedWord, in segments: [Diarization.Segment]) -> String? {
+    private static func cluster(
+        of word: TranscribedWord, in segments: [Diarization.Segment], within reach: TimeInterval = nearestSegment
+    ) -> String? {
         var best: (cluster: String, overlap: TimeInterval)?
         for segment in segments {
             let overlap = min(word.end, segment.end) - max(word.start, segment.start)
@@ -290,7 +297,7 @@ public enum TranscriptBuilder {
         func distance(_ segment: Diarization.Segment) -> TimeInterval {
             max(segment.start - middle, middle - segment.end, 0)
         }
-        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= nearestSegment
+        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= reach
         else { return nil }
         return nearest.cluster
     }
