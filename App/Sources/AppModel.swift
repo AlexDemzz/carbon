@@ -30,7 +30,7 @@ final class AppModel {
     @ObservationIgnored private var onboardingPending = false
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored let notifier = Notifier()
-    /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
+    /// Settings › Languages. Nil until launch or the onboarding has found the system's language, on the very first launch.
     var meetingLanguages: MeetingLanguages? {
         didSet { meetingLanguagesChanged(from: oldValue) }
     }

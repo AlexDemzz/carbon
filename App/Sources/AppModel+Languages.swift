@@ -4,8 +4,9 @@ import Speech
 import SwiftUI
 
 extension AppModel {
-    /// At launch: the saved Meeting Languages, or, the first time, the system's language (en-US when
-    /// SpeechTranscriber doesn't have it). Their assets are reserved and downloaded.
+    /// At launch, or earlier from the onboarding's Languages step: the saved Meeting Languages, or, the first time,
+    /// the system's language as the default (en-US when SpeechTranscriber doesn't have it). Their assets are
+    /// reserved and downloaded.
     func loadMeetingLanguages() async {
         await languageAssets.loadSupported()
         if let meetingLanguages {

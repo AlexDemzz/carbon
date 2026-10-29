@@ -85,13 +85,22 @@ private struct GeneralSettings: View {
     }
 }
 
-/// The Meeting Languages: a checkbox per language SpeechTranscriber supports, each checked one with its download
-/// state, and the default among the checked ones.
 private struct LanguagesSettings: View {
     let model: AppModel
 
     var body: some View {
-        Form {
+        Form { MeetingLanguagesSections(model: model) }
+            .formStyle(.grouped)
+    }
+}
+
+/// The Meeting Languages: a checkbox per language SpeechTranscriber supports, each checked one with its download
+/// state, and the default among the checked ones. Settings › Languages and the onboarding's Languages step.
+struct MeetingLanguagesSections: View {
+    let model: AppModel
+
+    var body: some View {
+        Group {
             if let languages = model.meetingLanguages {
                 Section {
                     Picker("Default language", selection: defaultLanguage) {
@@ -117,9 +126,12 @@ private struct LanguagesSettings: View {
                 ProgressView()
             }
         }
-        .formStyle(.grouped)
         .task {
-            if model.languageAssets.supported.isEmpty { await model.languageAssets.loadSupported() }
+            if model.meetingLanguages == nil {
+                await model.loadMeetingLanguages()
+            } else if model.languageAssets.supported.isEmpty {
+                await model.languageAssets.loadSupported()
+            }
         }
     }
 
