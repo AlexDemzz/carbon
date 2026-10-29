@@ -8,9 +8,11 @@ import Testing
 final class FakeAudioSource: AudioSource {
     let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
     let seconds: Double
+    let amplitude: Double
 
-    init(seconds: Double) {
+    init(seconds: Double, amplitude: Double = 0.2) {
         self.seconds = seconds
+        self.amplitude = amplitude
     }
 
     func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
@@ -23,7 +25,7 @@ final class FakeAudioSource: AudioSource {
             buffer.frameLength = frames
             let samples = buffer.floatChannelData![0]
             for index in 0..<Int(frames) {
-                samples[index] = Float(sin(phase) * 0.2)
+                samples[index] = Float(sin(phase) * amplitude)
                 phase += 2 * .pi * 440 / format.sampleRate
             }
             onBuffer(buffer)

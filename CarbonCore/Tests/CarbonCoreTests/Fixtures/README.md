@@ -8,3 +8,4 @@
   - `-renamed.md`: the prototype's `sample-renamed.md`, the diarized sample after naming Speaker B "Sam Rivera", with the same two moves.
   - `-me-opening.json`, `-them-opening.json`: the words starting before 40 s.
   - `-me-clip.wav`, `-them-clip.wav`: 6 s of each clean stream (16 kHz mono), from 10 s (Me) and 24 s (Them).
+  - `-me-fbank.json`: the reference log-mel features (60 bands, 101 frames) of the first second of `-me-clip.wav`, from the SpeechBrain frontend in `frontend.py` of [aufklarer/SpeechBrain-ECAPA-VoxLingua107-21M-CoreML](https://huggingface.co/aufklarer/SpeechBrain-ECAPA-VoxLingua107-21M-CoreML/blob/2aa4d715a79e410d5f9aa32bd7a4fc9225bf9eb0/frontend.py) (numpy 2.1.3), rounded to 6 significant digits.

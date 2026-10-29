@@ -99,6 +99,16 @@ public protocol Diarizer: Sendable {
     func diarize(_ audio: URL) async throws -> Diarization
 }
 
+/// Spoken language identification of a window of speech, such as SpeechBrain's VoxLingua107 classifier in Core ML.
+public protocol SpokenLanguageClassifier: Sendable {
+    /// The languages it scores, by VoxLingua107 label, such as "en" or "fr".
+    var labels: Set<String> { get }
+    /// Each label's log-probability for a window of 16 kHz mono speech. Loads the model on first use.
+    func classify(_ speech: [Float]) async throws -> [String: Double]
+    /// Lets the model go until the next `classify`.
+    func release() async
+}
+
 /// A Meeting's recap: what was said and what comes next.
 public struct Summary: Equatable, Sendable {
     public var keyPoints: [String]
