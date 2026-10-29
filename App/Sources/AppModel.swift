@@ -322,6 +322,13 @@ final class AppModel {
         }
     }
 
+    /// "Same Person As": `source` and `target` become one participant of the Meeting, and so do their Voice Prints.
+    func mergeParticipant(_ meeting: ListedMeeting, _ source: Participant, into target: Participant) {
+        perform("Carbon couldn't merge the participants") {
+            try library.mergeParticipant(meeting.id, source, into: target)
+        }
+    }
+
     func delete(_ meeting: ListedMeeting) {
         let list = library.meetings
         perform("Carbon couldn't delete the Meeting") {

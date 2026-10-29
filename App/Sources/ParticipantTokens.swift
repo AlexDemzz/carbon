@@ -2,49 +2,80 @@ import AppKit
 import CarbonCore
 import SwiftUI
 
-/// Mail-style tokens, one per participant, wrapping onto new lines.
+/// Mail-style tokens, one per participant, wrapping onto new lines. Each opens the same menu on a click, a right-click
+/// or its chevron, shown on hover.
 struct ParticipantTokens: View {
-    let participants: [Participant]
+    let model: AppModel
+    let meeting: ListedMeeting
 
     var body: some View {
         FlowLayout(spacing: 6) {
-            ForEach(Array(participants.enumerated()), id: \.offset) { _, participant in
-                if let email = participant.email {
-                    Menu {
-                        Text(email)
-                        Button("Copy Email Address") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(email, forType: .string)
-                        }
-                        Button("New Email") {
-                            if let url = URL(string: "mailto:\(email)") { NSWorkspace.shared.open(url) }
-                        }
-                    } label: {
-                        Token(name: participant.name)
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help(email)
-                } else {
-                    Token(name: participant.name)
-                }
+            ForEach(Array(meeting.participants.enumerated()), id: \.offset) { _, participant in
+                ParticipantToken(model: model, meeting: meeting, participant: participant)
             }
         }
     }
 }
 
+private struct ParticipantToken: View {
+    let model: AppModel
+    let meeting: ListedMeeting
+    let participant: Participant
+
+    @State private var isHovered = false
+
+    private var others: [Participant] { meeting.participants.filter { $0 != participant } }
+
+    var body: some View {
+        Menu { actions } label: { Token(name: participant.name, showsChevron: isHovered) }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .contextMenu { actions }
+            .onHover { isHovered = $0 }
+            .help(participant.email ?? participant.name)
+            .accessibilityHint("Shows actions")
+    }
+
+    @ViewBuilder private var actions: some View {
+        if let email = participant.email {
+            Text(email)
+            Button("Copy Email Address") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(email, forType: .string)
+            }
+            Button("New Email") {
+                if let url = URL(string: "mailto:\(email)") { NSWorkspace.shared.open(url) }
+            }
+            Divider()
+        }
+        Menu("Same Person As") {
+            ForEach(Array(others.enumerated()), id: \.offset) { _, other in
+                Button(other.name) { model.mergeParticipant(meeting, participant, into: other) }
+            }
+        }
+        .disabled(others.isEmpty)
+    }
+}
+
 private struct Token: View {
     let name: String
+    let showsChevron: Bool
 
     var body: some View {
         HStack(spacing: 6) {
             Monogram(name: name)
             Text(name)
+            // Always laid out, so the token keeps its width when the chevron shows.
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .opacity(showsChevron ? 1 : 0)
+                .accessibilityHidden(true)
         }
         .padding(.leading, 2)
-        .padding(.trailing, 10)
+        .padding(.trailing, 8)
         .padding(.vertical, 2)
         .background(Capsule().fill(.quinary))
     }

@@ -167,6 +167,68 @@ struct EventRecorderTests {
         #expect(speakers.map { $0["match"] as? String } == ["attendee1to1"])
     }
 
+    /// Sam remembered as "Sam" with his email, from the voice of `oneVoice`.
+    func rememberSam() throws {
+        try Data("""
+            {"version": 1, "prints": [{
+              "id": "11111111-1111-4111-8111-111111111111", "name": "Sam", "email": "sam@example.com",
+              "model": "fluidaudio/community-1@0.17.7", "centroid": "AACAPwAAAAA=", "recent": [],
+              "meetings": 1, "createdAt": "2026-10-01T10:00:00Z", "lastHeardAt": "2026-10-01T10:00:00Z"
+            }]}
+            """.utf8).write(to: support.url.appending(path: "voiceprints.json"))
+    }
+
+    @Test func aRecognizedVoiceGivesItsNameToTheAttendeeKnownOnlyByEmail() async throws {
+        try rememberSam()
+        let recorder = makeRecorder(diarizer: ScriptedDiarizer([.replay(Self.oneVoice)]))
+        let samByEmail = Attendee(name: nil, url: "mailto:sam@example.com")
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, events: [sync(attendees: [me, samByEmail, kim])], [
+            (0...1_500, [chrome]),
+            (1_501...1_900, []),
+        ]))
+
+        #expect(try markdown("2026-10-23-weekly-sync.md").hasSuffix("""
+            participants:
+              - Sam <sam@example.com>
+              - Kim Lee
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Sam** [0:02] Hello there.
+
+            """))
+    }
+
+    @Test func aRecognizedVoiceTakesTheCalendarsNameForTheAttendeeWithItsEmail() async throws {
+        try rememberSam()
+        let recorder = makeRecorder(diarizer: ScriptedDiarizer([.replay(Self.oneVoice)]))
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, events: [sync(attendees: [me, sam, kim])], [
+            (0...1_500, [chrome]),
+            (1_501...1_900, []),
+        ]))
+
+        #expect(try markdown("2026-10-23-weekly-sync.md").hasSuffix("""
+            participants:
+              - Sam Rivera <sam@example.com>
+              - Kim Lee
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Sam Rivera** [0:02] Hello there.
+
+            """))
+        let speakers = try #require(try entries().first?["speakers"] as? [NSDictionary])
+        #expect(speakers.map { $0["voicePrintId"] as? String } == ["11111111-1111-4111-8111-111111111111"])
+    }
+
     @Test func backToBackEventsOnTheSameCallBecomeTwoMeetings() async throws {
         let recorder = makeRecorder()
         let review = CalendarEvent(

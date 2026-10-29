@@ -714,13 +714,21 @@ public final class Recorder {
                 naming.labels[letter] = TranscriptBuilder.me
                 continue
             }
-            naming.speakers[position].label = print.name
-            naming.speakers[position].name = print.name
-            naming.labels[letter] = print.name
-            naming.heard.append((print.id, cluster.centroid))
-            if !naming.participants.contains(where: { $0.name.caseInsensitiveCompare(print.name) == .orderedSame }) {
-                naming.participants.append(Participant(name: print.name, email: print.email))
+            // The attendee with the print's email is this person: the Speaker takes their name, a calendar name
+            // over the print's, and an attendee known only by email takes the print's.
+            let person = print.person
+            let label: String
+            if let attendee = naming.participants.firstIndex(where: { $0.isPerson(named: print.name, email: print.email) }) {
+                naming.participants[attendee] = naming.participants[attendee].merging(person)
+                label = TranscriptBuilder.label(forName: naming.participants[attendee].name) ?? print.name
+            } else {
+                naming.participants.append(person)
+                label = print.name
             }
+            naming.speakers[position].label = label
+            naming.speakers[position].name = label
+            naming.labels[letter] = label
+            naming.heard.append((print.id, cluster.centroid))
         }
     }
 

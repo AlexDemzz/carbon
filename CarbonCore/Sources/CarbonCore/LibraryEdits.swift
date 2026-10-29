@@ -4,11 +4,14 @@ public enum LibraryError: LocalizedError, Equatable {
     case unknownMeeting(UUID)
     /// The name is empty once `*`, `[`, `]` and line breaks are dropped, or is `Me` / `Them`, or names Me.
     case invalidSpeakerName
+    /// The file's `participants` isn't a block list holding them: the person wrote it their own way.
+    case participantsNotInFile
 
     public var errorDescription: String? {
         switch self {
         case .unknownMeeting: "This Meeting is no longer in the Library."
         case .invalidSpeakerName: "“Me” and “Them” are reserved. Choose another name."
+        case .participantsNotInFile: "The participants in this Meeting’s file were edited by hand. Edit them there."
         }
     }
 }

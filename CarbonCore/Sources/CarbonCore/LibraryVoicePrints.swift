@@ -75,7 +75,7 @@ extension Library {
             var counted = Set(entry.speakers.filter { $0.label != label }.compactMap(\.voicePrintId))
             for speaker in named {
                 if let old = speaker.voicePrintId, let position = prints.firstIndex(where: { $0.id == old }) {
-                    if prints[position].name == name {
+                    if prints[position].person.isPerson(named: name, email: email) {
                         links[speaker.cluster] = old
                         counted.insert(old)
                         continue
@@ -94,9 +94,13 @@ extension Library {
                     links[speaker.cluster] = .some(nil)
                     continue
                 }
-                if let position = prints.firstIndex(where: {
-                    $0.model == voicePrintModel
-                        && (isOwner ? $0.owner : !$0.owner && $0.name.caseInsensitiveCompare(name) == .orderedSame)
+                // By email first: picking an attendee names the Speaker after them, whatever the print is called.
+                let candidates = prints.indices.filter { prints[$0].model == voicePrintModel && prints[$0].owner == isOwner }
+                let byEmail = email.flatMap { email in
+                    candidates.first { prints[$0].email?.caseInsensitiveCompare(email) == .orderedSame }
+                }
+                if let position = isOwner ? candidates.first : byEmail ?? candidates.first(where: {
+                    prints[$0].person.isPerson(named: name, email: email)
                 }) {
                     let isNewMeeting = counted.insert(prints[position].id).inserted
                     prints[position].hear(embedding, at: heard, isNewMeeting: isNewMeeting)
