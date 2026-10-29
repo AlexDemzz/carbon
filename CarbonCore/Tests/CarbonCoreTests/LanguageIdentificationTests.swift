@@ -134,16 +134,6 @@ struct LanguageIdentificationTests {
     }
 }
 
-/// Waits until `condition` holds, for at most 10 s.
-@MainActor
-func eventually(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
-    while !condition(), ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(5))
-    }
-    try #require(condition(), "never happened")
-}
-
 /// Stands in for the VoxLingua107 classifier: scores every window the same, and notes what it was asked.
 final class ReplayLanguageClassifier: SpokenLanguageClassifier {
     let labels: Set<String> = ["en", "fr", "de"]

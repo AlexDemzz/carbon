@@ -128,10 +128,11 @@ private struct LanguagesSettings: View {
     }
 
     private func footer(_ languages: MeetingLanguages) -> String {
-        guard languages.chosen.count > 1, identifiesMeetingLanguage else {
-            return "Meetings start in the default language. Switch while transcribing from the menu bar or the notification."
-        }
-        return "Meetings start in the default language. After a few seconds of speech, Carbon switches to the checked language it hears, on your Mac. Switch by hand from the menu bar or the notification."
+        let identifies = languages.chosen.count > 1 && identifiesMeetingLanguage
+        return "Meetings start in the default language. "
+            + (identifies
+                ? "After a few seconds of speech, Carbon switches to the checked language it hears, on your Mac. Switch by hand from the menu bar or the notification."
+                : "Switch while transcribing from the menu bar or the notification.")
     }
 
     private var defaultLanguage: Binding<String> {

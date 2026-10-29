@@ -19,8 +19,7 @@ actor CoreMLLanguageClassifier: SpokenLanguageClassifier {
     }
 
     nonisolated let labels: Set<String>
-    /// The labels in the model's output order.
-    private let order: [String]
+    private let outputLabels: [String]
     private let folder: URL?
     private var model: MLModel?
 
@@ -29,11 +28,11 @@ actor CoreMLLanguageClassifier: SpokenLanguageClassifier {
             let code: String
         }
         self.folder = folder
-        order = folder
+        outputLabels = folder
             .flatMap { try? Data(contentsOf: $0.appending(path: "labels.json")) }
             .flatMap { try? JSONDecoder().decode([Label].self, from: $0) }?
             .map(\.code) ?? []
-        labels = Set(order)
+        labels = Set(outputLabels)
     }
 
     func classify(_ speech: [Float]) async throws -> [String: Double] {
@@ -46,9 +45,9 @@ actor CoreMLLanguageClassifier: SpokenLanguageClassifier {
             }
         }
         let output = try Self.predict(try await loaded(), input)
-        guard let scores = output.featureValue(for: "log_probabilities")?.multiArrayValue, scores.count == order.count
+        guard let scores = output.featureValue(for: "log_probabilities")?.multiArrayValue, scores.count == outputLabels.count
         else { throw Failure.unexpectedOutput }
-        return Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, scores[$0].doubleValue) })
+        return Dictionary(uniqueKeysWithValues: outputLabels.enumerated().map { ($1, scores[$0].doubleValue) })
     }
 
     /// The synchronous prediction: MLModel isn't Sendable, so it never leaves this actor.
@@ -62,7 +61,7 @@ actor CoreMLLanguageClassifier: SpokenLanguageClassifier {
 
     private func loaded() async throws -> MLModel {
         if let model { return model }
-        guard let url = folder?.appending(path: "SpeechBrainECAPAVoxLingua107.mlmodelc"), !order.isEmpty else {
+        guard let url = folder?.appending(path: "SpeechBrainECAPAVoxLingua107.mlmodelc"), !outputLabels.isEmpty else {
             throw Failure.missingModel
         }
         let configuration = MLModelConfiguration()

@@ -18,7 +18,8 @@ final class LanguageIdentification: Sendable {
         commonFormat: .pcmFormatFloat32, sampleRate: LogMel.sampleRate, channels: 1, interleaved: false)!
     private static var windowSamples: Int { Int(window * LogMel.sampleRate) }
 
-    private struct Ear {
+    /// One stream's audio on its way to the classifier.
+    private struct StreamSpeech {
         var converter: AVAudioConverter?
         /// Audio not yet gated: less than one gate frame.
         var pending: [Float] = []
@@ -26,12 +27,10 @@ final class LanguageIdentification: Sendable {
         var speech: [Float] = []
     }
 
-    private struct State {
-        var ears: [AudioStream: Ear] = [:]
-        var stopped = false
-    }
-
-    private let state = Mutex(State())
+    /// One lock per stream, so neither capture thread waits on the other's resampling.
+    private let me = Mutex(StreamSpeech())
+    private let them = Mutex(StreamSpeech())
+    private let stopped = Atomic(false)
     private let windows: AsyncStream<[Float]>.Continuation
 
     /// `onOutcome` gets the vote's decision, or `gaveUp`, or the classifier's failure; never after `stop()`.
@@ -45,7 +44,7 @@ final class LanguageIdentification: Sendable {
             var vote = vote
             var outcome: Result<LanguageVote.Outcome, any Error>?
             // The windows heard before `stop()` are still in the stream: they are dropped unscored.
-            for await window in stream where !self.state.withLock({ $0.stopped }) {
+            for await window in stream where !self.stopped.load(ordering: .acquiring) {
                 do {
                     let scores = try await classifier.classify(window)
                     let decision = vote.add(scores, speech: Double(window.count) / LogMel.sampleRate)
@@ -55,10 +54,7 @@ final class LanguageIdentification: Sendable {
                 }
                 if outcome != nil { break }
             }
-            let stopped = self.state.withLock { state in
-                defer { state.stopped = true }
-                return state.stopped
-            }
+            let stopped = self.stopped.exchange(true, ordering: .acquiringAndReleasing)
             windows.finish()
             await classifier.release()
             if let outcome, !stopped { await onOutcome(outcome) }
@@ -67,37 +63,37 @@ final class LanguageIdentification: Sendable {
 
     /// Takes in one captured buffer of `stream`, on the capture's thread.
     func hear(_ buffer: AVAudioPCMBuffer, on stream: AudioStream) {
-        let ready = state.withLock { state -> [[Float]] in
-            guard !state.stopped else { return [] }
-            var ear = state.ears[stream, default: Ear()]
-            defer { state.ears[stream] = ear }
-            guard let converted = try? StreamRecorder.convert(buffer, to: Self.format, with: &ear.converter) else {
-                return []
-            }
-            ear.pending += UnsafeBufferPointer(start: converted.floatChannelData![0], count: Int(converted.frameLength))
-            var start = 0
-            while ear.pending.count - start >= Self.gateFrame {
-                let frame = ear.pending[start..<start + Self.gateFrame]
-                if Self.isSpeech(frame) { ear.speech += frame }
-                start += Self.gateFrame
-            }
-            ear.pending.removeFirst(start)
-            var ready: [[Float]] = []
-            while ear.speech.count >= Self.windowSamples {
-                ready.append(Array(ear.speech.prefix(Self.windowSamples)))
-                ear.speech.removeFirst(Self.windowSamples)
-            }
-            return ready
-        }
+        guard !stopped.load(ordering: .acquiring) else { return }
+        let ready = stream == .me
+            ? me.withLock { Self.gate(buffer, into: &$0) }
+            : them.withLock { Self.gate(buffer, into: &$0) }
         for window in ready { windows.yield(window) }
+    }
+
+    /// Adds `buffer`'s speech to `audio`. Returns the windows it completes.
+    private static func gate(_ buffer: AVAudioPCMBuffer, into audio: inout StreamSpeech) -> [[Float]] {
+        guard let converted = try? StreamRecorder.convert(buffer, to: format, with: &audio.converter) else {
+            return []
+        }
+        audio.pending += UnsafeBufferPointer(start: converted.floatChannelData![0], count: Int(converted.frameLength))
+        var start = 0
+        while audio.pending.count - start >= gateFrame {
+            let frame = audio.pending[start..<start + gateFrame]
+            if isSpeech(frame) { audio.speech += frame }
+            start += gateFrame
+        }
+        audio.pending.removeFirst(start)
+        var ready: [[Float]] = []
+        while audio.speech.count >= windowSamples {
+            ready.append(Array(audio.speech.prefix(windowSamples)))
+            audio.speech.removeFirst(windowSamples)
+        }
+        return ready
     }
 
     /// Stops hearing and scoring. A window being scored is dropped, and the model is let go.
     func stop() {
-        state.withLock { state in
-            state.stopped = true
-            state.ears = [:]
-        }
+        stopped.store(true, ordering: .releasing)
         windows.finish()
     }
 

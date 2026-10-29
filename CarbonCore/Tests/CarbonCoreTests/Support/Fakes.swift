@@ -212,6 +212,16 @@ final class ScriptedOutputRoute: OutputRouteSource {
     }
 }
 
+/// Waits until `condition` holds, for at most 10 s.
+@MainActor
+func eventually(_ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while !condition(), ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    try #require(condition(), "never happened")
+}
+
 /// A clock the test moves by hand.
 final class TestClock: Sendable {
     private let current: Mutex<Date>
