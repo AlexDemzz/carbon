@@ -48,11 +48,12 @@ extension Library {
         return Self.sha256(data) != entry.writtenHash
     }
 
-    /// Moves the Markdown file and any kept audio to the Trash, and leaves a tombstone so the Meeting never comes back.
+    /// Moves the Markdown file, any kept audio and any debug sidecar to the Trash, and leaves a tombstone so the
+    /// Meeting never comes back.
     public func delete(_ id: UUID) throws {
         var index = try loadIndex()
         let entry = try entry(id, in: index)
-        for file in [entry.file] + [entry.audio].compactMap(\.self) {
+        for file in [entry.file, Self.debugFile(of: entry.file)] + [entry.audio].compactMap(\.self) {
             let url = folder.appending(path: file)
             if FileManager.default.fileExists(atPath: url.path) { try moveToTrash(url) }
         }

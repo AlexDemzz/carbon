@@ -56,6 +56,7 @@ final class AppModel {
             library: library,
             outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
+            debugMode: { UserDefaults.standard.bool(forKey: SettingsKey.debugMode) },
             inProgressFolder: support.appending(path: "InProgress"))
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
@@ -358,6 +359,8 @@ final class AppModel {
 /// UserDefaults keys of Settings.
 enum SettingsKey {
     static let keepAudio = "keepAudio"
+    /// Writes each Meeting's `.debug.json` beside its file, off by default.
+    static let debugMode = "debugMode"
     static let autoTranscribe = "autoTranscribe"
     /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
     static let ignoredApps = "ignoredApps"

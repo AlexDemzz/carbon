@@ -27,7 +27,7 @@ struct RecorderTests {
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
-        keepAudio: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil,
+        keepAudio: Bool = false, debugMode: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil,
         recognizesVoices: Bool = true, outputRoute: (any OutputRouteSource)? = nil
     ) -> Recorder {
         let clock = clock
@@ -46,6 +46,7 @@ struct RecorderTests {
             library: library,
             outputRoute: outputRoute ?? UnknownOutputRoute(),
             keepAudio: { keepAudio },
+            debugMode: { debugMode },
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
             now: { clock.now },
@@ -994,6 +995,30 @@ struct RecorderTests {
         try makeLibrary(trash: trash.url).delete(meetingID)
         #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
             "2026-10-23-meeting-oct-23-9-15-am.m4a", "2026-10-23-meeting-oct-23-9-15-am.md",
+        ])
+    }
+
+    @Test func inDebugModeWhatTheTranscriptWasBuiltFromIsWrittenBesideItsFileAndTrashedWithIt() async throws {
+        let trash = try TemporaryFolder()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), debugMode: true, trash: trash.url)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        let debug = try JSONDecoder().decode(
+            MeetingDebug.self,
+            from: Data(contentsOf: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.debug.json")))
+        #expect(debug.me.words == [.init(text: "Hi.", start: 1, end: 1.4, cluster: nil, speaker: "Me")])
+        #expect(debug.them.words.map(\.speaker) == ["Them", "Them", "Them"])
+        let reread = makeLibrary(trash: trash.url)
+        try reread.reconcile()
+        #expect(reread.meetings.count == 1, "the sidecar is no Meeting of its own")
+
+        try reread.delete(meetingID)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
+            "2026-10-23-meeting-oct-23-9-15-am.debug.json", "2026-10-23-meeting-oct-23-9-15-am.md",
         ])
     }
 

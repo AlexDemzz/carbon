@@ -34,6 +34,7 @@ private struct GeneralSettings: View {
     @Bindable var model: AppModel
     @Bindable var updater: Updater
     @AppStorage(SettingsKey.keepAudio) private var keepAudio = false
+    @AppStorage(SettingsKey.debugMode) private var debugMode = false
     @State private var launchesAtLogin = false
 
     var body: some View {
@@ -68,6 +69,14 @@ private struct GeneralSettings: View {
                         launchesAtLogin = model.launchesAtLogin
                     }
                 Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+            }
+            Section {
+                Toggle("Debug mode", isOn: $debugMode)
+            } footer: {
+                Text(
+                    "Each new Meeting also gets a .debug.json file next to its Transcript, with every word heard, who it went to and why any was left out. Turn on Keep audio to keep the recording too."
+                )
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
