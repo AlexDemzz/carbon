@@ -410,15 +410,18 @@ struct RecorderTests {
 
     /// The owner, and the call heard back through the speakers, with the echo word the mic transcribed.
     nonisolated static let echoOnTheMic: [(mic: Diarization, echoWord: TranscribedWord)] = [
-        // A voice 0.2 from the call's.
+        // A voice 0.2 from the call's, heard over the call a third of the time.
         (
             Diarization(
-                segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 30, end: 31, cluster: "S2")],
+                segments: [
+                    .init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 20.5, end: 21, cluster: "S2"),
+                    .init(start: 30, end: 31, cluster: "S2"),
+                ],
                 clusters: [
                     .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
                     .init(id: "S2", centroid: [0.8, 0, 0.6], speechSeconds: 25),
                 ]),
-            TranscribedWord(text: "Morning.", start: 30.2, end: 30.6)
+            TranscribedWord(text: "Morning.", start: 20.6, end: 21)
         ),
         // A voice unlike the call's, heard only while the call speaks.
         (

@@ -8,7 +8,11 @@ enum MicEcho {
     /// Echo clusters overlapped Them speech ≥ 82 % of the time, real people in the room ≤ 19 %.
     static let echoOverlap = 0.5
 
-    private typealias Span = (start: TimeInterval, end: TimeInterval)
+    /// How far a word heard back through the mic can sit from the Them speech it repeats: the speakers' and
+    /// the mic's latency, and each stream's word timings.
+    static let echoDrift: TimeInterval = 0.5
+
+    typealias Span = (start: TimeInterval, end: TimeInterval)
 
     /// The Me clusters that are the call heard back through the mic: close to a Them voice, or mostly spoken
     /// over Them speech. Them speech is the Them diarization's, else the Them words' when it failed.
@@ -23,6 +27,18 @@ enum MicEcho {
             let seconds = speech.reduce(0) { $0 + $1.end - $1.start }
             return seconds > 0 && overlap(speech, themSpeech) / seconds > echoOverlap
         }.map(\.id))
+    }
+
+    /// Them speech as both the Them diarization and the Them words heard it: the diarization covers speech
+    /// nobody transcribed, the words a diarization that failed or missed some.
+    static func themSpeech(them: Diarization?, themWords: [TranscribedWord]) -> [Span] {
+        merged((them?.segments.map { ($0.start, $0.end) } ?? []) + themWords.map { ($0.start, $0.end) })
+    }
+
+    /// The stretch of Them speech a mic word was heard over, within `echoDrift`. Nil while Them is silent: the
+    /// call can't be heard back then, so the word is someone in the room.
+    static func themSpeech(over word: TranscribedWord, in speech: [Span]) -> Span? {
+        speech.first { $0.start - echoDrift < word.end && word.start < $0.end + echoDrift }
     }
 
     /// Sorted, disjoint intervals covering the same time.

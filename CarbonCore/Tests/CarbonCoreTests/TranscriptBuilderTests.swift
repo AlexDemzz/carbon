@@ -187,6 +187,37 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func anEchoClusterLosesOnlyTheWordsHeardWhileThemSpeaksTheRestGoesToTheSpeakerNearby() {
+        let me = timed([
+            ("Hi.", 1, 1.4),
+            ("can", 5, 5.3), ("you", 5.3, 5.5), ("hear", 5.5, 5.8), ("me?", 5.8, 6.5),
+            ("Hello?", 6.7, 6.9),  // 0.2 s after Them stops: still the call, heard late
+            ("Sorry,", 9.8, 10.1), ("go", 10.1, 10.3), ("ahead.", 10.3, 10.6),  // talking over a silent call
+            ("Sure.", 13.2, 13.6),
+        ])
+        let them = timed([("Can", 5, 5.3), ("you", 5.3, 5.5), ("hear", 5.5, 5.8), ("me?", 5.8, 6.5)])
+        let mic = Diarization(
+            segments: [
+                .init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 4, end: 10.4, cluster: "S2"),
+                .init(start: 10.4, end: 15, cluster: "S3"),
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] Hi.
+
+            **Them** [0:05] Can you hear me?
+
+            **Speaker B** [0:09] Sorry, go ahead. Sure.
+
+            """)
+    }
+
     @Test func everyTurnWrittenForARealMeetingReadsBackThroughTheHeaderParser() throws {
         let me = try words(fixture: "ami-ES2004a-me-words")
         let them = try words(fixture: "ami-ES2004a-them-words")
