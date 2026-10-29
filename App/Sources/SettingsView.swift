@@ -34,6 +34,7 @@ private struct GeneralSettings: View {
     @Bindable var model: AppModel
     @Bindable var updater: Updater
     @AppStorage(SettingsKey.keepAudio) private var keepAudio = false
+    @AppStorage(SettingsKey.debugMode) private var debugMode = false
     @State private var launchesAtLogin = false
 
     var body: some View {
@@ -68,6 +69,15 @@ private struct GeneralSettings: View {
                         launchesAtLogin = model.launchesAtLogin
                     }
                 Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+            }
+            Section {
+                Toggle("Debug mode", isOn: $debugMode)
+                Button("Show debug files in Finder") { model.revealDebugFiles() }
+            } footer: {
+                Text(
+                    "Each new Meeting also gets a debug file, kept out of the Library folder, with every word heard, who it went to and why any was left out. Turn on \u{201C}Keep audio after transcribing\u{201D} to keep the recording too."
+                )
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

@@ -27,7 +27,7 @@ struct RecorderTests {
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
-        keepAudio: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil,
+        keepAudio: Bool = false, debugMode: Bool = false, trash: URL? = nil, summarizer: (any Summarizer)? = nil,
         recognizesVoices: Bool = true, outputRoute: (any OutputRouteSource)? = nil
     ) -> Recorder {
         let clock = clock
@@ -46,6 +46,7 @@ struct RecorderTests {
             library: library,
             outputRoute: outputRoute ?? UnknownOutputRoute(),
             keepAudio: { keepAudio },
+            debugMode: { debugMode },
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
             now: { clock.now },
@@ -410,15 +411,18 @@ struct RecorderTests {
 
     /// The owner, and the call heard back through the speakers, with the echo word the mic transcribed.
     nonisolated static let echoOnTheMic: [(mic: Diarization, echoWord: TranscribedWord)] = [
-        // A voice 0.2 from the call's.
+        // A voice 0.2 from the call's, heard over the call a third of the time.
         (
             Diarization(
-                segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 30, end: 31, cluster: "S2")],
+                segments: [
+                    .init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 20.5, end: 21, cluster: "S2"),
+                    .init(start: 30, end: 31, cluster: "S2"),
+                ],
                 clusters: [
                     .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
                     .init(id: "S2", centroid: [0.8, 0, 0.6], speechSeconds: 25),
                 ]),
-            TranscribedWord(text: "Morning.", start: 30.2, end: 30.6)
+            TranscribedWord(text: "Morning.", start: 20.6, end: 21)
         ),
         // A voice unlike the call's, heard only while the call speaks.
         (
@@ -991,6 +995,67 @@ struct RecorderTests {
         try makeLibrary(trash: trash.url).delete(meetingID)
         #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
             "2026-10-23-meeting-oct-23-9-15-am.m4a", "2026-10-23-meeting-oct-23-9-15-am.md",
+        ])
+    }
+
+    @Test func inDebugModeWhatTheTranscriptWasBuiltFromIsWrittenToApplicationSupportAndTrashedWithTheMeeting()
+        async throws
+    {
+        let trash = try TemporaryFolder()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), debugMode: true, trash: trash.url)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        let debug = try JSONDecoder().decode(
+            MeetingDebug.self,
+            from: Data(contentsOf: support.url.appending(path: "Debug/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json")))
+        #expect(debug.me.words == [.init(text: "Hi.", start: 1, end: 1.4, cluster: nil, speaker: "Me")])
+        #expect(debug.them.words.map(\.speaker) == ["Them", "Them", "Them"])
+        #expect(
+            try FileManager.default.subpathsOfDirectory(atPath: library.url.path).sorted() == [
+                "2026", "2026/2026-10-23-meeting-oct-23-9-15-am.md",
+            ], "the Library folder holds only Markdown")
+
+        try makeLibrary(trash: trash.url).delete(meetingID)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path).sorted() == [
+            "2026-10-23-meeting-oct-23-9-15-am.md", "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json",
+        ])
+    }
+
+    @Test func aMeetingDeletedWhileItIsStillBeingFiledLeavesNoDebugModeFileBehind() async throws {
+        let trash = try TemporaryFolder()
+        let meetingID = meetingID
+        let shown = makeLibrary(trash: trash.url)
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            microphone: FakeAudioSource(seconds: 4), systemAudio: FakeAudioSource(seconds: 0),
+            keepAudio: true, debugMode: true, trash: trash.url,
+            summarizer: MeanwhileSummarizer { try? shown.delete(meetingID) })
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 4)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(
+            atPath: support.url.appending(path: "Debug/6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json").path))
+    }
+
+    @Test func aMeetingDeletedInTheFinderTakesItsDebugModeFileToTheTrash() async throws {
+        let trash = try TemporaryFolder()
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), debugMode: true, trash: trash.url)
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        try FileManager.default.removeItem(at: library.url.appending(path: "2026/2026-10-23-meeting-oct-23-9-15-am.md"))
+        try makeLibrary(trash: trash.url).reconcile()
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: trash.url.path) == [
+            "6F1C2B9E-3D4A-4C2E-9B71-0A5D8E3F4C21.json"
         ])
     }
 

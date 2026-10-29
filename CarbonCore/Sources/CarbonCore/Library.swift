@@ -12,6 +12,8 @@ public final class Library {
     public internal(set) var folder: URL
     let indexFile: URL
     let backupsFolder: URL
+    /// Debug mode's files, one per Meeting, in `Debug/` next to `meetings.json`.
+    public let debugFolder: URL
     @ObservationIgnored let now: @Sendable () -> Date
     @ObservationIgnored private var lastBackup: Date?
     @ObservationIgnored let moveToTrash: @Sendable (URL) throws -> Void
@@ -28,7 +30,7 @@ public final class Library {
 
     /// - Parameters:
     ///   - folder: the Library folder, `~/Documents/Carbon` by default.
-    ///   - supportFolder: where `meetings.json` and `Backups/` live, `~/Library/Application Support/Carbon`.
+    ///   - supportFolder: where `meetings.json`, `Backups/` and `Debug/` live, `~/Library/Application Support/Carbon`.
     ///   - moveToTrash: how Delete gets rid of a file, the Finder's Trash by default.
     public init(
         folder: URL, supportFolder: URL, now: @escaping @Sendable () -> Date = Date.init,
@@ -45,6 +47,7 @@ public final class Library {
         voicePrints = VoicePrintStore(file: supportFolder.appending(path: "voiceprints.json"))
         indexFile = supportFolder.appending(path: "meetings.json")
         backupsFolder = supportFolder.appending(path: "Backups")
+        debugFolder = supportFolder.appending(path: "Debug")
         self.now = now
     }
 

@@ -22,6 +22,8 @@ public enum TranscriptBuilder {
     static let turnSilence: TimeInterval = 10
     static let longestTurn: TimeInterval = 90
     static let nearestSegment: TimeInterval = 1
+    static let snapWords = 2
+    static let snapSpan: TimeInterval = 1
     static let sentenceEnds: Set<Character> = [".", "?", "!", "…"]
     static let closingMarks: Set<Character> = ["\"", "'", ")"]
     static let escaped: Set<Character> = ["\\", "`", "*", "_", "[", "]", "<", ">"]
@@ -47,7 +49,7 @@ public enum TranscriptBuilder {
     public struct Split: Equatable, Sendable {
         public var me: Diarization?
         public var them: Diarization?
-        /// Me clusters left out with their words: the call heard back through the mic.
+        /// Me clusters that are the call heard back through the mic: their words heard while Them speaks are left out.
         public var echo: Set<String>
 
         public init(me: Diarization? = nil, them: Diarization? = nil, echo: Set<String> = []) {
@@ -74,15 +76,16 @@ public enum TranscriptBuilder {
     public static func turns(
         me: [TranscribedWord], them: [TranscribedWord], split: Split, labels: [String: String] = [:]
     ) -> [Turn] {
-        let heard = attributed(me: me, them: them, split: split)
+        let heard = kept(attributed(me: me, them: them, split: split))
         let letters = letters(of: heard)
-        func words(_ stream: AudioStream, fallback: String) -> [Word] {
+        func words(_ stream: AudioStream) -> [Word] {
             heard[stream, default: []].map { word, cluster in
-                let speaker = cluster.map { letters[StreamCluster(stream, $0)]! }.map { labels[$0] ?? "Speaker \($0)" }
-                return Word(stream: stream, speaker: speaker ?? fallback, word: word)
+                Word(
+                    stream: stream, speaker: speaker(of: cluster, on: stream, letters: letters, labels: labels),
+                    word: word)
             }
         }
-        let sentences = sentences(words(.me, fallback: Self.me)) + sentences(words(.them, fallback: Self.them))
+        let sentences = sentences(words(.me)) + sentences(words(.them))
         let ordered = sentences.enumerated().sorted { lhs, rhs in
             let (left, right) = (lhs.element[0], rhs.element[0])
             if left.word.start != right.word.start { return left.word.start < right.word.start }
@@ -136,22 +139,92 @@ public enum TranscriptBuilder {
     public static func clusterLetters(
         me: [TranscribedWord], them: [TranscribedWord], split: Split
     ) -> [StreamCluster: String] {
-        letters(of: attributed(me: me, them: them, split: split))
+        letters(of: kept(attributed(me: me, them: them, split: split)))
     }
 
-    /// Each stream's words with their cluster, nil for a stream that is not split. Echo words are left out.
+    /// Each word of both streams with its cluster and the Speaker it is written as, or the Them speech it was
+    /// left out over as echo.
+    static func heard(
+        me: [TranscribedWord], them: [TranscribedWord], split: Split, labels: [String: String]
+    ) -> [AudioStream: [HeardWord]] {
+        let attributed = attributed(me: me, them: them, split: split)
+        let letters = letters(of: kept(attributed))
+        return attributed.mapValues { words in
+            words.map { word in
+                guard word.themSpeech == nil else { return word }
+                var written = word
+                written.speaker = speaker(of: word.cluster, on: word.stream, letters: letters, labels: labels)
+                return written
+            }
+        }
+    }
+
+    struct HeardWord {
+        var stream: AudioStream
+        var word: TranscribedWord
+        var cluster: String?
+        /// The Them speech this word was heard over, when it is left out as echo.
+        var themSpeech: MicEcho.Span?
+        var speaker: String?
+    }
+
+    /// The written label of a cluster: its letter's label, else `Speaker <letter>`; the stream's name without one.
+    private static func speaker(
+        of cluster: String?, on stream: AudioStream, letters: [StreamCluster: String], labels: [String: String]
+    ) -> String {
+        guard let letter = cluster.map({ letters[StreamCluster(stream, $0)]! }) else {
+            return stream == .me ? Self.me : Self.them
+        }
+        return labels[letter] ?? "Speaker \(letter)"
+    }
+
+    private static func kept(
+        _ heard: [AudioStream: [HeardWord]]
+    ) -> [AudioStream: [(word: TranscribedWord, cluster: String?)]] {
+        heard.mapValues { $0.filter { $0.themSpeech == nil }.map { ($0.word, $0.cluster) } }
+    }
+
+    /// Each stream's words with their cluster, nil for a stream that is not split. A word of an echo cluster heard
+    /// while Them speaks is left out; one heard while Them is silent takes the nearest cluster in the room however
+    /// far, as someone in the room spoke over a quiet call, or none without one. Clusters are then snapped to
+    /// sentence ends.
     private static func attributed(
         me: [TranscribedWord], them: [TranscribedWord], split: Split
-    ) -> [AudioStream: [(word: TranscribedWord, cluster: String?)]] {
-        func attributed(_ words: [TranscribedWord], _ diarization: Diarization?, echo: Set<String>)
-            -> [(word: TranscribedWord, cluster: String?)]
+    ) -> [AudioStream: [HeardWord]] {
+        func attributed(_ stream: AudioStream, _ words: [TranscribedWord], _ segments: [Diarization.Segment]?)
+            -> [HeardWord]
         {
-            guard let diarization, let clusters = clusters(of: words, in: diarization.segments) else {
-                return words.map { ($0, nil) }
-            }
-            return zip(words, clusters).filter { !echo.contains($0.1) }.map { ($0, $1) }
+            let found = segments.flatMap { clusters(of: words, in: $0) } ?? words.map { _ in nil }
+            return zip(words, found).map { HeardWord(stream: stream, word: $0, cluster: $1) }
         }
-        return [.me: attributed(me, split.me, echo: split.echo), .them: attributed(them, split.them, echo: [])]
+        let heardThem = snapped(attributed(.them, them, split.them?.segments))
+        guard let mic = split.me, !split.echo.isEmpty else {
+            return [.me: snapped(attributed(.me, me, split.me?.segments)), .them: heardThem]
+        }
+        let themSpeech = MicEcho.themSpeech(them: split.them, themWords: them)
+        let room = mic.segments.filter { !split.echo.contains($0.cluster) }
+        let heardMe = attributed(.me, me, mic.segments).map { heard in
+            guard let cluster = heard.cluster, split.echo.contains(cluster) else { return heard }
+            guard let heardOver = MicEcho.themSpeech(over: heard.word, in: themSpeech) else {
+                var inTheRoom = heard
+                inTheRoom.cluster = Self.cluster(of: heard.word, in: room, within: .infinity)
+                return inTheRoom
+            }
+            var dropped = heard
+            dropped.themSpeech = heardOver
+            return dropped
+        }
+        return [.me: snapped(heardMe), .them: heardThem]
+    }
+
+    /// Snaps the clusters of the words written to sentence ends. Echo words take no part: none is moved to the
+    /// Speaker next to it, and none takes a neighbour's words with it out of the Transcript.
+    private static func snapped(_ heard: [HeardWord]) -> [HeardWord] {
+        let written = heard.indices.filter { heard[$0].themSpeech == nil && heard[$0].cluster != nil }
+        let clusters = snapped(written.map { heard[$0].cluster! }, of: written.map { heard[$0].word })
+        var snapped = heard
+        for (index, cluster) in zip(written, clusters) { snapped[index].cluster = cluster }
+        return snapped
     }
 
     /// Letters in order of each cluster's first word, Me first on a tie.
@@ -184,7 +257,36 @@ public enum TranscriptBuilder {
         return found.map { $0! }
     }
 
-    private static func cluster(of word: TranscribedWord, in segments: [Diarization.Segment]) -> String? {
+    /// Moves a change of cluster that falls inside a sentence to the nearest sentence end, when at most 2 words
+    /// and 1 s away: the words are contiguous and the segment boundaries a fraction of a second off, so a change
+    /// often lands a word early or late. Nearest is in words moved; on a tie the words finish the sentence they are in.
+    private static func snapped(_ clusters: [String], of words: [TranscribedWord]) -> [String] {
+        var clusters = clusters
+        func ends(_ index: Int) -> Bool { endsSentence(words[index].text) }
+        for change in words.indices.dropFirst() where clusters[change] != clusters[change - 1] && !ends(change - 1) {
+            let (before, after) = (clusters[change - 1], clusters[change])
+            let finishing = (change..<min(change + snapWords, words.count - 1)).first { last in
+                ends(last) && clusters[change...last + 1].allSatisfy { $0 == after }
+                    && words[last].end - words[change].start <= snapSpan
+            }
+            let starting = stride(from: change - 1, through: max(change - snapWords, 1), by: -1).first { first in
+                ends(first - 1) && clusters[first - 1..<change].allSatisfy { $0 == before }
+                    && words[change].start - words[first].start <= snapSpan
+            }
+            let finished = finishing.map { $0 - change + 1 } ?? .max
+            let started = starting.map { change - $0 } ?? .max
+            if let finishing, finished <= started {
+                clusters.replaceSubrange(change...finishing, with: repeatElement(before, count: finished))
+            } else if let starting {
+                clusters.replaceSubrange(starting..<change, with: repeatElement(after, count: started))
+            }
+        }
+        return clusters
+    }
+
+    private static func cluster(
+        of word: TranscribedWord, in segments: [Diarization.Segment], within reach: TimeInterval = nearestSegment
+    ) -> String? {
         var best: (cluster: String, overlap: TimeInterval)?
         for segment in segments {
             let overlap = min(word.end, segment.end) - max(word.start, segment.start)
@@ -195,7 +297,7 @@ public enum TranscriptBuilder {
         func distance(_ segment: Diarization.Segment) -> TimeInterval {
             max(segment.start - middle, middle - segment.end, 0)
         }
-        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= nearestSegment
+        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= reach
         else { return nil }
         return nearest.cluster
     }

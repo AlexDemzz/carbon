@@ -108,6 +108,7 @@ public final class Recorder {
     private let library: Library
     private let outputRoute: any OutputRouteSource
     private let keepAudio: @Sendable () -> Bool
+    private let debugMode: @Sendable () -> Bool
     let vendorTable: VendorTable
     let matcher: EventMatcher
     let inProgressRoot: URL
@@ -161,7 +162,8 @@ public final class Recorder {
     }
 
     /// `systemAudio` makes the Them stream for a Meeting App: a tap on every process it owns, or, for nil,
-    /// everything the Mac plays except Carbon. `keepAudio` is the Keep audio setting, read as each Meeting ends.
+    /// everything the Mac plays except Carbon. `keepAudio` is the Keep audio setting, `debugMode` the Debug mode
+    /// one, each read as each Meeting ends.
     public init(
         microphone: any AudioSource,
         systemAudio: @escaping @Sendable (MeetingApp?) -> any AudioSource,
@@ -173,6 +175,7 @@ public final class Recorder {
         library: Library,
         outputRoute: any OutputRouteSource = UnknownOutputRoute(),
         keepAudio: @escaping @Sendable () -> Bool = { false },
+        debugMode: @escaping @Sendable () -> Bool = { false },
         inProgressFolder: URL,
         vendorTable: VendorTable = .shipped,
         timeZone: TimeZone = .current,
@@ -189,6 +192,7 @@ public final class Recorder {
         self.library = library
         self.outputRoute = outputRoute
         self.keepAudio = keepAudio
+        self.debugMode = debugMode
         self.vendorTable = vendorTable
         matcher = EventMatcher(vendorTable: vendorTable)
         detector = Detector(vendorTable: vendorTable)
@@ -518,7 +522,8 @@ public final class Recorder {
         if state == .finishing(meeting) { state = .idle }
     }
 
-    /// The end of a Meeting, live or recovered: diarization, Library write, Summary, kept audio, cleanup.
+    /// The end of a Meeting, live or recovered: diarization, Library write, Debug mode file, Summary, kept audio,
+    /// cleanup.
     func file(
         _ meeting: LiveMeeting, end: Date, folder: InProgressMeeting, micIsolated: Bool,
         words: @escaping @Sendable () async throws -> (me: [TranscribedWord], them: [TranscribedWord])
@@ -529,6 +534,11 @@ public final class Recorder {
         let file = try write(
             meeting, end: end, transcript: transcript, split: heard.split.me != nil || heard.split.them != nil,
             naming: naming)
+        // Before anything awaits: a Meeting deleted meanwhile would leave its file behind, out of the index.
+        if debugMode() {
+            try? library.writeDebug(
+                MeetingDebug(me: heard.me, them: heard.them, split: heard.split, labels: naming.labels), of: meeting.id)
+        }
         // The file is what matters: a print that couldn't be updated stays as it was.
         try? library.hearVoices(naming.heard, at: meeting.start)
         if let owner = heard.owner { try? library.hearOwner(owner, at: meeting.start) }

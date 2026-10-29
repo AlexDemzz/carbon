@@ -113,6 +113,215 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func wordsThatFinishASpeakersSentenceAcrossTheSegmentBoundaryStayWithThatSpeaker() {
+        let them = timed([
+            ("c'est", 154.9, 155.1), ("une", 155.1, 155.25), ("bonne", 155.25, 155.58),
+            ("idée.", 155.58, 155.88),  // 0.11 s in A, 0.19 s in B
+            ("Donc", 155.88, 156.1), ("c'est", 156.1, 156.3), ("parti.", 156.3, 156.7),
+        ])
+        let diarization = Diarization(
+            segments: [.init(start: 153, end: 155.69, cluster: "S1"), .init(start: 155.69, end: 158, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [2:34] C'est une bonne idée.
+
+            **Speaker B** [2:35] Donc c'est parti.
+
+            """)
+    }
+
+    @Test func wordsThatStartTheNextSpeakersSentenceAcrossTheSegmentBoundaryGoToThatSpeaker() {
+        let them = timed([
+            ("c'est", 10, 10.3), ("actuellement.", 10.3, 11),
+            ("Ouais", 11, 11.5),  // 0.3 s in A, 0.2 s in B
+            ("c'est", 11.5, 11.7), ("quoi", 11.7, 11.9), ("?", 11.9, 12),
+        ])
+        let diarization = Diarization(
+            segments: [.init(start: 8, end: 11.3, cluster: "S1"), .init(start: 11.3, end: 14, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:10] C'est actuellement.
+
+            **Speaker B** [0:11] Ouais c'est quoi ?
+
+            """)
+    }
+
+    @Test func whenBothSentenceEndsAreInReachTheSpeakerChangeMovesToTheNearerOne() {
+        let them = timed([
+            ("Done.", 0, 0.4), ("Are", 0.5, 0.7),  // starts B's sentence: 1 word away
+            ("you", 0.7, 0.9), ("ready?", 0.9, 1.3),  // finishes it: 2 words away
+            ("Yes.", 1.5, 1.9),
+        ])
+        let diarization = Diarization(
+            segments: [.init(start: 0, end: 0.7, cluster: "S1"), .init(start: 0.7, end: 3, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:00] Done.
+
+            **Speaker B** [0:00] Are you ready? Yes.
+
+            """)
+    }
+
+    @Test func aSpeakerChangeStaysPutAtASentenceEndOrWhenTheSentenceEndIsOverASecondAway() {
+        let them = timed([
+            ("Oui.", 1, 1.4), ("D'accord", 1.4, 1.8),  // already at a sentence end
+            ("c'est", 4, 4.2), ("une", 4.2, 4.35), ("bonne", 4.35, 4.68),
+            ("idée.", 4.68, 5.8),  // ends a sentence 1.12 s after the change
+            ("Donc", 5.8, 6), ("voilà.", 6, 6.4),
+        ])
+        let diarization = Diarization(
+            segments: [
+                .init(start: 0, end: 1.5, cluster: "S1"), .init(start: 1.5, end: 3, cluster: "S2"),
+                .init(start: 3.5, end: 4.79, cluster: "S1"), .init(start: 4.79, end: 7, cluster: "S2"),
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] Oui.
+
+            **Speaker B** [0:01] D'accord
+
+            **Speaker A** [0:04] C'est une bonne
+
+            **Speaker B** [0:04] Idée. Donc voilà.
+
+            """)
+    }
+
+    @Test func anEchoClusterLosesOnlyTheWordsHeardWhileThemSpeaksTheRestGoesToTheSpeakerNearby() {
+        let me = timed([
+            ("Hi.", 1, 1.4),
+            ("can", 5, 5.3), ("you", 5.3, 5.5), ("hear", 5.5, 5.8), ("me?", 5.8, 6.5),
+            ("Hello?", 6.6, 6.9),  // 0.1 s after Them stops: still the call, heard late through the speakers
+            ("Sorry,", 9.8, 10.1), ("go", 10.1, 10.3), ("ahead.", 10.3, 10.6),  // talking over a silent call
+            ("Sure.", 13.2, 13.6),
+        ])
+        let them = timed([("Can", 5, 5.3), ("you", 5.3, 5.5), ("hear", 5.5, 5.8), ("me?", 5.8, 6.5)])
+        let mic = Diarization(
+            segments: [
+                .init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 4, end: 10.4, cluster: "S2"),
+                .init(start: 10.4, end: 15, cluster: "S3"),
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] Hi.
+
+            **Them** [0:05] Can you hear me?
+
+            **Speaker B** [0:09] Sorry, go ahead. Sure.
+
+            """)
+    }
+
+    @Test func aWordKeptFromAnEchoClusterGoesToTheNearestSpeakerInTheRoomHoweverFar() {
+        let me = timed([
+            ("Hi.", 0.5, 1),
+            ("hello.", 10.2, 10.8),  // the call heard back
+            ("Right.", 19, 19.4),  // 17 s after the first Speaker in the room, 10.6 s before the second
+            ("Bye.", 30.5, 31),
+        ])
+        let them = timed([("Hello.", 10.2, 10.8)])
+        let mic = Diarization(
+            segments: [
+                .init(start: 0, end: 2, cluster: "S1"), .init(start: 10, end: 25, cluster: "S2"),
+                .init(start: 30, end: 32, cluster: "S3"),
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:00] Hi.
+
+            **Them** [0:10] Hello.
+
+            **Speaker B** [0:19] Right.
+
+            **Speaker B** [0:30] Bye.
+
+            """)
+    }
+
+    @Test func aReplyInTheRoomJustAfterThemStopsIsKeptInAnEchoCluster() {
+        let me = timed([
+            ("Hi.", 1, 1.4),
+            ("are", 5, 5.3), ("you", 5.3, 5.5), ("there?", 5.5, 6.5),
+            ("Yes.", 6.8, 7.2),  // 0.3 s after Them stops
+        ])
+        let them = timed([("Are", 5, 5.3), ("you", 5.3, 5.5), ("there?", 5.5, 6.5)])
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 4, end: 8, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] Hi.
+
+            **Them** [0:05] Are you there?
+
+            **Speaker A** [0:06] Yes.
+
+            """)
+    }
+
+    @Test func anEchoWordEndingASentenceIsNotSnappedOntoTheSpeakerBeforeIt() {
+        let me = timed([
+            ("I", 1, 1.2), ("think", 1.2, 1.5),
+            ("Hello?", 1.6, 2),  // the call heard back, right after the boundary
+            ("Are", 2.1, 2.3), ("you", 2.3, 2.5), ("there?", 2.5, 2.9),
+        ])
+        let them = timed([("Hello?", 1.6, 2), ("Are", 2.1, 2.3), ("you", 2.3, 2.5), ("there?", 2.5, 2.9)])
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.55, cluster: "S1"), .init(start: 1.55, end: 3, cluster: "S2")],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(
+            TranscriptBuilder.turns(me: me, them: them, split: .init(me: mic, echo: ["S2"])))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:01] I think
+
+            **Them** [0:01] Hello? Are you there?
+
+            """)
+    }
+
     @Test func everyTurnWrittenForARealMeetingReadsBackThroughTheHeaderParser() throws {
         let me = try words(fixture: "ami-ES2004a-me-words")
         let them = try words(fixture: "ami-ES2004a-them-words")
@@ -134,4 +343,8 @@ struct TranscriptBuilderTests {
 
 private func spoken(_ words: [(String, TimeInterval)]) -> [TranscribedWord] {
     words.map { TranscribedWord(text: $0.0, start: $0.1, end: $0.1 + 0.3) }
+}
+
+private func timed(_ words: [(String, TimeInterval, TimeInterval)]) -> [TranscribedWord] {
+    words.map { TranscribedWord(text: $0.0, start: $0.1, end: $0.2) }
 }

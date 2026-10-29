@@ -4,7 +4,8 @@ extension Library {
     /// Follows what happened to the files outside Carbon, then rereads them for the list and Search.
     ///
     /// A file missing at its path is found again by its frontmatter `id` anywhere in the Library folder.
-    /// A file found nowhere becomes a Deleted Meeting. Markdown files with an unknown `id` are the person's own.
+    /// A file found nowhere becomes a Deleted Meeting, and its Debug mode file goes to the Trash. Markdown files with
+    /// an unknown `id` are the person's own.
     public func reconcile() throws {
         var index = try loadIndex()
         let missing = index.meetings.indices.filter {
@@ -17,7 +18,9 @@ extension Library {
                 if let file = found[index.meetings[position].id] {
                     index.meetings[position].file = file
                 } else {
-                    index.deleted.append(MeetingIndex.Tombstone(id: index.meetings[position].id, deletedAt: deletedAt))
+                    let id = index.meetings[position].id
+                    index.deleted.append(MeetingIndex.Tombstone(id: id, deletedAt: deletedAt))
+                    try? moveToTrash(debugFile(of: id))
                 }
             }
             let deleted = Set(index.deleted.map(\.id))

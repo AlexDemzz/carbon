@@ -8,12 +8,17 @@ enum MicEcho {
     /// Echo clusters overlapped Them speech ≥ 82 % of the time, real people in the room ≤ 19 %.
     static let echoOverlap = 0.5
 
-    private typealias Span = (start: TimeInterval, end: TimeInterval)
+    /// How long after Them speech ends a word heard back through the mic can start: the speakers' latency, up to
+    /// ~0.2 s on Bluetooth, plus the mic's. Echo never comes before the Them speech it repeats, and a word that
+    /// does is someone in the room.
+    static let echoLag: TimeInterval = 0.25
+
+    typealias Span = (start: TimeInterval, end: TimeInterval)
 
     /// The Me clusters that are the call heard back through the mic: close to a Them voice, or mostly spoken
-    /// over Them speech. Them speech is the Them diarization's, else the Them words' when it failed.
+    /// over Them speech.
     static func echo(in me: Diarization, them: Diarization?, themWords: [TranscribedWord]) -> Set<String> {
-        let themSpeech = merged(them.map { $0.segments.map { ($0.start, $0.end) } } ?? themWords.map { ($0.start, $0.end) })
+        let themSpeech = themSpeech(them: them, themWords: themWords)
         let themVoices = them?.clusters.map(\.centroid) ?? []
         return Set(me.clusters.filter { cluster in
             if themVoices.contains(where: {
@@ -23,6 +28,18 @@ enum MicEcho {
             let seconds = speech.reduce(0) { $0 + $1.end - $1.start }
             return seconds > 0 && overlap(speech, themSpeech) / seconds > echoOverlap
         }.map(\.id))
+    }
+
+    /// Them speech as both the Them diarization and the Them words heard it: the diarization covers speech
+    /// nobody transcribed, the words a diarization that failed or missed some.
+    static func themSpeech(them: Diarization?, themWords: [TranscribedWord]) -> [Span] {
+        merged((them?.segments.map { ($0.start, $0.end) } ?? []) + themWords.map { ($0.start, $0.end) })
+    }
+
+    /// The stretch of Them speech a mic word was heard over, up to `echoLag` after it. Nil while Them is silent:
+    /// the call can't be heard back then, so the word is someone in the room.
+    static func themSpeech(over word: TranscribedWord, in speech: [Span]) -> Span? {
+        speech.first { $0.start < word.end && word.start < $0.end + echoLag }
     }
 
     /// Sorted, disjoint intervals covering the same time.

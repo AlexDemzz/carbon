@@ -147,9 +147,9 @@ _Placeholder: the Summary format belongs to "On-device summary quality"._
 
 **Speaker C** [11:45] You saw the ones at the same time.
 
-**Sam Rivera** [11:47] Right. Okay, you want to integrate everything into one, like... My
+**Sam Rivera** [11:47] Right. Okay, you want to integrate everything into one, like...
 
-**Speaker A** [11:53] Experience has only been given the remote control with the object I buy, not doing any tampering with it and programming, using it to program TV videos and things. But basically on off volume up and down, channel one, tooth, that basic functions.
+**Speaker A** [11:52] My experience has only been given the remote control with the object I buy, not doing any tampering with it and programming, using it to program TV videos and things. But basically on off volume up and down, channel one, tooth, that basic functions.
 
 **Me** [12:07] Hmm.
 
@@ -213,9 +213,9 @@ _Placeholder: the Summary format belongs to "On-device summary quality"._
 
 **Me** [14:53] Yeah.
 
-**Speaker C** [14:53] You'd have to sort of keep it down to a black and white LCD thing anyway. Is it
+**Speaker C** [14:53] You'd have to sort of keep it down to a black and white LCD thing anyway.
 
-**Speaker A** [14:59] Possible that for the older generation you could have like an extra button that you press for large print, like you do in large print books? Obviously it displays less on the screen.
+**Speaker A** [14:58] Is it possible that for the older generation you could have like an extra button that you press for large print, like you do in large print books? Obviously it displays less on the screen.
 
 **Me** [15:06] Texas got that option as well.
 
