@@ -9,3 +9,5 @@ Carbon v1 detects Meetings on the Mac (microphone in use, matched against calend
 - Speaker attribution beyond "me vs. others" needs on-device diarization (FluidAudio, see docs/research/on-device-diarization.md).
 - No echo handling in v1: Apple's native voice processing ducks the call audio, and anything else would have to be built.
 - Provider sync (official transcripts and Gemini summaries) remains a possible later addition.
+
+_2026-10-29: mic echo is now detected and dropped, see ADR-0004._
