@@ -714,15 +714,14 @@ public final class Recorder {
                 naming.labels[letter] = TranscriptBuilder.me
                 continue
             }
-            // The attendee with the print's email is this person: the Speaker takes their name, a calendar name
-            // over the print's, and an attendee known only by email takes the print's.
-            let person = print.person
+            // The Speaker takes the name of the Participant who is this person: a calendar name over the print's,
+            // and the print's for a Participant known only by email.
             let label: String
-            if let attendee = naming.participants.firstIndex(where: { $0.isPerson(named: print.name, email: print.email) }) {
-                naming.participants[attendee] = naming.participants[attendee].merging(person)
-                label = TranscriptBuilder.label(forName: naming.participants[attendee].name) ?? print.name
+            if let participant = naming.participants.firstIndex(ofPerson: print.person) {
+                naming.participants[participant] = naming.participants[participant].merging(print.person)
+                label = TranscriptBuilder.label(forName: naming.participants[participant].name) ?? print.name
             } else {
-                naming.participants.append(person)
+                naming.participants.append(print.person)
                 label = print.name
             }
             naming.speakers[position].label = label

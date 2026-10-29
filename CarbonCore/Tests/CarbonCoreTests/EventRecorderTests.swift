@@ -178,7 +178,7 @@ struct EventRecorderTests {
             """.utf8).write(to: support.url.appending(path: "voiceprints.json"))
     }
 
-    @Test func aRecognizedVoiceGivesItsNameToTheAttendeeKnownOnlyByEmail() async throws {
+    @Test func aRecognizedVoicePrintNamesTheParticipantKnownOnlyByEmail() async throws {
         try rememberSam()
         let recorder = makeRecorder(diarizer: ScriptedDiarizer([.replay(Self.oneVoice)]))
         let samByEmail = Attendee(name: nil, url: "mailto:sam@example.com")
@@ -203,7 +203,26 @@ struct EventRecorderTests {
             """))
     }
 
-    @Test func aRecognizedVoiceTakesTheCalendarsNameForTheAttendeeWithItsEmail() async throws {
+    @Test func aRecognizedVoicePrintPrefersTheParticipantWithItsEmailOverOneWithItsName() async throws {
+        try rememberSam()
+        let recorder = makeRecorder(diarizer: ScriptedDiarizer([.replay(Self.oneVoice)]))
+        let samByName = Attendee(name: "Sam", url: nil)
+        let samByEmail = Attendee(name: nil, url: "mailto:sam@example.com")
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, events: [sync(attendees: [me, samByName, samByEmail])], [
+            (0...1_500, [chrome]),
+            (1_501...1_900, []),
+        ]))
+
+        #expect(try markdown("2026-10-23-weekly-sync.md").contains("""
+            participants:
+              - Sam
+              - Sam <sam@example.com>
+            ---
+            """))
+    }
+
+    @Test func aRecognizedVoicePrintTakesTheCalendarsNameOfTheParticipantWithItsEmail() async throws {
         try rememberSam()
         let recorder = makeRecorder(diarizer: ScriptedDiarizer([.replay(Self.oneVoice)]))
 

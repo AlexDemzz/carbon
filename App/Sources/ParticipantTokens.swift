@@ -52,7 +52,9 @@ private struct ParticipantToken: View {
         }
         Menu("Same Person As") {
             ForEach(Array(others.enumerated()), id: \.offset) { _, other in
-                Button(other.name) { model.mergeParticipant(meeting, participant, into: other) }
+                Button(other.isNamedByEmail ? other.name : other.email.map { "\(other.name) (\($0))" } ?? other.name) {
+                    model.mergeParticipant(meeting, participant, into: other)
+                }
             }
         }
         .disabled(others.isEmpty)

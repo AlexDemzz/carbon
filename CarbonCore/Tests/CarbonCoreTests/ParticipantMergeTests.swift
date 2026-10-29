@@ -71,7 +71,7 @@ struct ParticipantMergeTests {
 
         """
 
-    @Test func aVoiceNamedByHandBecomesTheAttendeeKnownOnlyByEmail() throws {
+    @Test func aSpeakerNamedByHandBecomesTheParticipantKnownOnlyByEmail() throws {
         try remember(print(romainPrint, name: "Romain", meetings: 2, lastHeard: "2026-10-20T10:00:00Z"))
         let library = makeLibrary()
         let url = try create(
@@ -116,6 +116,24 @@ struct ParticipantMergeTests {
         ])
         #expect(library.voicePrints.prints.map { "\($0.name) \($0.email ?? "-")" } == [
             "Bertrand Tournier bertrand@yoojo.com",
+        ])
+    }
+
+    @Test func aVoicePrintWithAnotherEmailIsSomeoneElseWhateverItsName() throws {
+        try remember(
+            print(romainPrint, name: "Bertrand", meetings: 1, lastHeard: "2026-10-20T10:00:00Z"),
+            print(emailPrint, name: "Bertrand", email: "bertrand@other.com", meetings: 5, lastHeard: "2026-10-20T10:00:00Z"))
+        let library = makeLibrary()
+        let bertrand = Participant(name: "Bertrand Tournier", email: "bertrand@yoojo.com")
+        try create(
+            library, participants: [bertrand, Participant(name: "Bertrand")],
+            speakers: [speaker("Bertrand", cluster: "A", print: romainPrint)],
+            transcript: "## Transcript\n\n**Bertrand** [0:02] Salut.\n")
+
+        try library.mergeParticipant(id, Participant(name: "Bertrand"), into: bertrand)
+
+        #expect(library.voicePrints.prints.map { "\($0.name) \($0.email ?? "-") \($0.meetings)" }.sorted() == [
+            "Bertrand Tournier bertrand@yoojo.com 1", "Bertrand bertrand@other.com 5",
         ])
     }
 
