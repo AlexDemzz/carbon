@@ -7,5 +7,6 @@ Apple has no public spoken language identification API (docs/research/language-d
 - The app grows by 43 MB, and the model is loaded only for a Meeting that needs it and let go once its language is decided.
 - One decision per Meeting: a real change of language mid-Meeting is not followed, because the switch re-transcribes the whole Meeting in one language.
 - The classifier judges accent, not words: English spoken with a strong French accent can be identified as French. The thresholds stay conservative until they are calibrated on recorded Meetings, and the native SpeechTranscriber race remains the candidate tie-breaker.
-- A language the person did not check is never identified, and a Meeting whose language stays unclear keeps the language it started in.
+- The classifier is closed-set, and restricted to English and French it calls music, ringtones and noise English more often than French. Carbon's speech gate is only an energy gate, so the vote also drops any window the checked languages together score under 10% over all 107 labels: measured on TTS speech and non-speech recordings, that drops 98% of non-speech and keeps 97% of English and French speech, but also about 36% of French-accented English.
+- A language the person did not check is never identified, and a Meeting whose language stays unclear keeps the language it started in. The vote gives up after 40 windows, counted or dropped, so a Meeting in an unchecked language is not scored for its whole length.
 - The person's choice from the menu or the notification ends identification for that Meeting.

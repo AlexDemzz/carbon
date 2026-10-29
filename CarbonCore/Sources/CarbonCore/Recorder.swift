@@ -458,7 +458,9 @@ public final class Recorder {
         case .success(.decided):
             onDiagnostic?("Meeting Language identified as \(current), the one the Meeting started in")
         case .success(.gaveUp):
-            onDiagnostic?("Meeting Language not identified after \(Int(LanguageVote.maximumSpeech)) s of speech: it stays \(current)")
+            onDiagnostic?(
+                "Meeting Language not identified within \(Int(LanguageVote.maximumSpeech)) s of speech or "
+                    + "\(LanguageVote.maximumWindows) windows: it stays \(current)")
         case .success(.undecided):
             break
         case .failure(let error):
