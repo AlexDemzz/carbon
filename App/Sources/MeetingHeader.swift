@@ -2,18 +2,44 @@ import AppKit
 import CarbonCore
 import SwiftUI
 
-/// Mail-style tokens, one per participant, wrapping onto new lines. Each opens the same menu on a click, a right-click
-/// or its chevron, shown on hover.
-struct ParticipantTokens: View {
+/// A Mail message header above the Transcript: one labelled line per detail, the Participants last, then a divider.
+struct MeetingHeader: View {
     let model: AppModel
     let meeting: ListedMeeting
 
     var body: some View {
-        FlowLayout(spacing: 6) {
-            ForEach(Array(meeting.participants.enumerated()), id: \.offset) { _, participant in
-                ParticipantToken(model: model, meeting: meeting, participant: participant)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(meeting.headerDetails(in: .current), id: \.label) { detail in
+                    HeaderLine(label: detail.label) { Text(detail.value).textSelection(.enabled) }
+                }
+                if !meeting.participants.isEmpty {
+                    HeaderLine(label: "With") {
+                        FlowLayout(spacing: 4) {
+                            ForEach(Array(meeting.participants.enumerated()), id: \.offset) { _, participant in
+                                ParticipantToken(model: model, meeting: meeting, participant: participant)
+                            }
+                        }
+                    }
+                }
             }
+            .font(.system(size: 12))
+            Divider()
         }
+    }
+}
+
+/// "Label:" then its value in grey, like "To:" in Mail.
+private struct HeaderLine<Value: View>: View {
+    let label: String
+    @ViewBuilder let value: Value
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text("\(label):")
+            value.foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -28,7 +54,7 @@ private struct ParticipantToken: View {
     private var others: [Participant] { meeting.participants.filter { $0 != participant } }
 
     var body: some View {
-        Menu { actions } label: { Token(name: participant.name, showsChevron: isHovered) }
+        Menu { actions } label: { PersonBadge(name: participant.name, isHovered: isHovered) }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
@@ -63,42 +89,6 @@ private struct ParticipantToken: View {
             }
         }
         .disabled(others.isEmpty)
-    }
-}
-
-private struct Token: View {
-    let name: String
-    let showsChevron: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Monogram(name: name)
-            Text(name)
-            // Always laid out, so the token keeps its width when the chevron shows.
-            Image(systemName: "chevron.down")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .opacity(showsChevron ? 1 : 0)
-                .accessibilityHidden(true)
-        }
-        .padding(.leading, 2)
-        .padding(.trailing, 8)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(.quinary))
-    }
-}
-
-private struct Monogram: View {
-    let name: String
-    private let size: CGFloat = 20
-
-    var body: some View {
-        let initials = name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
-        Text(initials)
-            .font(.system(size: size * 0.42, weight: .semibold))
-            .frame(width: size, height: size)
-            .background(Circle().fill(.quaternary))
-            .accessibilityHidden(true)
     }
 }
 

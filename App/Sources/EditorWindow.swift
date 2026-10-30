@@ -75,7 +75,7 @@ private struct SpeakerChips: View {
     let didRename: () -> Void
 
     var body: some View {
-        FlowLayout(spacing: 6) {
+        FlowLayout(spacing: 4) {
             ForEach(speakers, id: \.self) { speaker in
                 SpeakerMenu(model: model, meeting: meeting, label: speaker, didRename: didRename)
                     .disabled(isRenameBlocked)
@@ -83,9 +83,6 @@ private struct SpeakerChips: View {
                         isRenameBlocked && (speaker != TranscriptBuilder.me || meeting.isOnMic(speaker))
                             ? "Save your changes to rename Speakers." : "")
                     .font(.callout)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(.quaternary, in: .capsule)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

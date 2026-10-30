@@ -73,12 +73,23 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         return [dateAndLength(in: timeZone), people].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The window subtitle: "Oct 27 at 10:00 AM · 42 min · Google Meet · English".
-    public func titleBarDetails(in timeZone: TimeZone) -> String {
+    public struct Detail: Equatable, Sendable {
+        public let label: String
+        public let value: String
+    }
+
+    /// The lines above the Transcript, like a Mail message header: "Date: Oct 27, 2026 at 10:00 AM", "Length: 42 min",
+    /// "App: Google Meet", "Language: English".
+    public func headerDetails(in timeZone: TimeZone) -> [Detail] {
         let english = Locale(identifier: "en_US")
         let languageName = Locale(identifier: language).language.languageCode
             .flatMap { english.localizedString(forLanguageCode: $0.identifier) } ?? language
-        return [dateAndLength(in: timeZone), provider, languageName].joined(separator: " · ")
+        return [
+            Detail(label: "Date", value: formatted(start, "MMM d, yyyy 'at' h:mm a", in: timeZone)),
+            Detail(label: "Length", value: length),
+            Detail(label: "App", value: provider),
+            Detail(label: "Language", value: languageName),
+        ]
     }
 
     /// Everyone, for the row's hover.
@@ -87,12 +98,19 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
     }
 
     private func dateAndLength(in timeZone: TimeZone) -> String {
+        "\(formatted(start, "MMM d 'at' h:mm a", in: timeZone)) · \(length)"
+    }
+
+    private var length: String {
+        let minutes = max(1, Int(end.timeIntervalSince(start) / 60))
+        return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) hr \(minutes % 60) min"
+    }
+
+    private func formatted(_ date: Date, _ format: String, in timeZone: TimeZone) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
-        formatter.dateFormat = "MMM d 'at' h:mm a"
-        let minutes = max(1, Int(end.timeIntervalSince(start) / 60))
-        let length = minutes < 60 ? "\(minutes) min" : "\(minutes / 60) hr \(minutes % 60) min"
-        return "\(formatter.string(from: start)) · \(length)"
+        formatter.dateFormat = format
+        return formatter.string(from: date)
     }
 }

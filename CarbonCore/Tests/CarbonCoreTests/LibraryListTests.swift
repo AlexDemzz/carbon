@@ -46,11 +46,11 @@ struct LibraryListTests {
         ])
     }
 
-    @Test func theTitleBarShowsDateLengthProviderAndMeetingLanguage() throws {
-        #expect(try loadedLibrary().meetings.map { $0.titleBarDetails(in: newYork) } == [
-            "Oct 27 at 10:00 AM · 42 min · Google Meet · English",
-            "Oct 25 at 9:30 AM · 1 hr 5 min · Microsoft Teams · English",
-            "Oct 23 at 9:00 AM · 1 min · Zoom · French",
+    @Test func theHeaderShowsDateLengthProviderAndMeetingLanguageOnePerLine() throws {
+        #expect(try loadedLibrary().meetings.map { $0.headerDetails(in: newYork).map { "\($0.label): \($0.value)" } } == [
+            ["Date: Oct 27, 2026 at 10:00 AM", "Length: 42 min", "App: Google Meet", "Language: English"],
+            ["Date: Oct 25, 2026 at 9:30 AM", "Length: 1 hr 5 min", "App: Microsoft Teams", "Language: English"],
+            ["Date: Oct 23, 2026 at 9:00 AM", "Length: 1 min", "App: Zoom", "Language: French"],
         ])
     }
 
