@@ -54,16 +54,16 @@ struct MenuBarMenu: View {
     }
 }
 
-/// Transcribing in ▸ with a check on the live Meeting's language, or Start Meetings in ▸ on the next Meeting's
-/// outside one, and Add Languages… last, which opens the Languages settings.
+/// Meeting Language ▸, with a check on the live Meeting's language, or on the next Meeting's outside one,
+/// and Add Languages… last, which opens the Languages settings.
 private struct MeetingLanguageMenu: View {
     let model: AppModel
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Menu(title) {
+        Menu("Meeting Language") {
             Picker(
-                title,
+                "Meeting Language",
                 selection: Binding(
                     get: { model.menuLanguage?.identifier(.bcp47) ?? "" },
                     set: { id in model.chooseMeetingLanguage(Locale(identifier: Locale.identifier(.icu, from: id))) })
@@ -82,10 +82,6 @@ private struct MeetingLanguageMenu: View {
                 openSettings()
             }
         }
-    }
-
-    private var title: String {
-        if case .idle = model.recorder.state { "Start Meetings in" } else { "Transcribing in" }
     }
 
     private var isFinishing: Bool {

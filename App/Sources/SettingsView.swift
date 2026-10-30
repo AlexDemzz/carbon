@@ -105,7 +105,7 @@ private struct LanguagesSettings: View {
                     } footer: {
                         Text(
                             identifiesMeetingLanguage
-                                ? "After a few seconds of speech, Carbon switches to the checked language it hears, on your Mac. If it can\u{2019}t tell, the Meeting stays in the one it started in. Switch by hand from the menu bar or the notification."
+                                ? "After a few seconds of speech, Carbon switches to the checked language it hears. Switch by hand from the menu bar or the notification."
                                 : "Switch while transcribing from the menu bar or the notification."
                         )
                         .foregroundStyle(.secondary)

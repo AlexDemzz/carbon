@@ -98,8 +98,8 @@ struct OnboardingWindow: View {
                 symbol: permission.symbol, tint: permission.tint, title: permission.stepTitle, subtitle: permission.reason)
         case .languages:
             OnboardingHero(
-                symbol: "globe", tint: .blue, title: "Languages You Speak in Meetings",
-                subtitle: "Carbon transcribes each Meeting in whichever of these it hears, on your Mac. They come from your Mac\u{2019}s languages.")
+                symbol: "globe", tint: .teal, title: "Languages You Speak in Meetings",
+                subtitle: "Carbon transcribes each Meeting in the language it hears. This list comes from your Mac\u{2019}s settings.")
         case .done:
             let conclusion = model.permissions.onboardingConclusion
             OnboardingHero(title: conclusion.title, subtitle: conclusion.subtitle)

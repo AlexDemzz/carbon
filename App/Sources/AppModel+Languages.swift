@@ -52,7 +52,7 @@ extension AppModel {
         return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
     }
 
-    /// The language the menu bar's language submenu checks: the live Meeting's, or the next Meeting's.
+    /// The language the Meeting Language submenu checks: the live Meeting's, or the next Meeting's.
     var menuLanguage: Locale? {
         switch recorder.state {
         case .live(let meeting), .finishing(let meeting): meeting.language
