@@ -183,6 +183,7 @@ struct OnboardingWindow: View {
                 Text("Missing a language?").foregroundStyle(.secondary)
                 Button("Add Languages\u{2026}") {
                     model.settingsTab = .languages
+                    NSApp.activate()
                     openSettings()
                 }
                 .buttonStyle(.link)
