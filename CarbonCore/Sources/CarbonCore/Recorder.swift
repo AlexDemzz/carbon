@@ -98,6 +98,8 @@ public final class Recorder {
     /// whose assets are ready, or none when the person turned identification off.
     @ObservationIgnored public var meetingLanguageCandidates: @MainActor () -> [Locale] = { [] }
     @ObservationIgnored public var onNotice: (@MainActor (Notice) -> Void)?
+    /// How loud the live Meeting's microphone is, from 0 (silence) to 1, about ten times a second, for a meter.
+    @ObservationIgnored public var onMicLevel: (@MainActor (Float) -> Void)?
     /// A line for the diagnostic log, e.g. each Voice Print best distance.
     @ObservationIgnored public var onDiagnostic: (@MainActor (String) -> Void)?
     /// Called when Detection could not start or save a Meeting.
@@ -857,8 +859,13 @@ public final class Recorder {
         let recorder = stream.recorder
         let lastSound = tracksSound ? lastSound : nil
         let now = now
-        try stream.source.start { buffer in
-            if let lastSound, SoundLevel.isSound(buffer) { lastSound.value = now() }
+        try stream.source.start { [weak self] buffer in
+            let rms = lastSound != nil || kind == .me ? SoundLevel.rms(buffer) : 0
+            if let lastSound, rms > SoundLevel.threshold { lastSound.value = now() }
+            if kind == .me {
+                let level = SoundLevel.meter(rms: rms)
+                Task { @MainActor in self?.onMicLevel?(level) }
+            }
             recorder.append(buffer)
             identification?.hear(buffer, on: kind)
         }
