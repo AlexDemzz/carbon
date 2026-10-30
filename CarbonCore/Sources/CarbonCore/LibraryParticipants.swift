@@ -63,7 +63,8 @@ extension Library {
     }
 
     /// A person as typed: trimmed, the email lowercased, named by their email when the name is empty. Throws when
-    /// both are empty, the email has no `@`, another Voice Print than `own` has the email, or the name is reserved.
+    /// both are empty, the email has no `@`, another Voice Print than `own` has the email, the name is reserved, or
+    /// the file would read the name back as another one (`Sam <sam@example.com>`).
     public func person(name: String, email: String, voicePrints own: Set<UUID>) throws -> Participant {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -78,6 +79,7 @@ extension Library {
         }
         let person = Participant(name: name.isEmpty ? email : name, email: email.isEmpty ? nil : email)
         guard TranscriptBuilder.label(forName: person.name) != nil else { throw LibraryError.invalidSpeakerName }
+        guard MarkdownFile.participant(MarkdownFile.item(person)) == person else { throw LibraryError.invalidName }
         return person
     }
 
@@ -90,10 +92,16 @@ extension Library {
         return voicePrints.prints.filter { isVoicePrint($0, of: [participant], linked: linked) }
     }
 
+    /// A linked print with an email is theirs only when one of them has that email or has none: two people can
+    /// share a name, and so a Speaker label.
     private func isVoicePrint(_ print: VoicePrint, of people: [Participant], linked: Set<UUID>) -> Bool {
-        !print.owner && (linked.contains(print.id) || people.contains {
-            (print.email == nil || $0.email != nil) && $0.isPerson(print.person)
-        })
+        guard !print.owner else { return false }
+        if linked.contains(print.id), print.email == nil || people.contains(where: {
+            $0.email == nil || $0.isPerson(print.person)
+        }) {
+            return true
+        }
+        return people.contains { (print.email == nil || $0.email != nil) && $0.isPerson(print.person) }
     }
 
     /// Writes `edited` in `target`'s place and removes `source`, in the index and surgically in the file; renames

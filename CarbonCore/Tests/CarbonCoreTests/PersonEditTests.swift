@@ -111,6 +111,7 @@ struct PersonEditTests {
         ("Romain", "<romain@yoojo.com>", .invalidEmail),
         ("Romain", "ADIF@yoojo.com", .emailInUse("Adif")),
         ("Them", "", .invalidSpeakerName),
+        ("Sam <sam@example.com>", "", .invalidName),
     ])
     func anInvalidEditIsRefusedAndChangesNothing(name: String, email: String, error: LibraryError) throws {
         try rememberPeople()
@@ -121,6 +122,48 @@ struct PersonEditTests {
         #expect(throws: error) { try library.editParticipant(id, romain, name: name, email: email) }
         #expect(try read(url) == before)
         #expect(library.voicePrints.prints.first { $0.id == romainPrint }?.name == "Romain")
+    }
+
+    @Test func editingAParticipantLeavesTheVoicePrintOfSomeoneWithTheSameName() throws {
+        try rememberPeople()
+        let otherRomainPrint = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        let otherRomain = Participant(name: "Romain", email: "romain@other.com")
+        try library(addingPrint: otherRomainPrint, for: otherRomain)
+        let library = makeLibrary()
+        try library.create(
+            FinishedMeeting(
+                id: id, title: "Remote sync", start: date("2026-10-27T14:00:00Z"), end: date("2026-10-27T14:17:29Z"),
+                timeZone: TimeZone(identifier: "Europe/Paris")!, language: Locale(identifier: "fr_FR"),
+                provider: "Google Meet", participants: [romain, otherRomain], transcriptKind: .speakers,
+                speakers: [
+                    MeetingIndex.Speaker(
+                        label: "Romain", cluster: "A", name: "Romain", voicePrintId: romainPrint, match: .auto,
+                        speechSeconds: 12),
+                    MeetingIndex.Speaker(
+                        label: "Romain", cluster: "B", name: "Romain", voicePrintId: otherRomainPrint, match: .auto,
+                        speechSeconds: 8),
+                ]),
+            transcript: "## Transcript\n\n**Romain** [0:02] Salut.\n")
+
+        try library.editParticipant(id, romain, name: "Romain Dupont", email: "romain@yoojo.com")
+
+        let other = try #require(library.voicePrints.prints.first { $0.id == otherRomainPrint })
+        #expect(other.person == otherRomain)
+        #expect(library.voicePrints.prints.first { $0.id == romainPrint }?.name == "Romain Dupont")
+    }
+
+    /// Adds a print for `person` to the ones `rememberPeople()` wrote.
+    func library(addingPrint printID: UUID, for person: Participant) throws {
+        let url = support.url.appending(path: "voiceprints.json")
+        var json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var prints = try #require(json["prints"] as? [[String: Any]])
+        var print = prints[0]
+        print["id"] = printID.uuidString
+        print["name"] = person.name
+        print["email"] = person.email
+        prints.append(print)
+        json["prints"] = prints
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
     }
 
     @Test func aParticipantsOwnEmailIsNotInUse() throws {

@@ -8,6 +8,8 @@ public enum LibraryError: LocalizedError, Equatable {
     case participantsNotInFile
     case missingNameAndEmail
     case invalidEmail
+    /// The name ends in `<…>`, which the file reads as an email.
+    case invalidName
     /// The email is another Voice Print's, named here.
     case emailInUse(String)
 
@@ -18,6 +20,7 @@ public enum LibraryError: LocalizedError, Equatable {
         case .participantsNotInFile: "The participants in this Meeting’s file were edited by hand. Edit them there."
         case .missingNameAndEmail: "Enter a name or an email address."
         case .invalidEmail: "Enter a complete email address."
+        case .invalidName: "Enter the email in its own field, not in the name."
         case .emailInUse(let name): "Already used by \(name)’s Voice Print."
         }
     }
