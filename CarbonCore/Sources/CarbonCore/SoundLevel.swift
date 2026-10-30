@@ -13,6 +13,26 @@ enum SoundLevel {
         return min(1, (20 * log10(rms) + 50) / 40)
     }
 
+    /// Peak under −80 dBFS: the zeros a tap delivers while nothing plays, or a muted input, never a microphone's room.
+    static func isDigitalSilence(_ buffer: AVAudioPCMBuffer) -> Bool {
+        let frames = Int(buffer.frameLength)
+        if let channels = buffer.floatChannelData {
+            for channel in 0..<Int(buffer.format.channelCount) {
+                var peak: Float = 0
+                vDSP_maxmgv(channels[channel], buffer.stride, &peak, vDSP_Length(frames))
+                if peak >= 0.000_1 { return false }
+            }
+            return true
+        }
+        if let channels = buffer.int16ChannelData {
+            for channel in 0..<Int(buffer.format.channelCount) {
+                for frame in 0..<frames where abs(Int(channels[channel][frame * buffer.stride])) > 3 { return false }
+            }
+            return true
+        }
+        return false
+    }
+
     static func rms(_ buffer: AVAudioPCMBuffer) -> Float {
         let frames = Int(buffer.frameLength)
         let channelCount = Int(buffer.format.channelCount)
@@ -52,25 +72,5 @@ final class MeterWindow: Sendable {
             defer { window = (0, 0) }
             return window.loudest
         }
-    }
-
-    /// Peak under −80 dBFS: the zeros a tap delivers while nothing plays, or a muted input, never a microphone's room.
-    static func isDigitalSilence(_ buffer: AVAudioPCMBuffer) -> Bool {
-        let frames = Int(buffer.frameLength)
-        if let channels = buffer.floatChannelData {
-            for channel in 0..<Int(buffer.format.channelCount) {
-                var peak: Float = 0
-                vDSP_maxmgv(channels[channel], buffer.stride, &peak, vDSP_Length(frames))
-                if peak >= 0.000_1 { return false }
-            }
-            return true
-        }
-        if let channels = buffer.int16ChannelData {
-            for channel in 0..<Int(buffer.format.channelCount) {
-                for frame in 0..<frames where abs(Int(channels[channel][frame * buffer.stride])) > 3 { return false }
-            }
-            return true
-        }
-        return false
     }
 }
