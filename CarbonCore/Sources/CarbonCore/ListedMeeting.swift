@@ -51,10 +51,12 @@ public struct ListedMeeting: Identifiable, Equatable, Sendable {
         return !named.isEmpty && named.allSatisfy { $0.stream == .me }
     }
 
-    /// True for a diarized Speaker whose voice is too short to become a Voice Print: under 10 s of speech.
+    /// True for a diarized Speaker whose voice can't become a Voice Print: under 10 s of speech, or no clean voice.
     public func tooLittleSpeechToRemember(_ label: String) -> Bool {
-        let clusters = speakers.filter { $0.label == label && $0.centroid != nil }
-        return !clusters.isEmpty && clusters.allSatisfy { $0.speechSeconds < VoicePrintMatcher.minimumSpeechSeconds }
+        let clusters = speakers.filter { $0.label == label && $0.cluster != TranscriptBuilder.them }
+        return !clusters.isEmpty && clusters.allSatisfy {
+            $0.centroid == nil || $0.speechSeconds < VoicePrintMatcher.minimumSpeechSeconds
+        }
     }
 
     private static func searchLines(_ markdown: String) -> [String] {

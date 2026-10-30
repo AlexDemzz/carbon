@@ -247,8 +247,8 @@ struct RecorderTests {
             .init(start: 20, end: 23, cluster: "S1"),
         ],
         clusters: [
-            .init(id: "S1", centroid: [1, 0], speechSeconds: 3),
-            .init(id: "S2", centroid: [0.6, 0.8], speechSeconds: 12.5),
+            .init(id: "S1", voice: [1, 0], speechSeconds: 3),
+            .init(id: "S2", voice: [0.6, 0.8], speechSeconds: 12.5),
         ])
 
     static let groupCall: [AudioStream: [TranscribedWord]] = [
@@ -298,12 +298,12 @@ struct RecorderTests {
     nonisolated static let soloMic: [Diarization] = [
         Diarization(
             segments: [.init(start: 0.5, end: 1.5, cluster: "S1")],
-            clusters: [.init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30)]),
+            clusters: [.init(id: "S1", voice: [0, 0, 1], speechSeconds: 30)]),
         Diarization(
             segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
             clusters: [
-                .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
-                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 19.9),
+                .init(id: "S1", voice: [0, 0, 1], speechSeconds: 30),
+                .init(id: "S2", voice: [0, 1, 0], speechSeconds: 19.9),
             ]),
     ]
 
@@ -349,7 +349,7 @@ struct RecorderTests {
 
     static let remoteVoice = Diarization(
         segments: [.init(start: 3, end: 4, cluster: "S1")],
-        clusters: [.init(id: "S1", centroid: [1, 0, 0, 0, 0], speechSeconds: 25)])
+        clusters: [.init(id: "S1", voice: [1, 0, 0, 0, 0], speechSeconds: 25)])
 
     /// FluidAudio numbers each run's clusters afresh: the room's S1 is not the call's S1.
     static let fourInTheRoom = Diarization(
@@ -360,10 +360,10 @@ struct RecorderTests {
             .init(start: 15, end: 15.5, cluster: "S4"),
         ],
         clusters: [
-            .init(id: "S1", centroid: [0, 1, 0, 0, 0], speechSeconds: 40),
-            .init(id: "S2", centroid: [0, 0, 1, 0, 0], speechSeconds: 30),
-            .init(id: "S3", centroid: [0, 0, 0, 1, 0], speechSeconds: 25),
-            .init(id: "S4", centroid: [0, 0, 0, 0, 1], speechSeconds: 20),
+            .init(id: "S1", voice: [0, 1, 0, 0, 0], speechSeconds: 40),
+            .init(id: "S2", voice: [0, 0, 1, 0, 0], speechSeconds: 30),
+            .init(id: "S3", voice: [0, 0, 0, 1, 0], speechSeconds: 25),
+            .init(id: "S4", voice: [0, 0, 0, 0, 1], speechSeconds: 20),
         ])
 
     func speakers() throws -> [String] {
@@ -407,7 +407,7 @@ struct RecorderTests {
 
     static let callOnSpeakers = Diarization(
         segments: [.init(start: 2, end: 4, cluster: "S1"), .init(start: 20, end: 23, cluster: "S1")],
-        clusters: [.init(id: "S1", centroid: [1, 0, 0], speechSeconds: 30)])
+        clusters: [.init(id: "S1", voice: [1, 0, 0], speechSeconds: 30)])
 
     /// The owner, and the call heard back through the speakers, with the echo word the mic transcribed.
     nonisolated static let echoOnTheMic: [(mic: Diarization, echoWord: TranscribedWord)] = [
@@ -419,8 +419,8 @@ struct RecorderTests {
                     .init(start: 30, end: 31, cluster: "S2"),
                 ],
                 clusters: [
-                    .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
-                    .init(id: "S2", centroid: [0.8, 0, 0.6], speechSeconds: 25),
+                    .init(id: "S1", voice: [0, 0, 1], speechSeconds: 30),
+                    .init(id: "S2", voice: [0.8, 0, 0.6], speechSeconds: 25),
                 ]),
             TranscribedWord(text: "Morning.", start: 20.6, end: 21)
         ),
@@ -432,8 +432,8 @@ struct RecorderTests {
                     .init(start: 20, end: 23, cluster: "S2"),
                 ],
                 clusters: [
-                    .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 30),
-                    .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 25),
+                    .init(id: "S1", voice: [0, 0, 1], speechSeconds: 30),
+                    .init(id: "S2", voice: [0, 1, 0], speechSeconds: 25),
                 ]),
             TranscribedWord(text: "Morning.", start: 20.6, end: 21)
         ),
@@ -550,9 +550,9 @@ struct RecorderTests {
     @Test func aPrintNamesOneClusterAcrossBothStreamsTheClosest() async throws {
         try remember([(Self.sam, "Sam Rivera", [0, 0, 1, 0, 0], false)])
         var remote = Self.remoteVoice
-        remote.clusters[0].centroid = [0.6, 0, 0.8, 0, 0]
+        remote.clusters[0].voice = [0.6, 0, 0.8, 0, 0]
         var mic = Self.fourInTheRoom
-        mic.clusters[1].centroid = [0, 0, 0.9, 0, 0.43589]
+        mic.clusters[1].voice = [0, 0, 0.9, 0, 0.43589]
         let recorder = makeRecorder(
             transcriber: ReplayTranscriber(words: Self.room),
             diarizer: ScriptedDiarizer([.replay(remote)], me: [.replay(mic)]))
@@ -601,8 +601,8 @@ struct RecorderTests {
     static let ownerSplitInTwo = Diarization(
         segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
         clusters: [
-            .init(id: "S1", centroid: [0, 1, 0], speechSeconds: 16),
-            .init(id: "S2", centroid: [0, 0, 1], speechSeconds: 12),
+            .init(id: "S1", voice: [0, 1, 0], speechSeconds: 16),
+            .init(id: "S2", voice: [0, 0, 1], speechSeconds: 12),
         ])
 
     @Test func onHeadphonesEveryMicVoiceIsTheOwnerWhosePrintIsEnrolledFromAllOfThem() async throws {
@@ -713,8 +713,8 @@ struct RecorderTests {
         let mic = Diarization(
             segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
             clusters: [
-                .init(id: "S1", centroid: [0, 0, 1, 0], speechSeconds: 12),
-                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 16),
+                .init(id: "S1", voice: [0, 0, 1, 0], speechSeconds: 12),
+                .init(id: "S2", voice: [0, 1, 0], speechSeconds: 16),
             ])
         let route = ScriptedOutputRoute([.headphones])
         let recorder = makeRecorder(
@@ -759,8 +759,8 @@ struct RecorderTests {
         let mic = Diarization(
             segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
             clusters: [
-                .init(id: "S1", centroid: [0, 0, 1], speechSeconds: 6),
-                .init(id: "S2", centroid: [0, 1, 0], speechSeconds: 3.9),
+                .init(id: "S1", voice: [0, 0, 1], speechSeconds: 6),
+                .init(id: "S2", voice: [0, 1, 0], speechSeconds: 3.9),
             ])
         let route = ScriptedOutputRoute([.headphones])
         let recorder = makeRecorder(
@@ -774,6 +774,67 @@ struct RecorderTests {
         try await recorder.stop()
 
         #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test func onHeadphonesAMicVoiceWithNoCleanSpeechIsLeftOutOfTheOwnersPrint() async throws {
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+            clusters: [
+                .init(id: "S1", centroid: [0, 1, 0], speechSeconds: 20),
+                .init(id: "S2", voice: [0, 0, 1], speechSeconds: 12),
+            ])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(mic)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        let encoded = try #require(try prints()["Me"]?["centroid"] as? String)
+        #expect(MeetingIndex.Speaker.decode(centroid: encoded) == [0, 0, 1])
+    }
+
+    @Test func onHeadphonesUnderTenSecondsOfCleanMicSpeechLeavesTheOwnerUnenrolled() async throws {
+        let mic = Diarization(
+            segments: [.init(start: 0.5, end: 1.5, cluster: "S1"), .init(start: 8, end: 9, cluster: "S2")],
+            clusters: [
+                .init(id: "S1", centroid: [0, 1, 0], speechSeconds: 30),
+                .init(id: "S2", voice: [0, 0, 1], speechSeconds: 6),
+            ])
+        let route = ScriptedOutputRoute([.headphones])
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall),
+            diarizer: ScriptedDiarizer([.replay(Self.twoVoices)], me: [.replay(mic)]),
+            outputRoute: route)
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        try await route.heard()
+        clock.advance(by: 30)
+        try await recorder.stop()
+
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path))
+    }
+
+    @Test func aSpeakerWithNoCleanVoiceIsNeitherNamedByAPrintNorKeepsAVoiceToEnroll() async throws {
+        try remember([(Self.sam, "Sam Rivera", [0.6, 0.8], false)])
+        var call = Self.twoVoices
+        call.clusters[1].voice = nil
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: Self.groupCall), diarizer: ScriptedDiarizer([.replay(call)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 30)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).contains("**Speaker A** [0:02] Hello all."))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        let speakerA = try #require((entry["speakers"] as? [NSDictionary])?.first)
+        #expect(speakerA["voicePrintId"] is NSNull)
+        #expect(speakerA["centroid"] == nil)
     }
 
     @Test(arguments: [ScriptedDiarizer.Outcome.fail, .hang])

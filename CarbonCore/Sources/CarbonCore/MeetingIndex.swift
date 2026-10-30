@@ -100,7 +100,7 @@ public struct MeetingIndex: Equatable, Sendable, Codable {
         public var match: Match?
         public var distance: Double?
         public var speechSeconds: Double
-        /// The cluster's L2-normalized centroid embedding, base64 of little-endian Float32s, kept to enroll a
+        /// The cluster's clean voice (`Diarization.Cluster.voice`), base64 of little-endian Float32s, kept to enroll a
         /// Voice Print when the Speaker is named. Nil when diarization gave none.
         public var centroid: String?
 

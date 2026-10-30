@@ -24,7 +24,12 @@ func bundledModelsDirectory() throws -> URL {
 
 func diarize(_ audio: URL) async throws -> Diarization {
     ModelHub.offlineMode = true
-    let manager = OfflineDiarizerManager(config: OfflineDiarizerConfig(clusteringThreshold: clusteringThreshold))
+    var config = OfflineDiarizerConfig(clusteringThreshold: clusteringThreshold)
+    // What `cleanEmbeddingsBySpeaker` reads.
+    config.exposeChunkEmbeddings = true
+    // Same output and speed as the default 32 windows per call, at about half the peak memory on a 23-minute call.
+    config.segmentation.batchSize = 8
+    let manager = OfflineDiarizerManager(config: config)
     manager.initialize(models: try await OfflineDiarizerModels.load(from: try bundledModelsDirectory()))
     let result = try await manager.process(audio)
     var speech: [String: Double] = [:]
@@ -32,12 +37,13 @@ func diarize(_ audio: URL) async throws -> Diarization {
         speech[segment.speakerId, default: 0] += Double(segment.durationSeconds)
     }
     let centroids = result.speakerDatabase ?? [:]
+    let voices = SpeakerUtilities.cleanEmbeddingsBySpeaker(result)
     return Diarization(
         segments: result.segments.map {
             .init(start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds), cluster: $0.speakerId)
         },
         clusters: speech.keys.sorted().map {
-            .init(id: $0, centroid: normalized(centroids[$0] ?? []), speechSeconds: speech[$0]!)
+            .init(id: $0, centroid: normalized(centroids[$0] ?? []), voice: voices[$0], speechSeconds: speech[$0]!)
         })
 }
 

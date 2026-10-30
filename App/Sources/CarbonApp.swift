@@ -1,3 +1,4 @@
+import CarbonCore
 import AppKit
 import Speech
 import SwiftUI
@@ -16,6 +17,12 @@ struct CarbonApp: App {
         .defaultSize(width: 980, height: 640)
         .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
+        .onChange(of: appIconPlacement, initial: true) {
+            delegate.model = model
+            if delegate.statusItem == nil { delegate.statusItem = StatusItem(model: model, updater: updater) }
+            delegate.statusItem?.isVisible = appIconPlacement.showsInMenuBar
+            delegate.updateActivationPolicy()
+        }
 
         WindowGroup("Edit Meeting", id: AppModel.editorWindowID, for: UUID.self) { $id in
             if let id { EditorWindow(model: model, id: id) }
@@ -32,18 +39,6 @@ struct CarbonApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
-        MenuBarExtra(isInserted: .constant(appIconPlacement.showsInMenuBar)) {
-            MenuBarMenu(model: model, updater: updater)
-        } label: {
-            MenuBarGlyph(isLive: model.isLive)
-                .modifier(HandsOpenWindowToModel(model: model))
-        }
-        .menuBarExtraStyle(.menu)
-        .onChange(of: appIconPlacement, initial: true) {
-            delegate.model = model
-            delegate.updateActivationPolicy()
-        }
-
         Settings {
             SettingsView(model: model, updater: updater)
         }
@@ -52,6 +47,7 @@ struct CarbonApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    var statusItem: StatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard SpeechTranscriber.isAvailable else {
@@ -103,13 +99,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch model.recorder.state {
         case .idle:
             menu.addItem(ActionMenuItem("Start Transcribing") { model.start() })
-        case .live:
+        case .live(let meeting):
+            if model.liveMeetingLanguages(meeting).count > 1 {
+                menu.addItem(Self.meetingLanguageItem(meeting, model: model))
+            }
             menu.addItem(ActionMenuItem("Stop") { model.stop() })
             menu.addItem(ActionMenuItem("Discard") { model.discard() })
         case .finishing:
             return nil
         }
         return menu
+    }
+
+    /// Meeting Language ▸ with a check on the live Meeting's, as in the menu bar menu.
+    @MainActor private static func meetingLanguageItem(_ meeting: LiveMeeting, model: AppModel) -> NSMenuItem {
+        let submenu = NSMenu()
+        for language in model.liveMeetingLanguages(meeting) {
+            let item = ActionMenuItem(model.languageName(language)) { model.switchLanguage(to: language) }
+            item.state = language.identifier(.bcp47) == meeting.language.identifier(.bcp47) ? .on : .off
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: "Meeting Language", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 }
 
@@ -129,7 +141,7 @@ private final class ActionMenuItem: NSMenuItem {
 
 /// Gives the model SwiftUI's `openWindow`, so the global shortcut can show the main window and the first launch
 /// the onboarding.
-private struct HandsOpenWindowToModel: ViewModifier {
+struct HandsOpenWindowToModel: ViewModifier {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 

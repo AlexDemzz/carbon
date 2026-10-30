@@ -124,7 +124,7 @@ final class AppModel {
     private func announce(_ notice: Recorder.Notice) {
         switch notice {
         case .started(let meeting):
-            notifier.postStarted(meeting, languages: meetingLanguages)
+            notifier.postStarted(meeting)
         case .offered(let offer):
             notifier.postOffer(offer, languages: meetingLanguages)
         case .offerWithdrawn:
@@ -152,9 +152,6 @@ final class AppModel {
             // A banner left over from an earlier Meeting never discards the current one.
             guard isLive(meetingID) else { return }
             discard()
-        case .switchLanguage(let meetingID, let language):
-            guard isLive(meetingID) else { return }
-            switchLanguage(to: language)
         case .transcribe(let app, let language):
             guard recorder.pendingOffer?.bundleID == app else { return }
             Task {

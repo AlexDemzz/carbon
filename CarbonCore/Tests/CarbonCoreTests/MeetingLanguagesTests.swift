@@ -77,6 +77,16 @@ struct MeetingLanguagesTests {
         #expect(languages.name(of: Locale(identifier: "en-US"), in: english) == "English (United States)")
     }
 
+    @Test func aLanguageIsAbbreviatedWithItsRegionOnlyWhenAnotherCheckedVariantSharesItsCode() {
+        var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
+        languages.set(Locale(identifier: "en-GB"), chosen: true)
+        languages.set(Locale(identifier: "fr-FR"), chosen: true)
+
+        #expect(languages.abbreviation(of: Locale(identifier: "fr_FR")) == "FR")
+        #expect(languages.abbreviation(of: Locale(identifier: "en_GB")) == "EN-GB")
+        #expect(languages.abbreviation(of: Locale(identifier: "de_DE")) == "DE")
+    }
+
     @Test func theFirstLaunchChecksTheMacsLanguagesWithTheFirstOneAsDefault() {
         let languages = MeetingLanguages.seeded(
             from: locales("fr-FR", "en-US"), supported: locales("en-US", "fr-FR", "de-DE"), cap: 5)

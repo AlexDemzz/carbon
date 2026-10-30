@@ -85,18 +85,31 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
         }
     }
 
-    /// The checked languages other than `language`: the "Switch to <language>" choices.
+    /// The checked languages other than `language`: the offer's "Transcribe in <language>" choices.
     public func others(than language: Locale) -> [Locale] {
         chosenIDs.filter { $0 != Self.id(language) }.map(Self.locale)
     }
 
     /// "French", or "English (United Kingdom)" when another checked language would also be "English".
     public func name(of language: Locale, in displayLocale: Locale = .current) -> String {
+        let code = language.language.languageCode?.identifier
+        if sharesCode(language), let full = displayLocale.localizedString(forIdentifier: language.identifier) {
+            return full
+        }
+        return code.flatMap { displayLocale.localizedString(forLanguageCode: $0) } ?? Self.id(language)
+    }
+
+    /// The menu bar's badge: "FR", or "EN-GB" when another checked language would also be "EN".
+    public func abbreviation(of language: Locale) -> String {
+        guard let code = language.language.languageCode?.identifier else { return Self.id(language).uppercased() }
+        guard sharesCode(language), let region = language.region?.identifier else { return code.uppercased() }
+        return "\(code)-\(region)".uppercased()
+    }
+
+    private func sharesCode(_ language: Locale) -> Bool {
         let id = Self.id(language)
         let code = language.language.languageCode?.identifier
-        let shared = chosenIDs.contains { $0 != id && Self.locale($0).language.languageCode?.identifier == code }
-        if shared, let full = displayLocale.localizedString(forIdentifier: language.identifier) { return full }
-        return code.flatMap { displayLocale.localizedString(forLanguageCode: $0) } ?? id
+        return chosenIDs.contains { $0 != id && Self.locale($0).language.languageCode?.identifier == code }
     }
 
     /// The supported languages in the order Settings lists them: English, then French variants (the US-first

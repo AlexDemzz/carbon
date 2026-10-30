@@ -2,7 +2,7 @@
 
 FluidAudio's offline diarizer (pyannote community-1) models, shipped in the app so diarization never downloads anything. `CarbonDiarizer` loads them from `Carbon.app/Contents/Resources/DiarizationModels` with FluidAudio's offline mode on.
 
-- Source: https://huggingface.co/FluidInference/speaker-diarization-coreml at revision `df2625ac79a7ac6b65ad868fee6d80f320da4232`, the revision FluidAudio 0.17.7 pins for this repo. Only the files `OfflineDiarizerModels.load(from:)` reads are kept, plus the upstream `LICENSE`, `NOTICE.md` and `README.md` (citations).
+- Source: https://huggingface.co/FluidInference/speaker-diarization-coreml at revision `df2625ac79a7ac6b65ad868fee6d80f320da4232`, the revision FluidAudio 0.18.0 pins for this repo, as 0.17.7 did. Only the files `OfflineDiarizerModels.load(from:)` reads are kept, plus the upstream `LICENSE`, `NOTICE.md` and `README.md` (citations).
 - `.fluidaudio-revision` is the marker FluidAudio checks before trusting a local copy. When FluidAudio is bumped, update the files and the marker to the revision it pins (`Repo.diarizer.revision`).
 - License: CC BY 4.0. Modified Core ML conversions by Fluid Inference of pyannote's speaker-diarization-community-1 (pyannote, WeSpeaker) with PLDA parameters from BUT Speech@FIT. See `speaker-diarization/NOTICE.md`.
 

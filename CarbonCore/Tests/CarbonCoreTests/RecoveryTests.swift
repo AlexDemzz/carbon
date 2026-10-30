@@ -185,7 +185,7 @@ struct RecoveryTests {
     /// The owner on headphones, over the `me-words` fixture.
     static let ownerOnTheMic = Diarization(
         segments: [.init(start: 0.5, end: 20, cluster: "S1")],
-        clusters: [.init(id: "S1", centroid: [0, 0, 1], speechSeconds: 19.5)])
+        clusters: [.init(id: "S1", voice: [0, 0, 1], speechSeconds: 19.5)])
 
     @Test func aMeetingRecordedOnHeadphonesIsRecoveredWithTheMicAsTheOwner() async throws {
         try await crashDuringAMeeting(me: 12, them: 7, route: ScriptedOutputRoute([.headphones]))

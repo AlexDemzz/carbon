@@ -1,15 +1,6 @@
 import CarbonCore
 import SwiftUI
 
-struct MenuBarGlyph: View {
-    let isLive: Bool
-
-    var body: some View {
-        Image(isLive ? "MenuBarRecording" : "MenuBarIdle")
-            .accessibilityLabel(isLive ? "Carbon, transcribing" : "Carbon")
-    }
-}
-
 struct MenuBarMenu: View {
     let model: AppModel
     let updater: Updater

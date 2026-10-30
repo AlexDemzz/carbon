@@ -29,7 +29,7 @@ struct EventRecorderTests {
 
     static let oneVoice = Diarization(
         segments: [.init(start: 2, end: 4, cluster: "S1")],
-        clusters: [.init(id: "S1", centroid: [1, 0], speechSeconds: 12)])
+        clusters: [.init(id: "S1", voice: [1, 0], speechSeconds: 12)])
 
     /// 13:00–13:30 on Google Meet.
     func sync(attendees: [Attendee]) -> CalendarEvent {

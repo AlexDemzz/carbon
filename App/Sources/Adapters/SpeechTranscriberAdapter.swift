@@ -18,7 +18,7 @@ final class SpeechTranscriberAdapter: Transcriber {
     /// The module every session runs, which is also the one whose assets Carbon reserves.
     static func module(for locale: Locale) -> SpeechTranscriber {
         SpeechTranscriber(
-            locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
+            locale: locale, transcriptionOptions: [], reportingOptions: [],
             attributeOptions: [.audioTimeRange])
     }
 
@@ -50,6 +50,7 @@ final class SpeechTranscriberAdapter: Transcriber {
         private let analyzer: SpeechAnalyzer
         private let input: AsyncStream<AnalyzerInput>.Continuation
         private let collecting: Task<[TranscribedWord], any Error>
+        private let clock = Mutex(StreamClock())
 
         init(
             audioFormat: AVAudioFormat, analyzer: SpeechAnalyzer, input: AsyncStream<AnalyzerInput>.Continuation,
@@ -62,7 +63,14 @@ final class SpeechTranscriberAdapter: Transcriber {
         }
 
         func append(_ buffer: AVAudioPCMBuffer) {
-            input.yield(AnalyzerInput(buffer: buffer))
+            let start = clock.withLock { $0.hear(Double(buffer.frameLength) / audioFormat.sampleRate) }
+            input.yield(AnalyzerInput(
+                buffer: buffer,
+                bufferStartTime: start.map { CMTime(seconds: $0, preferredTimescale: CMTimeScale(audioFormat.sampleRate)) }))
+        }
+
+        func skip(_ duration: TimeInterval) {
+            clock.withLock { $0.skip(duration) }
         }
 
         func finish() async throws -> [TranscribedWord] {

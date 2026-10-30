@@ -18,7 +18,7 @@ This note builds on [language-detection.md](language-detection.md). That note fo
 | `ggml-org/whisper.cpp` | commit `e4acdfdf214836d6ce5c7f8ac6b43b9912f361a1` |
 | `openai/whisper` | commit `86098128c0b4f24f0e2aa2994de830614b474227` |
 | `snakers4/silero-vad` | commit `0480df078b4429db314feec47853b9bfd2bbba49` (last with the language classifier) |
-| `FluidInference/FluidAudio` | commit `fc5c5f06270e20c1c58ce4b102cee5d6896d2cf7` (Carbon pins 0.17.7 in [project.yml](../../project.yml)) |
+| `FluidInference/FluidAudio` | commit `fc5c5f06270e20c1c58ce4b102cee5d6896d2cf7` (Carbon pins 0.18.0 in [project.yml](../../project.yml)) |
 | `facebook/mms-lid-126` | HF revision `53da6e311f3ce48f324fe335924216187e3109a4` |
 
 ## Short answer
