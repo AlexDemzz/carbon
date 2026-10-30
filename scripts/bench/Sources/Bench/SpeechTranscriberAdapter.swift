@@ -1,0 +1,1 @@
+../../../../App/Sources/Adapters/SpeechTranscriberAdapter.swift
