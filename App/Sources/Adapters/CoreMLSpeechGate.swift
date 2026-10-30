@@ -4,7 +4,8 @@ import Foundation
 
 /// Silero VAD in Core ML, shipped in the app (`App/SpeechGateModel`). It judges 4096 samples at a time, after the
 /// last 64 samples of the stream's chunk before and the LSTM state that chunk left, so each stream keeps its own. The
-/// model is loaded on the first chunk it judges and let go, with every stream's state, on `release()`.
+/// model is loaded on the first chunk it judges and let go, with every stream's state, on `release()`. It runs on the
+/// CPU, like the classifier: about 0.2 ms per chunk there, no faster on the Neural Engine, which takes longer to load.
 actor CoreMLSpeechGate: SpeechGate {
     enum Failure: LocalizedError {
         case missingModel
@@ -29,15 +30,12 @@ actor CoreMLSpeechGate: SpeechGate {
         var cell = [Float](repeating: 0, count: CoreMLSpeechGate.stateSize)
     }
 
-    private let model: URL?
-    private var loadedModel: MLModel?
+    private let folder: URL?
+    private var model: MLModel?
     private var streams: [AudioStream: StreamState] = [:]
 
-    init(
-        model: URL? = Bundle.main.url(forResource: "SpeechGateModel", withExtension: nil)?
-            .appending(path: "silero-vad-unified-256ms-v6.2.1.mlmodelc")
-    ) {
-        self.model = model
+    init(folder: URL? = Bundle.main.url(forResource: "SpeechGateModel", withExtension: nil)) {
+        self.folder = folder
     }
 
     func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double {
@@ -59,7 +57,7 @@ actor CoreMLSpeechGate: SpeechGate {
     }
 
     func release() {
-        loadedModel = nil
+        model = nil
         streams = [:]
     }
 
@@ -85,12 +83,14 @@ actor CoreMLSpeechGate: SpeechGate {
     }
 
     private func loaded() async throws -> MLModel {
-        if let loadedModel { return loadedModel }
-        guard let model else { throw Failure.missingModel }
+        if let model { return model }
+        guard let url = folder?.appending(path: "silero-vad-unified-256ms-v6.2.1.mlmodelc") else {
+            throw Failure.missingModel
+        }
         let configuration = MLModelConfiguration()
         configuration.computeUnits = .cpuOnly
-        let loaded = try await MLModel.load(contentsOf: model, configuration: configuration)
-        loadedModel = loaded
-        return loaded
+        let model = try await MLModel.load(contentsOf: url, configuration: configuration)
+        self.model = model
+        return model
     }
 }

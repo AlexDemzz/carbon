@@ -147,7 +147,7 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         speak()
-        try await eventually { speechGate.chunks.count >= 2 * 39 }
+        try await eventually { speechGate.chunks.count >= 2 * speechGate.chunks(in: 10) }
         await recorder.discard()
 
         #expect(classifier.windows.isEmpty)
@@ -161,36 +161,66 @@ struct LanguageIdentificationTests {
         try await recorder.start(language: english)
         microphone.play(seconds: 2)
         systemAudio.play(seconds: 1, amplitude: 0)
-        try await eventually { speechGate.chunks.count >= 7 + 3 }
+        try await eventually { speechGate.chunks.count >= speechGate.chunks(in: 2) + speechGate.chunks(in: 1) }
         await recorder.discard()
 
         #expect(speechGate.chunks.filter { $0.stream == .me }.allSatisfy { $0.peak > 0.1 })
         #expect(speechGate.chunks.filter { $0.stream == .them }.allSatisfy { $0.peak == 0 })
     }
+
+    @Test func aMeetingStartedRightAfterAnotherIsJudgedOnlyOnceTheFirstLetTheGateGo() async throws {
+        let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
+        let speechGate = ScriptedSpeechGate(delay: .milliseconds(300))
+        let recorder = makeRecorder(classifier: classifier, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 1)
+        try await eventually { !speechGate.chunks.isEmpty }
+        await recorder.discard()
+        let judgedInTheFirst = speechGate.chunks.count
+        try await recorder.start(language: english)
+        microphone.play(seconds: 1)
+        try await eventually { speechGate.chunks.count > judgedInTheFirst }
+        await recorder.discard()
+
+        #expect(
+            speechGate.releases.first == judgedInTheFirst,
+            "the first Meeting's release never wipes the second's stream state")
+    }
 }
 
 /// Stands in for Silero VAD: a chunk whose loudest sample passes 0.1 is speech with probability `speech`, any other
-/// is speech with probability 0.01. Notes every chunk it was asked about.
+/// is speech with probability 0.01, after `delay`. Notes every chunk it was asked about, and how many it had judged
+/// at each release.
 final class ScriptedSpeechGate: SpeechGate {
     let chunkSize = 4096
     let speech: Double
-    private let state = Mutex((chunks: [(stream: AudioStream, peak: Float)](), released: false))
+    let delay: Duration
+    private let state = Mutex((chunks: [(stream: AudioStream, peak: Float)](), releases: [Int]()))
 
-    init(speech: Double = 0.97) {
+    init(speech: Double = 0.97, delay: Duration = .zero) {
         self.speech = speech
+        self.delay = delay
     }
 
     var chunks: [(stream: AudioStream, peak: Float)] { state.withLock { $0.chunks } }
-    var released: Bool { state.withLock { $0.released } }
+    var releases: [Int] { state.withLock { $0.releases } }
+    var released: Bool { !releases.isEmpty }
+
+    /// The whole chunks in `seconds` of one stream.
+    func chunks(in seconds: Double) -> Int {
+        Int(seconds * LogMel.sampleRate) / chunkSize
+    }
 
     func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double {
         let peak = chunk.map(abs).max() ?? 0
         state.withLock { $0.chunks.append((stream, peak)) }
+        try await Task.sleep(for: delay)
         return peak > 0.1 ? speech : 0.01
     }
 
     func release() async {
-        state.withLock { $0.released = true }
+        state.withLock { $0.releases.append($0.chunks.count) }
     }
 }
 

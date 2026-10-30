@@ -128,6 +128,8 @@ public final class Recorder {
     private var languageSwitch: Task<Void, any Error>?
     /// The live Meeting's language identification, until it decides, gives up or the person picks a language.
     private var languageIdentification: (meeting: UUID, identification: LanguageIdentification)?
+    /// The last language identification started, which the next one waits for.
+    private var lastLanguageIdentification: LanguageIdentification?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
     private var filings: [UUID: Task<Void, Never>] = [:]
     /// The last time the stream that tells whether the Meeting is still going was not silent.
@@ -438,11 +440,12 @@ public final class Recorder {
                 candidates: [language] + meetingLanguageCandidates(), labels: languageClassifier.labels)
         else { return nil }
         let identification = LanguageIdentification(
-            vote: vote, speechGate: speechGate, classifier: languageClassifier
+            vote: vote, speechGate: speechGate, classifier: languageClassifier, after: lastLanguageIdentification
         ) { [weak self] outcome in
             await self?.identified(outcome, meeting: id)
         }
         languageIdentification = (id, identification)
+        lastLanguageIdentification = identification
         return identification
     }
 

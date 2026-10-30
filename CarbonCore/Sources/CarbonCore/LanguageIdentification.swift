@@ -5,7 +5,8 @@ import Synchronization
 /// Identifies a live Meeting's language once: hears both streams, has a speech gate keep only their speech, has each
 /// window of `window` seconds scored and votes, until the vote decides or gives up, or `stop()`. The capture threads
 /// only resample: gating and scoring run in one task. The models are let go as soon as they are no longer needed,
-/// before the outcome is handed over.
+/// before the outcome is handed over. The gate and the classifier outlive a Meeting, so an identification starts
+/// judging only once the one before it has let them go: its release can't wipe the newer one's stream state.
 final class LanguageIdentification: Sendable {
     /// Seconds of speech per window the classifier scores, within the 3–5 s the research note measured.
     static let window: TimeInterval = 4
@@ -30,17 +31,20 @@ final class LanguageIdentification: Sendable {
     private let chunkSize: Int
     private let stopped = Atomic(false)
     private let chunks: AsyncStream<(stream: AudioStream, audio: [Float])>.Continuation
+    private let task = Mutex<Task<Void, Never>?>(nil)
 
     /// `onOutcome` gets the vote's decision, or `gaveUp`, or the gate's or the classifier's failure; never after
-    /// `stop()`.
+    /// `stop()`. The chunks heard while `previous` finishes wait for it.
     init(
         vote: LanguageVote, speechGate: any SpeechGate, classifier: any SpokenLanguageClassifier,
+        after previous: LanguageIdentification?,
         onOutcome: @escaping @MainActor @Sendable (Result<LanguageVote.Outcome, any Error>) async -> Void
     ) {
         let (stream, chunks) = AsyncStream<(stream: AudioStream, audio: [Float])>.makeStream()
         self.chunks = chunks
         chunkSize = speechGate.chunkSize
-        Task.detached { [self] in
+        let task = Task.detached { [self] in
+            await previous?.finished()
             var vote = vote
             var speech: [AudioStream: [Float]] = [:]
             var outcome: Result<LanguageVote.Outcome, any Error>?
@@ -50,10 +54,11 @@ final class LanguageIdentification: Sendable {
                     guard try await speechGate.speechProbability(of: chunk.audio, on: chunk.stream)
                         >= Self.speechProbability
                     else { continue }
-                    speech[chunk.stream, default: []] += chunk.audio
-                    guard speech[chunk.stream]!.count >= Self.windowSamples else { continue }
-                    let window = Array(speech[chunk.stream]!.prefix(Self.windowSamples))
-                    speech[chunk.stream]!.removeFirst(Self.windowSamples)
+                    var heard = speech[chunk.stream, default: []] + chunk.audio
+                    defer { speech[chunk.stream] = heard }
+                    guard heard.count >= Self.windowSamples else { continue }
+                    let window = Array(heard.prefix(Self.windowSamples))
+                    heard.removeFirst(Self.windowSamples)
                     let scores = try await classifier.classify(window)
                     let decision = vote.add(scores, speech: Self.window)
                     if decision != .undecided { outcome = .success(decision) }
@@ -68,12 +73,12 @@ final class LanguageIdentification: Sendable {
             await speechGate.release()
             if let outcome, !stopped { await onOutcome(outcome) }
         }
+        self.task.withLock { $0 = task }
     }
 
     /// Takes in one captured buffer of `stream`, on the capture's thread.
     func hear(_ buffer: AVAudioPCMBuffer, on stream: AudioStream) {
         guard !stopped.load(ordering: .acquiring) else { return }
-        let chunkSize = chunkSize
         let ready = stream == .me
             ? me.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
             : them.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
@@ -92,6 +97,11 @@ final class LanguageIdentification: Sendable {
             audio.pending.removeFirst(size)
         }
         return ready
+    }
+
+    /// Returns once the models are let go and the outcome, if any, is handed over.
+    func finished() async {
+        await task.withLock { $0 }?.value
     }
 
     /// Stops hearing, gating and scoring. A chunk being gated or a window being scored is dropped, and the models are
