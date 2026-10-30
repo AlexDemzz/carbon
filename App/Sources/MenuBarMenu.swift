@@ -32,6 +32,9 @@ struct MenuBarMenu: View {
             } else {
                 Text("since \(meeting.start.formatted(date: .omitted, time: .shortened))")
             }
+            if model.liveMeetingLanguages(meeting).count > 1 {
+                LiveMeetingLanguageMenu(model: model, meeting: meeting)
+            }
             Button("Stop") { model.stop() }
             Button("Discard") { model.discard() }
         case .finishing(let meeting):
@@ -50,5 +53,28 @@ struct MenuBarMenu: View {
         Divider()
         Button("Quit Carbon") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
+    }
+}
+
+/// Meeting Language ▸ while transcribing, with a check on the live Meeting's: picking another re-transcribes it.
+private struct LiveMeetingLanguageMenu: View {
+    let model: AppModel
+    let meeting: LiveMeeting
+
+    var body: some View {
+        Menu("Meeting Language") {
+            Picker(
+                "Meeting Language",
+                selection: Binding(
+                    get: { meeting.language.identifier(.bcp47) },
+                    set: { id in model.switchLanguage(to: Locale(identifier: Locale.identifier(.icu, from: id))) })
+            ) {
+                ForEach(model.liveMeetingLanguages(meeting), id: \.self) { language in
+                    Text(model.languageName(language)).tag(language.identifier(.bcp47))
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        }
     }
 }

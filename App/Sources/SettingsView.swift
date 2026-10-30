@@ -105,15 +105,22 @@ private struct LanguagesSettings: View {
                     } footer: {
                         Text(
                             identifiesMeetingLanguage
-                                ? "After a few seconds of speech, Carbon switches to the checked language it hears, or stays in this one if it can\u{2019}t tell. Switch by hand from the notification."
-                                : "Switch while transcribing from the notification."
+                                ? "From the first seconds of speech, Carbon identifies which checked language is spoken and transcribes the Meeting in it. If it can\u{2019}t tell, the Meeting stays in the language above. To change it during a Meeting, use the menu bar or the notification."
+                                : "Meetings are transcribed in the language above. To change it during a Meeting, use the menu bar or the notification."
                         )
                         .foregroundStyle(.secondary)
                     }
                 }
-                Section("Languages You Speak in Meetings") {
+                Section {
                     ForEach(model.languageAssets.supported, id: \.self) { language in
                         LanguageRow(model: model, language: language, languages: languages)
+                    }
+                } header: {
+                    Text("Languages You Speak in Meetings")
+                } footer: {
+                    if languages.chosen.count == 1 {
+                        Text("Check another language, and Carbon identifies which one each Meeting is spoken in.")
+                            .foregroundStyle(.secondary)
                     }
                 }
             } else {

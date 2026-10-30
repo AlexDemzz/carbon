@@ -52,6 +52,15 @@ extension AppModel {
         return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
     }
 
+    /// The menu bar's Meeting Language choices: the checked ones, plus the live Meeting's if it was unchecked since.
+    func liveMeetingLanguages(_ meeting: LiveMeeting) -> [Locale] {
+        let chosen = meetingLanguages?.chosen ?? []
+        guard !chosen.contains(where: { $0.identifier(.bcp47) == meeting.language.identifier(.bcp47) }) else {
+            return chosen
+        }
+        return MeetingLanguages.listed(chosen + [meeting.language])
+    }
+
     func languageName(_ language: Locale) -> String {
         meetingLanguages?.name(of: language) ?? Notifier.languageName(language)
     }
