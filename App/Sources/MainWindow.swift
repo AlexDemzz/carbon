@@ -66,8 +66,28 @@ struct MainWindow: View {
         }
         .modifier(MeetingDialogs(model: model))
         .onAppear { model.selection = model.selection ?? library.meetings.first?.id }
+        .task { await debugCycleSelection() } // [DEBUG-sel4]
     }
 }
+
+extension MainWindow { // [DEBUG-sel4]
+    func debugCycleSelection() async { // [DEBUG-sel4]
+        guard ProcessInfo.processInfo.environment["CARBON_DEBUG_SEL"] != nil else { return } // [DEBUG-sel4]
+        try? await Task.sleep(for: .seconds(2)) // [DEBUG-sel4]
+        for _ in 0..<3 { // [DEBUG-sel4]
+            for meeting in library.meetings { // [DEBUG-sel4]
+                let start = ContinuousClock.now // [DEBUG-sel4]
+                model.selection = meeting.id // [DEBUG-sel4]
+                await withCheckedContinuation { c in DispatchQueue.main.async { c.resume() } } // [DEBUG-sel4]
+                let ms = (ContinuousClock.now - start) / .milliseconds(1) // [DEBUG-sel4]
+                let turns = TranscriptBuilder.turns(inMarkdown: meeting.markdown).count // [DEBUG-sel4]
+                FileHandle.standardError.write("[DEBUG-sel4] \(turns) turns: \(Int(ms)) ms\n".data(using: .utf8)!) // [DEBUG-sel4]
+                try? await Task.sleep(for: .milliseconds(400)) // [DEBUG-sel4]
+            } // [DEBUG-sel4]
+        } // [DEBUG-sel4]
+        exit(0) // [DEBUG-sel4]
+    } // [DEBUG-sel4]
+} // [DEBUG-sel4]
 
 private struct EmptyLibrary: View {
     let query: String
@@ -134,7 +154,7 @@ struct MeetingPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 if !meeting.participants.isEmpty {
                     ParticipantTokens(model: model, meeting: meeting)
                 }

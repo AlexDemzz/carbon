@@ -81,6 +81,7 @@ final class AppModel {
         recorder.onNotice = { [weak self] notice in self?.announce(notice) }
         recorder.meetingLanguageCandidates = { [weak self] in self?.meetingLanguageCandidates ?? [] }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
+        if ProcessInfo.processInfo.environment["CARBON_DEBUG_SEL"] != nil { return } // [DEBUG-sel4]
         Task {
             if FirstLaunch.run() { showOnboarding() }
             Task { [weak self] in await self?.watchPermissions() }

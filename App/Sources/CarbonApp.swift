@@ -90,6 +90,7 @@ private struct HandsOpenWindowToModel: ViewModifier {
             model.openMainWindow = { [openWindow] in openWindow(id: AppModel.mainWindowID) }
             model.openEditor = { [openWindow] id in openWindow(id: AppModel.editorWindowID, value: id) }
             model.openOnboarding = { [openWindow] in openWindow(id: AppModel.onboardingWindowID) }
+            if ProcessInfo.processInfo.environment["CARBON_DEBUG_SEL"] != nil { model.showMainWindow() } // [DEBUG-sel4]
         }
     }
 }

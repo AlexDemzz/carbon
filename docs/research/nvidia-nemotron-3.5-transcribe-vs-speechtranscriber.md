@@ -122,7 +122,7 @@ The Lite Core ML port (encoder + CTC head, no LLM), on its publisher's M5 Pro:
 
 1. **It cannot run on a customer's Mac.** NVIDIA supports only NVIDIA GPUs on Linux/Windows. The Mac ports are day-old community experiments that need about 17 GB of RAM and a 16-20 GB download.
 2. **It is offline only.** Carbon could live with that, because it only uses final words (§2). But at the measured 6-24x real time, two one-hour streams would take minutes to tens of minutes after every Meeting.
-3. **The shippable port loses the accuracy.** The Lite Core ML port drops the LLM. Its published English results (LibriSpeech 5.5 %, AMI 26 %) are worse than Apple's, and it has no French evaluation at all.
+3. **The shippable port loses the accuracy.** The Lite Core ML port drops the LLM. Its published LibriSpeech WER (5.5 %) is worse than Apple's third-party figure (2.12 %), though the scorers differ. Its AMI WER is 26 %, but no source gives an Apple AMI score to compare it with (**unverified**). It has no French evaluation at all.
 4. **It has LLM failure modes.** NVIDIA documents generation loops and hallucinated speech, and ships a guardrail for them. That needs testing on Carbon's long silent mic stretches before it can be trusted.
 5. **What it does well is real.** French FLEURS 3.16 %, AMI 7.8 %, built-in speakers, language ID and code-switching would remove Carbon's per-Meeting language choice. Those gains need the full model.
 
