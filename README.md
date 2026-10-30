@@ -115,6 +115,8 @@ Speaker diarization by [FluidAudio](https://github.com/FluidInference/FluidAudio
 
 Spoken language identification by [SpeechBrain](https://speechbrain.github.io)'s [VoxLingua107 ECAPA-TDNN model](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa), in [aufklarer's Core ML conversion](https://huggingface.co/aufklarer/SpeechBrain-ECAPA-VoxLingua107-21M-CoreML), licensed Apache-2.0. It ships inside Carbon (`App/LanguageIdentificationModel`).
 
+Speech is told from music and noise, before identifying the Meeting Language, by [Silero VAD](https://github.com/snakers4/silero-vad) in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/silero-vad-coreml), licensed MIT. It ships inside Carbon (`App/SpeechGateModel`).
+
 ## License
 
-Carbon is released under the [MIT License](LICENSE). The bundled diarization models keep their own CC BY 4.0 licence, and the language identification model its Apache-2.0 licence, as noted above.
+Carbon is released under the [MIT License](LICENSE). The bundled diarization models keep their own CC BY 4.0 licence, the language identification model its Apache-2.0 licence, and the speech gate model its MIT licence, as noted above.

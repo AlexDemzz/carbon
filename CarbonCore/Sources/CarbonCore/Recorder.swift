@@ -111,6 +111,7 @@ public final class Recorder {
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let summarizer: any Summarizer
     private let languageClassifier: (any SpokenLanguageClassifier)?
+    private let speechGate: (any SpeechGate)?
     private let library: Library
     private let outputRoute: any OutputRouteSource
     private let keepAudio: @Sendable () -> Bool
@@ -127,6 +128,8 @@ public final class Recorder {
     private var languageSwitch: Task<Void, any Error>?
     /// The live Meeting's language identification, until it decides, gives up or the person picks a language.
     private var languageIdentification: (meeting: UUID, identification: LanguageIdentification)?
+    /// The last language identification started, which the next one waits for.
+    private var lastLanguageIdentification: LanguageIdentification?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
     private var filings: [UUID: Task<Void, Never>] = [:]
     /// The last time the stream that tells whether the Meeting is still going was not silent.
@@ -181,6 +184,7 @@ public final class Recorder {
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         summarizer: any Summarizer = NoSummarizer(),
         languageClassifier: (any SpokenLanguageClassifier)? = nil,
+        speechGate: (any SpeechGate)? = nil,
         library: Library,
         outputRoute: any OutputRouteSource = UnknownOutputRoute(),
         keepAudio: @escaping @Sendable () -> Bool = { false },
@@ -199,6 +203,7 @@ public final class Recorder {
         self.diarizationTimeout = diarizationTimeout
         self.summarizer = summarizer
         self.languageClassifier = languageClassifier
+        self.speechGate = speechGate
         self.library = library
         self.outputRoute = outputRoute
         self.keepAudio = keepAudio
@@ -430,14 +435,17 @@ public final class Recorder {
     /// Starts identifying the language of the Meeting starting in `language`, when there are at least two checked
     /// languages the classifier tells apart. Nil otherwise: the model is never loaded.
     private func identifyLanguage(of id: UUID, startingIn language: Locale) -> LanguageIdentification? {
-        guard let languageClassifier,
+        guard let languageClassifier, let speechGate,
             let vote = LanguageVote(
                 candidates: [language] + meetingLanguageCandidates(), labels: languageClassifier.labels)
         else { return nil }
-        let identification = LanguageIdentification(vote: vote, classifier: languageClassifier) { [weak self] outcome in
+        let identification = LanguageIdentification(
+            vote: vote, speechGate: speechGate, classifier: languageClassifier, after: lastLanguageIdentification
+        ) { [weak self] outcome in
             await self?.identified(outcome, meeting: id)
         }
         languageIdentification = (id, identification)
+        lastLanguageIdentification = identification
         return identification
     }
 
@@ -458,7 +466,9 @@ public final class Recorder {
         case .success(.decided):
             onDiagnostic?("Meeting Language identified as \(current), the one the Meeting started in")
         case .success(.gaveUp):
-            onDiagnostic?("Meeting Language not identified after \(Int(LanguageVote.maximumSpeech)) s of speech: it stays \(current)")
+            onDiagnostic?(
+                "Meeting Language not identified within \(Int(LanguageVote.maximumSpeech)) s of speech or "
+                    + "\(LanguageVote.maximumWindows) windows: it stays \(current)")
         case .success(.undecided):
             break
         case .failure(let error):

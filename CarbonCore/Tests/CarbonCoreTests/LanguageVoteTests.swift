@@ -20,6 +20,28 @@ struct LanguageVoteTests {
         #expect(vote.add(french, speech: 4) == .decided(self.french))
     }
 
+    @Test func aWindowTheCandidatesBarelyScoreIsNotSpeechInTheirLanguages() throws {
+        var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
+        // Hold music, as measured: under 10% for English and French together, leaning English 40 to 1.
+        let music = scored(["oc": 0.9, "en": 0.08, "fr": 0.002])
+        let french = scored(["fr": 0.9, "en": 0.01])
+
+        #expect(vote.add(music, speech: 4) == .undecided)
+        #expect(vote.add(music, speech: 4) == .undecided, "8 s of music is not 8 s of English")
+        #expect(vote.add(french, speech: 4) == .undecided, "the music didn't count toward the minimum speech")
+        #expect(vote.add(french, speech: 4) == .decided(self.french))
+    }
+
+    @Test func givesUpAfterFortyWindowsInNoCandidateLanguage() throws {
+        var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
+        let german = scored(["de": 0.95, "en": 0.02, "fr": 0.01])
+
+        for _ in 1...39 {
+            #expect(vote.add(german, speech: 4) == .undecided)
+        }
+        #expect(vote.add(german, speech: 4) == .gaveUp, "a German Meeting isn't scored for its whole length")
+    }
+
     @Test func aSmallLeadStaysUndecided() throws {
         var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
         let leaningFrench = scored(["fr": 0.6, "en": 0.4])
@@ -41,9 +63,9 @@ struct LanguageVoteTests {
 
     @Test func onlyTheCandidatesCountAndTheirScoresAreRenormalized() throws {
         var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
-        // Degraded French, as the research note measured it: Occitan on top over 107 labels, French far below,
-        // English lower still. Between the candidates, French is a clear 30 to 1.
-        let degradedFrench = scored(["oc": 0.6, "fr": 0.03, "en": 0.001])
+        // Degraded French, as the research note measured it: Occitan on top over 107 labels, French below, English
+        // lower still. Between the candidates, French is a clear 30 to 1.
+        let degradedFrench = scored(["oc": 0.6, "fr": 0.15, "en": 0.005])
 
         _ = vote.add(degradedFrench, speech: 4)
         #expect(vote.add(degradedFrench, speech: 4) == .decided(french))

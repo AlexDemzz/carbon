@@ -61,6 +61,7 @@ final class AppModel {
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
             languageClassifier: CoreMLLanguageClassifier(),
+            speechGate: CoreMLSpeechGate(),
             library: library,
             outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
