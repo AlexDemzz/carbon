@@ -151,6 +151,8 @@ public protocol TranscriptionSession: AnyObject, Sendable {
     var audioFormat: AVAudioFormat { get }
     /// Feeds audio already converted to `audioFormat`. Called in order, from one thread at a time.
     func append(_ buffer: AVAudioPCMBuffer)
+    /// The stream went on for `duration` of silence that isn't fed: the next buffer starts that much later.
+    func skip(_ duration: TimeInterval)
     /// Ends the input and returns every final word of the stream.
     func finish() async throws -> [TranscribedWord]
 }
