@@ -434,6 +434,8 @@ enum SettingsKey {
     static let identifyMeetingLanguage = "identifyMeetingLanguage"
     /// "Recognize voices", on by default.
     static let recognizeVoices = "recognizeVoices"
+    /// "Show app icon in", an `AppIconPlacement`, Dock and Menu Bar by default.
+    static let appIconPlacement = "appIconPlacement"
 }
 
 enum AppError: LocalizedError {

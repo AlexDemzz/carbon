@@ -7,6 +7,27 @@ enum SettingsTab: Hashable {
     case general, languages, ignoredApps, permissions, voicePrints, about
 }
 
+/// Settings › General › "Show app icon in". With Menu Bar Only, Carbon still joins the Dock while one of its windows
+/// is open.
+enum AppIconPlacement: String, CaseIterable {
+    case dock, dockAndMenuBar, menuBar
+
+    static var current: AppIconPlacement {
+        UserDefaults.standard.string(forKey: SettingsKey.appIconPlacement).flatMap(Self.init) ?? .dockAndMenuBar
+    }
+
+    var showsInDock: Bool { self != .menuBar }
+    var showsInMenuBar: Bool { self != .dock }
+
+    var title: String {
+        switch self {
+        case .dock: "Dock Only"
+        case .dockAndMenuBar: "Dock and Menu Bar"
+        case .menuBar: "Menu Bar Only"
+        }
+    }
+}
+
 extension AppModel {
     // MARK: Library folder
 
