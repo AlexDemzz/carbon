@@ -29,7 +29,7 @@ public final class Library {
     public internal(set) var meetings: [ListedMeeting] = []
 
     /// - Parameters:
-    ///   - folder: the Library folder, `~/Documents/Carbon` by default.
+    ///   - folder: the Library folder, `folder(savedIn:key:home:documents:supportFolder:)`.
     ///   - supportFolder: where `meetings.json`, `Backups/` and `Debug/` live, `~/Library/Application Support/Carbon`.
     ///   - moveToTrash: how Delete gets rid of a file, the Finder's Trash by default.
     public init(
@@ -49,6 +49,21 @@ public final class Library {
         backupsFolder = supportFolder.appending(path: "Backups")
         debugFolder = supportFolder.appending(path: "Debug")
         self.now = now
+    }
+
+    /// The Library folder saved under `key`. On the first launch, where a Library the person never moved lives:
+    /// `~/Carbon`, outside the folders macOS asks permission for, so the first launch shows no prompt. A Library from
+    /// before that change, which `meetings.json` gives away, stays in `~/Documents/Carbon`, the folder its files are
+    /// already in. The pick is saved, so the first Meeting's `meetings.json` doesn't move it to Documents next launch.
+    nonisolated public static func folder(
+        savedIn defaults: UserDefaults, key: String, home: URL, documents: URL, supportFolder: URL
+    ) -> URL {
+        if let saved = defaults.string(forKey: key) { return URL(filePath: saved, directoryHint: .isDirectory) }
+        let index = supportFolder.appending(path: "meetings.json")
+        let folder = (FileManager.default.fileExists(atPath: index.path) ? documents : home)
+            .appending(path: "Carbon", directoryHint: .isDirectory)
+        defaults.set(folder.path, forKey: key)
+        return folder
     }
 
     /// Writes a new Meeting's Markdown file and its entry in `meetings.json`. Returns the file's URL.

@@ -48,8 +48,9 @@ final class AppModel {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
-        let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
-            .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
+        let libraryFolder = Library.folder(
+            savedIn: .standard, key: SettingsKey.libraryFolder,
+            home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
         library = Library(folder: libraryFolder, supportFolder: support)
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
@@ -425,7 +426,7 @@ enum SettingsKey {
     static let autoTranscribe = "autoTranscribe"
     /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
     static let ignoredApps = "ignoredApps"
-    /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
+    /// The Library folder's path, saved on the first launch and changed by Settings' Change….
     static let libraryFolder = "libraryFolder"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"
