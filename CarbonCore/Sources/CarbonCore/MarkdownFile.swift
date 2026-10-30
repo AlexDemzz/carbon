@@ -17,8 +17,7 @@ enum MarkdownFile {
         } else {
             lines.append("participants:")
             for participant in meeting.participants {
-                let entry = participant.email.map { "\(participant.name) <\($0)>" } ?? participant.name
-                lines.append("  - \(yaml(entry))")
+                lines.append("  - \(yaml(item(participant)))")
             }
         }
         lines.append("---")
@@ -56,6 +55,11 @@ enum MarkdownFile {
         let lines = markdown.lines
         guard lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") else { return lines[...] }
         return lines[(end + 1)...]
+    }
+
+    /// A `participants` item as `participant(_:)` reads it back: `Name <email>`, or a bare name.
+    static func item(_ participant: Participant) -> String {
+        participant.email.map { "\(participant.name) <\($0)>" } ?? participant.name
     }
 
     /// A plain scalar when YAML reads it back unchanged, a double-quoted string otherwise.

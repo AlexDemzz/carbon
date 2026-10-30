@@ -32,6 +32,9 @@ struct MenuBarMenu: View {
             } else {
                 Text("since \(meeting.start.formatted(date: .omitted, time: .shortened))")
             }
+            if model.liveMeetingLanguages(meeting).count > 1 {
+                LiveMeetingLanguageMenu(model: model, meeting: meeting)
+            }
             Button("Stop") { model.stop() }
             Button("Discard") { model.discard() }
         case .finishing(let meeting):
@@ -40,7 +43,6 @@ struct MenuBarMenu: View {
         Divider()
         Button("Show Carbon") { model.showMainWindow() }
         Button("Reveal in Finder") { model.revealLibrary() }
-        MeetingLanguageMenu(model: model)
         Button("Check for Updates\u{2026}") { updater.checkForUpdates() }
         Button("Settings\u{2026}") {
             model.settingsTab = .general
@@ -54,37 +56,25 @@ struct MenuBarMenu: View {
     }
 }
 
-/// Meeting Language ▸, with a check on the live Meeting's language, or on the next Meeting's outside one,
-/// and Add Languages… last, which opens the Languages settings.
-private struct MeetingLanguageMenu: View {
+/// Meeting Language ▸ while transcribing, with a check on the live Meeting's: picking another re-transcribes it.
+private struct LiveMeetingLanguageMenu: View {
     let model: AppModel
-    @Environment(\.openSettings) private var openSettings
+    let meeting: LiveMeeting
 
     var body: some View {
         Menu("Meeting Language") {
             Picker(
                 "Meeting Language",
                 selection: Binding(
-                    get: { model.menuLanguage?.identifier(.bcp47) ?? "" },
-                    set: { id in model.chooseMeetingLanguage(Locale(identifier: Locale.identifier(.icu, from: id))) })
+                    get: { meeting.language.identifier(.bcp47) },
+                    set: { id in model.switchLanguage(to: Locale(identifier: Locale.identifier(.icu, from: id))) })
             ) {
-                ForEach(model.menuLanguages, id: \.self) { language in
+                ForEach(model.liveMeetingLanguages(meeting), id: \.self) { language in
                     Text(model.languageName(language)).tag(language.identifier(.bcp47))
                 }
             }
             .pickerStyle(.inline)
             .labelsHidden()
-            .disabled(isFinishing)
-            Divider()
-            Button("Add Languages\u{2026}") {
-                model.settingsTab = .languages
-                NSApp.activate()
-                openSettings()
-            }
         }
-    }
-
-    private var isFinishing: Bool {
-        if case .finishing = model.recorder.state { true } else { false }
     }
 }

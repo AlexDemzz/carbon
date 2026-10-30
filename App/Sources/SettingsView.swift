@@ -86,31 +86,41 @@ private struct GeneralSettings: View {
 }
 
 /// The Meeting Languages: a checkbox per language SpeechTranscriber supports, each checked one with its download
-/// state, and the default among the checked ones.
+/// state, and, with several checked, the one Meetings start in and whether Carbon identifies the one spoken.
 private struct LanguagesSettings: View {
     let model: AppModel
+    @AppStorage(SettingsKey.identifyMeetingLanguage) private var identifiesMeetingLanguage = true
 
     var body: some View {
         Form {
             if let languages = model.meetingLanguages {
-                Section {
-                    Picker("Default language", selection: defaultLanguage) {
-                        ForEach(languages.chosen, id: \.self) { language in
-                            Text(languages.name(of: language)).tag(language.identifier(.bcp47))
+                if languages.chosen.count > 1 {
+                    Section {
+                        Picker("Start Meetings in", selection: defaultLanguage) {
+                            ForEach(languages.chosen, id: \.self) { language in
+                                Text(languages.name(of: language)).tag(language.identifier(.bcp47))
+                            }
                         }
-                    }
-                } footer: {
-                    Text("Meetings start in the default language. Switch while transcribing from the menu bar or the notification.")
+                        Toggle("Identify the Meeting Language automatically", isOn: $identifiesMeetingLanguage)
+                    } footer: {
+                        Text(
+                            identifiesMeetingLanguage
+                                ? "From the first seconds of speech, Carbon identifies which checked language is spoken and transcribes the Meeting in it. If it can\u{2019}t tell, the Meeting stays in the language above. To change it during a Meeting, use the menu bar or the notification."
+                                : "Meetings are transcribed in the language above. To change it during a Meeting, use the menu bar or the notification."
+                        )
                         .foregroundStyle(.secondary)
+                    }
                 }
-                Section("Meeting Languages") {
+                Section {
                     ForEach(model.languageAssets.supported, id: \.self) { language in
-                        LanguageRow(
-                            name: Locale.current.localizedString(forIdentifier: language.identifier)
-                                ?? language.identifier(.bcp47),
-                            isChosen: chosen(language),
-                            canUncheck: languages.canUncheck(language),
-                            state: model.languageAssets.state(of: language))
+                        LanguageRow(model: model, language: language, languages: languages)
+                    }
+                } header: {
+                    Text("Languages You Speak in Meetings")
+                } footer: {
+                    if languages.chosen.count == 1 {
+                        Text("Check another language, and Carbon identifies which one each Meeting is spoken in.")
+                            .foregroundStyle(.secondary)
                     }
                 }
             } else {
@@ -128,29 +138,24 @@ private struct LanguagesSettings: View {
             get: { model.meetingLanguages?.defaultLanguage.identifier(.bcp47) ?? "" },
             set: { model.meetingLanguages?.defaultLanguage = Locale(identifier: Locale.identifier(.icu, from: $0)) })
     }
-
-    private func chosen(_ language: Locale) -> Binding<Bool> {
-        Binding(
-            get: { model.meetingLanguages?.isChosen(language) ?? false },
-            set: { model.meetingLanguages?.set(language, chosen: $0) })
-    }
 }
 
-private struct LanguageRow: View {
-    let name: String
-    @Binding var isChosen: Bool
-    let canUncheck: Bool
-    let state: MeetingLanguageAssets.State?
+/// A Meeting Language's checkbox and, once checked, its download state. Also the onboarding's Languages step's rows.
+struct LanguageRow: View {
+    let model: AppModel
+    let language: Locale
+    let languages: MeetingLanguages
 
     var body: some View {
+        let canUncheck = languages.canUncheck(language)
         HStack {
-            Toggle(name, isOn: $isChosen)
+            Toggle(Locale.current.localizedString(forIdentifier: language.identifier) ?? language.identifier(.bcp47), isOn: isChosen)
                 .toggleStyle(.checkbox)
                 .disabled(!canUncheck)
                 .help(canUncheck ? "" : "At least one language stays checked.")
                 .accessibilityHint(canUncheck ? "" : "At least one language stays checked.")
             Spacer()
-            if isChosen, let state {
+            if languages.isChosen(language), let state = model.languageAssets.state(of: language) {
                 switch state {
                 case .downloading:
                     Text("Downloading\u{2026}").foregroundStyle(.secondary)
@@ -164,6 +169,12 @@ private struct LanguageRow: View {
         }
         // One element: "English (United States), Ready", checkbox.
         .accessibilityElement(children: .combine)
+    }
+
+    private var isChosen: Binding<Bool> {
+        Binding(
+            get: { languages.isChosen(language) },
+            set: { model.meetingLanguages?.set(language, chosen: $0) })
     }
 }
 

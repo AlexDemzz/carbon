@@ -4,6 +4,7 @@ import SwiftUI
 /// Settings › Voice Prints: the voices Carbon remembers, and the switch that stops it remembering.
 struct VoicePrintsSettings: View {
     @Bindable var model: AppModel
+    @State private var editing: VoicePrint?
 
     private var prints: [VoicePrint] { model.library.voicePrints.prints }
 
@@ -19,7 +20,7 @@ struct VoicePrintsSettings: View {
             }
             Section {
                 List(prints) { print in
-                    VoicePrintRow(print: print) {
+                    VoicePrintRow(print: print, edit: print.owner ? nil : { editing = print }) {
                         model.deleteVoicePrint(print)
                         AccessibilityNotification.Announcement(
                             print.owner ? "Deleted your Voice Print" : "Deleted \(print.name)\u{2019}s Voice Print"
@@ -40,11 +41,14 @@ struct VoicePrintsSettings: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(item: $editing) { VoicePrintEditSheet(model: model, print: $0) }
     }
 }
 
 private struct VoicePrintRow: View {
     let print: VoicePrint
+    /// Nil for the person's own print, which isn't edited here.
+    let edit: (() -> Void)?
     let delete: () -> Void
 
     private var name: String { print.owner ? "You" : print.name }
@@ -63,10 +67,22 @@ private struct VoicePrintRow: View {
             }
             .accessibilityElement(children: .combine)
             Spacer()
+            if let edit {
+                Button("Edit \(name)", systemImage: "info.circle", action: edit)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .help("Edit Voice Print")
+            }
             Button("Delete \(name)", systemImage: "trash", role: .destructive, action: delete)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .help("Delete Voice Print")
+        }
+        .contentShape(.rect)
+        .onTapGesture(count: 2) { edit?() }
+        .contextMenu {
+            if let edit { Button("Edit\u{2026}", action: edit) }
+            Button("Delete", role: .destructive, action: delete)
         }
     }
 }

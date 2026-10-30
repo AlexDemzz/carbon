@@ -259,6 +259,10 @@ struct CallDetectorTests {
         PowerAssertion(app: teams, name: "call in progress", type: "PreventUserIdleSystemSleep", id: id)
     }
 
+    func webRTC(_ app: MeetingApp, id: Int = 3) -> PowerAssertion {
+        PowerAssertion(app: app, name: "WebRTC has active PeerConnections", type: "NoIdleSleepAssertion", id: id)
+    }
+
     /// Feeds one snapshot per second from `from` to `to` (seconds after t0). The assertions are polled on every
     /// second divisible by 3, as the SignalSampler does.
     func play(
@@ -294,11 +298,72 @@ struct CallDetectorTests {
     }
 
     @Test func aBrowserWebRTCAssertionStartsNothing() {
-        let webRTC = PowerAssertion(
-            app: chrome, name: "WebRTC has active PeerConnections", type: "NoIdleSleepAssertion", id: 3)
         var detector = Detector()
 
-        #expect(play(&detector, 1, 12, holders: [], assertions: [webRTC]).isEmpty)
+        #expect(play(&detector, 1, 12, holders: [], assertions: [webRTC(chrome)]).isEmpty)
+    }
+
+    @Test func aBrowserMeetingEnds10SecondsAfterItsWebRTCAssertionAndTheMicAreReleasedWhateverPlays() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 601, 2_000, lastSound: 612)
+
+        #expect(commands.map(\.0) == [15, 613], "the assertion is seen released on the 603 poll")
+        #expect(commands.map(\.1) == [.start(chrome), .end(.webRTCEnded)])
+    }
+
+    @Test func theWebRTCAssertionBackDuringTheGraceGivesTheNextReleaseAFreshGrace() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 601, 608, lastSound: 600)
+        commands += play(&detector, 609, 700, assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 701, 800, lastSound: 600)
+
+        #expect(commands.map(\.0) == [15, 712], "seen back on the 609 poll, released again on the 702 poll")
+        #expect(commands.map(\.1) == [.start(chrome), .end(.webRTCEnded)])
+    }
+
+    @Test func theMicBackDuringTheGraceGivesTheNextReleaseAFreshGrace() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 601, 604, lastSound: 600)
+        commands += play(&detector, 605, 700, holders: [chrome], lastSound: 600)
+        commands += play(&detector, 701, 800, lastSound: 600)
+
+        #expect(commands.map(\.0) == [15, 711])
+        #expect(commands.map(\.1) == [.start(chrome), .end(.webRTCEnded)])
+    }
+
+    @Test func aBrowserMeetingWhoseWebRTCAssertionStaysEndsOnTheSilenceRule() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 601, 2_000, assertions: [webRTC(chrome)], lastSound: 600)
+
+        #expect(commands.map(\.0) == [15, 1_201])
+        #expect(commands.map(\.1) == [.start(chrome), .end(.silence)])
+    }
+
+    @Test func aBrowserMeetingWhoseMicStaysHeldDoesNotEndWhenItsWebRTCAssertionIsReleased() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(chrome)], lastSound: 600)
+        commands += play(&detector, 601, 2_000, holders: [chrome], lastSound: 600)
+
+        #expect(commands.map(\.1) == [.start(chrome)])
+    }
+
+    @Test func anotherAppsWebRTCAssertionGoingDoesNotEndTheMeeting() {
+        let slack = MeetingApp(bundleID: "com.tinyspeck.slackmacgap", name: "Slack")
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 600, holders: [chrome], assertions: [webRTC(slack, id: 4)], lastSound: 600)
+        commands += play(&detector, 601, 1_000, lastSound: 1_000)
+
+        #expect(commands.map(\.1) == [.start(chrome)])
     }
 
     @Test func aCallEnds15SecondsAfterTheAssertionAndTheMicAreReleasedThen30SecondsOfSilence() {

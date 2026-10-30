@@ -49,6 +49,8 @@ public final class Recorder {
         case transcriptReady(id: UUID, title: String, file: URL)
         /// Another app's start signal during the live Meeting: offer "Switch to <app>".
         case switchOffered(SwitchOffer)
+        /// The live Meeting is spoken in another of the checked languages: it is re-transcribed in it.
+        case languageIdentified(LiveMeeting)
     }
 
     /// Another Meeting App wants the microphone while `meeting` is live.
@@ -92,6 +94,9 @@ public final class Recorder {
     public var detectionLanguage: Locale?
     /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
     public var autoTranscribe = true
+    /// The checked Meeting Languages a Meeting may turn out to be spoken in, read as each Meeting starts: those
+    /// whose assets are ready, or none when the person turned identification off.
+    @ObservationIgnored public var meetingLanguageCandidates: @MainActor () -> [Locale] = { [] }
     @ObservationIgnored public var onNotice: (@MainActor (Notice) -> Void)?
     /// A line for the diagnostic log, e.g. each Voice Print best distance.
     @ObservationIgnored public var onDiagnostic: (@MainActor (String) -> Void)?
@@ -105,6 +110,8 @@ public final class Recorder {
     private let diarizer: any Diarizer
     private let diarizationTimeout: @Sendable (TimeInterval) -> Duration
     private let summarizer: any Summarizer
+    private let languageClassifier: (any SpokenLanguageClassifier)?
+    private let speechGate: (any SpeechGate)?
     private let library: Library
     private let outputRoute: any OutputRouteSource
     private let keepAudio: @Sendable () -> Bool
@@ -119,6 +126,12 @@ public final class Recorder {
     var liveCapture: LiveCapture?
     /// The Meeting Language switch under way, which every end of the Meeting waits for.
     private var languageSwitch: Task<Void, any Error>?
+    /// The live Meeting's language identification, until it decides, gives up or the person picks a language.
+    private var languageIdentification: (meeting: UUID, identification: LanguageIdentification)?
+    /// The language the pending offer's Transcribe starts in.
+    private var offeredLanguage: Locale?
+    /// The last language identification started, which the next one waits for.
+    private var lastLanguageIdentification: LanguageIdentification?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
     private var filings: [UUID: Task<Void, Never>] = [:]
     /// The last time the stream that tells whether the Meeting is still going was not silent.
@@ -172,6 +185,8 @@ public final class Recorder {
         diarizer: any Diarizer,
         diarizationTimeout: @escaping @Sendable (TimeInterval) -> Duration = Recorder.diarizationTimeout(forAudio:),
         summarizer: any Summarizer = NoSummarizer(),
+        languageClassifier: (any SpokenLanguageClassifier)? = nil,
+        speechGate: (any SpeechGate)? = nil,
         library: Library,
         outputRoute: any OutputRouteSource = UnknownOutputRoute(),
         keepAudio: @escaping @Sendable () -> Bool = { false },
@@ -189,6 +204,8 @@ public final class Recorder {
         self.diarizer = diarizer
         self.diarizationTimeout = diarizationTimeout
         self.summarizer = summarizer
+        self.languageClassifier = languageClassifier
+        self.speechGate = speechGate
         self.library = library
         self.outputRoute = outputRoute
         self.keepAudio = keepAudio
@@ -226,11 +243,14 @@ public final class Recorder {
                         continue
                     }
                     try await begin(language: language, app: app, event: event, mode: .auto)
+                    onDiagnostic?("Detection started a Meeting on \(app.bundleID)")
                     if case .live(let meeting) = state { onNotice?(.started(meeting)) }
                 case .event(let event):
                     try retarget(to: event)
-                case .end:
-                    if liveCapture != nil { try await finishInBackground() }
+                case .end(let reason):
+                    guard liveCapture != nil else { continue }
+                    onDiagnostic?("Detection ended the Meeting: \(reason)")
+                    try await finishInBackground()
                 case .offerSwitch(let app):
                     guard case .live(let meeting) = state else { continue }
                     onNotice?(.switchOffered(
@@ -240,6 +260,7 @@ public final class Recorder {
                         detector.offerDeclined(at: snapshot.time)
                         continue
                     }
+                    offeredLanguage = language
                     onNotice?(.offered(Offer(
                         app: app, title: title(of: event, startingAt: now()),
                         provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))),
@@ -265,9 +286,12 @@ public final class Recorder {
     public var pendingOffer: MeetingApp? { detector.pendingOffer }
 
     /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
+    /// Transcribe in <language> is the person's choice, so that Meeting's language is never identified.
     public func acceptOffer(language: Locale) async throws {
         guard liveCapture == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
-        try await begin(language: language, app: app, event: event, mode: .auto)
+        let chosen = language.identifier(.bcp47) != offeredLanguage?.identifier(.bcp47)
+        try await begin(language: language, app: app, event: event, mode: .auto, identifies: !chosen)
+        onDiagnostic?("Detection started a Meeting on \(app.bundleID) from its offer")
     }
 
     /// The offer was dismissed: its app is not offered again for 10 min.
@@ -306,6 +330,7 @@ public final class Recorder {
         try? await languageSwitch?.value
         guard let liveCapture else { return }
         detector.meetingStopped()
+        stopIdentifyingLanguage()
         liveCapture.routeWatch?.cancel()
         for stream in [liveCapture.me, liveCapture.them] { await stream.tearDown() }
         liveCapture.folder.remove()
@@ -314,11 +339,12 @@ public final class Recorder {
     }
 
     private func begin(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
+        identifies: Bool = true
     ) async throws {
         guard liveCapture == nil else { throw Failure.notIdle }
         do {
-            try await open(language: language, app: app, event: event, mode: mode)
+            try await open(language: language, app: app, event: event, mode: mode, identifies: identifies)
         } catch {
             detector.meetingStopped()
             throw error
@@ -326,7 +352,8 @@ public final class Recorder {
     }
 
     private func open(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
+        identifies: Bool
     ) async throws {
         guard systemAudioPermission() != .denied else { throw Failure.systemAudioRecordingDenied }
         var meeting = LiveMeeting(id: makeID(), title: "", start: now(), language: language, app: app)
@@ -341,12 +368,14 @@ public final class Recorder {
             opened.append(me)
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
             opened.append(them)
+            let identification = identifies ? identifyLanguage(of: meeting.id, startingIn: language) : nil
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
-            try capture(me, tracksSound: app == nil)
-            try capture(them, tracksSound: app != nil)
+            try capture(me, as: .me, tracksSound: app == nil, identification: identification)
+            try capture(them, as: .them, tracksSound: app != nil, identification: identification)
             liveCapture = LiveCapture(
                 meeting: meeting, folder: folder, mode: mode, me: me, them: them, routeWatch: watchRoute(of: meeting.id))
         } catch {
+            stopIdentifyingLanguage()
             for stream in opened { await stream.tearDown() }
             folder.remove()
             state = .idle
@@ -394,10 +423,17 @@ public final class Recorder {
             event: meeting.event, micIsolated: micIsolated)
     }
 
+    /// The person changes the live Meeting's Meeting Language, which also ends its language identification: Carbon
+    /// never overrides their choice. See `changeLanguage(to:)`.
+    public func switchLanguage(to language: Locale) async throws {
+        stopIdentifyingLanguage()
+        try await changeLanguage(to: language)
+    }
+
     /// Changes the live Meeting's Meeting Language: a new pair of sessions in `language` hears both streams again
     /// from the start, then goes on live, and the old pair's words are dropped. The file is written entirely in
     /// `language`. If the new sessions can't start, the Meeting goes on in its old language and this throws.
-    public func switchLanguage(to language: Locale) async throws {
+    private func changeLanguage(to language: Locale) async throws {
         try? await languageSwitch?.value
         guard liveCapture != nil, case .live(let meeting) = state else { throw Failure.notLive }
         guard language != meeting.language else { return }
@@ -405,6 +441,55 @@ public final class Recorder {
         languageSwitch = task
         defer { if languageSwitch == task { languageSwitch = nil } }
         try await task.value
+    }
+
+    /// Starts identifying the language of the Meeting starting in `language`, when there are at least two checked
+    /// languages the classifier tells apart. Nil otherwise: the model is never loaded.
+    private func identifyLanguage(of id: UUID, startingIn language: Locale) -> LanguageIdentification? {
+        guard let languageClassifier, let speechGate,
+            let vote = LanguageVote(
+                candidates: [language] + meetingLanguageCandidates(), labels: languageClassifier.labels)
+        else { return nil }
+        let identification = LanguageIdentification(
+            vote: vote, speechGate: speechGate, classifier: languageClassifier, after: lastLanguageIdentification
+        ) { [weak self] outcome in
+            await self?.identified(outcome, meeting: id)
+        }
+        languageIdentification = (id, identification)
+        lastLanguageIdentification = identification
+        return identification
+    }
+
+    /// Acts on the identification's one outcome: a decision for another language re-transcribes the Meeting in it.
+    private func identified(_ outcome: Result<LanguageVote.Outcome, any Error>, meeting id: UUID) async {
+        guard languageIdentification?.meeting == id, case .live(let meeting) = state else { return }
+        languageIdentification = nil
+        let current = MeetingFormat.bcp47(meeting.language)
+        switch outcome {
+        case .success(.decided(let language)) where MeetingFormat.bcp47(language) != current:
+            onDiagnostic?("Meeting Language identified as \(MeetingFormat.bcp47(language)), switching from \(current)")
+            do {
+                try await changeLanguage(to: language)
+                if case .live(let switched) = state, switched.id == id { onNotice?(.languageIdentified(switched)) }
+            } catch {
+                onDiagnostic?("Couldn't switch to the identified Meeting Language: \(error.localizedDescription)")
+            }
+        case .success(.decided):
+            onDiagnostic?("Meeting Language identified as \(current), the one the Meeting started in")
+        case .success(.gaveUp):
+            onDiagnostic?(
+                "Meeting Language not identified within \(Int(LanguageVote.maximumSpeech)) s of speech or "
+                    + "\(LanguageVote.maximumWindows) windows: it stays \(current)")
+        case .success(.undecided):
+            break
+        case .failure(let error):
+            onDiagnostic?("Meeting Language identification failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopIdentifyingLanguage() {
+        languageIdentification?.identification.stop()
+        languageIdentification = nil
     }
 
     private func handStreams(of id: UUID, to language: Locale) async throws {
@@ -493,6 +578,7 @@ public final class Recorder {
         let end = now()
         state = .finishing(meeting)
         liveCapture = nil
+        stopIdentifyingLanguage()
         capture.routeWatch?.cancel()
         // Both captures stop whatever happens to the other: a failed Me must not leave the call's tap running.
         var failure: (any Error)?
@@ -714,13 +800,20 @@ public final class Recorder {
                 naming.labels[letter] = TranscriptBuilder.me
                 continue
             }
-            naming.speakers[position].label = print.name
-            naming.speakers[position].name = print.name
-            naming.labels[letter] = print.name
-            naming.heard.append((print.id, cluster.centroid))
-            if !naming.participants.contains(where: { $0.name.caseInsensitiveCompare(print.name) == .orderedSame }) {
-                naming.participants.append(Participant(name: print.name, email: print.email))
+            // The Speaker takes the name of the Participant who is this person: a calendar name over the print's,
+            // and the print's for a Participant known only by email.
+            let label: String
+            if let participant = naming.participants.firstIndex(ofPerson: print.person) {
+                naming.participants[participant] = naming.participants[participant].merging(print.person)
+                label = TranscriptBuilder.label(forName: naming.participants[participant].name) ?? print.name
+            } else {
+                naming.participants.append(print.person)
+                label = print.name
             }
+            naming.speakers[position].label = label
+            naming.speakers[position].name = label
+            naming.labels[letter] = label
+            naming.heard.append((print.id, cluster.centroid))
         }
     }
 
@@ -758,13 +851,16 @@ public final class Recorder {
         return Stream(source: source, session: session, recorder: try StreamRecorder(session: session, cafFile: file))
     }
 
-    private func capture(_ stream: Stream, tracksSound: Bool) throws {
+    private func capture(
+        _ stream: Stream, as kind: AudioStream, tracksSound: Bool, identification: LanguageIdentification?
+    ) throws {
         let recorder = stream.recorder
         let lastSound = tracksSound ? lastSound : nil
         let now = now
         try stream.source.start { buffer in
             if let lastSound, SoundLevel.isSound(buffer) { lastSound.value = now() }
             recorder.append(buffer)
+            identification?.hear(buffer, on: kind)
         }
     }
 }

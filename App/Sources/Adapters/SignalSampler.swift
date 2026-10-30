@@ -144,8 +144,7 @@ final class SignalSampler: SignalSource {
                 state.lastAssertionPoll = now
                 return true
             }
-            guard due else { return nil }
-            let assertions = PowerAssertions.all()
+            guard due, let assertions = PowerAssertions.all() else { return nil }
             var seen = false
             for assertion in assertions {
                 guard let kind = vendorTable.kind(of: assertion) else { continue }

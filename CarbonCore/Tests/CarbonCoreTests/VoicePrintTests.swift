@@ -201,6 +201,30 @@ struct VoicePrintTests {
         #expect(try speakers(library).map(\.voicePrintId) == [samPrint])
     }
 
+    @Test func namingASpeakerAfterTheEmailOfARememberedPersonUpdatesTheirPrintWhateverTheName() throws {
+        try rememberSam()
+        let library = makeLibrary()
+        try createMeeting(library, speaker: speakerA())
+
+        try library.renameSpeaker(id, label: "Speaker A", name: "sam@example.com", email: "SAM@example.com")
+
+        #expect(library.voicePrints.prints.map { "\($0.name) \($0.meetings)" } == ["Sam Rivera 3"])
+        #expect(try speakers(library).map(\.voicePrintId) == [samPrint])
+    }
+
+    @Test func renamingAnAutoMatchedSpeakerAfterTheSamePersonsEmailKeepsTheLink() throws {
+        try rememberSam()
+        let library = makeLibrary()
+        try createMeeting(library, speaker: MeetingIndex.Speaker(
+            label: "Sam Rivera", cluster: "A", name: "Sam Rivera", voicePrintId: samPrint, match: .auto,
+            speechSeconds: 12.5, centroid: voice))
+
+        try library.renameSpeaker(id, label: "Sam Rivera", name: "sam@example.com", email: "sam@example.com")
+
+        #expect(library.voicePrints.prints.map { "\($0.name) \($0.meetings)" } == ["Sam Rivera 2"])
+        #expect(try speakers(library).map(\.voicePrintId) == [samPrint])
+    }
+
     @Test func renamingAnAutoMatchedSpeakerMovesTheLinkAndLeavesTheFirstPrintsName() throws {
         try rememberSam()
         let library = makeLibrary()

@@ -30,11 +30,12 @@ final class AppModel {
     @ObservationIgnored private var onboardingPending = false
     @ObservationIgnored private var libraryWatcher: FolderWatcher?
     @ObservationIgnored let notifier = Notifier()
-    /// Settings › Languages. Nil until launch has found the system's language, on the very first launch.
+    /// Settings › Languages. Nil on the very first launch until `loadMeetingLanguages()` seeds it from the Mac's languages.
     var meetingLanguages: MeetingLanguages? {
         didSet { meetingLanguagesChanged(from: oldValue) }
     }
     let languageAssets = MeetingLanguageAssets()
+    @ObservationIgnored var meetingLanguagesLoad: Task<Void, Never>?
     /// The last "Switch to <app>" offer posted, which its banner's action refers to.
     @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
 
@@ -47,8 +48,9 @@ final class AppModel {
         let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = applicationSupport.appending(path: "Carbon")
-        let libraryFolder = UserDefaults.standard.string(forKey: SettingsKey.libraryFolder)
-            .map { URL(filePath: $0, directoryHint: .isDirectory) } ?? documents.appending(path: "Carbon")
+        let libraryFolder = Library.folder(
+            savedIn: .standard, key: SettingsKey.libraryFolder,
+            home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
         library = Library(folder: libraryFolder, supportFolder: support)
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
@@ -59,6 +61,8 @@ final class AppModel {
             transcriber: SpeechTranscriberAdapter(),
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
+            languageClassifier: CoreMLLanguageClassifier(),
+            speechGate: CoreMLSpeechGate(),
             library: library,
             outputRoute: CoreAudioOutputRoute(),
             keepAudio: { UserDefaults.standard.bool(forKey: SettingsKey.keepAudio) },
@@ -67,12 +71,15 @@ final class AppModel {
         try? fileManager.createDirectory(at: library.folder, withIntermediateDirectories: true)
         reconcileLibrary()
         watchLibrary()
-        UserDefaults.standard.register(defaults: [SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true])
+        UserDefaults.standard.register(defaults: [
+            SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true, SettingsKey.identifyMeetingLanguage: true,
+        ])
         library.recognizesVoices = UserDefaults.standard.bool(forKey: SettingsKey.recognizeVoices)
         recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
         recorder.autoTranscribe = UserDefaults.standard.bool(forKey: SettingsKey.autoTranscribe)
         recorder.ignoredApps = Set(UserDefaults.standard.stringArray(forKey: SettingsKey.ignoredApps) ?? [])
         recorder.onNotice = { [weak self] notice in self?.announce(notice) }
+        recorder.meetingLanguageCandidates = { [weak self] in self?.meetingLanguageCandidates ?? [] }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
         Task {
             if FirstLaunch.run() { showOnboarding() }
@@ -127,6 +134,8 @@ final class AppModel {
         case .switchOffered(let offer):
             switchOffer = offer
             notifier.postSwitchOffer(offer)
+        case .languageIdentified(let meeting):
+            meetingLanguageChanged(meeting)
         }
     }
 
@@ -322,6 +331,19 @@ final class AppModel {
         }
     }
 
+    /// "Same Person As": `source` and `target` become one participant of the Meeting, and so do their Voice Prints.
+    func mergeParticipant(_ meeting: ListedMeeting, _ source: Participant, into target: Participant) {
+        perform("Carbon couldn't merge the participants") {
+            try library.mergeParticipant(meeting.id, source, into: target)
+        }
+    }
+
+    func editParticipant(_ meeting: ListedMeeting, _ participant: Participant, name: String, email: String) {
+        perform("Carbon couldn't edit the participant") {
+            try library.editParticipant(meeting.id, participant, name: name, email: email)
+        }
+    }
+
     func delete(_ meeting: ListedMeeting) {
         let list = library.meetings
         perform("Carbon couldn't delete the Meeting") {
@@ -353,10 +375,7 @@ final class AppModel {
                 guard await MicrophoneSource.requestAccess() else {
                     throw AppError.microphoneDenied
                 }
-                guard let language = await nextMeetingLanguage() else {
-                    throw AppError.languageUnsupported(Locale.current)
-                }
-                try await recorder.start(language: language)
+                try await recorder.start(language: await nextMeetingLanguage())
             } catch Recorder.Failure.systemAudioRecordingDenied {
                 present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
             } catch {
@@ -407,10 +426,12 @@ enum SettingsKey {
     static let autoTranscribe = "autoTranscribe"
     /// The person's Ignored Apps, bundle IDs, sorted. Settings › Ignored Apps and the offer's Never edit them.
     static let ignoredApps = "ignoredApps"
-    /// The Library folder's path, when the person moved it away from `~/Documents/Carbon`.
+    /// The Library folder's path, saved on the first launch and changed by Settings' Change….
     static let libraryFolder = "libraryFolder"
     /// Settings › Languages, a JSON `MeetingLanguages`.
     static let meetingLanguages = "meetingLanguages"
+    /// "Identify the Meeting Language automatically", on by default. Read as each Meeting starts.
+    static let identifyMeetingLanguage = "identifyMeetingLanguage"
     /// "Recognize voices", on by default.
     static let recognizeVoices = "recognizeVoices"
 }
@@ -418,7 +439,6 @@ enum SettingsKey {
 enum AppError: LocalizedError {
     case microphoneDenied
     case systemAudioRecordingDenied
-    case languageUnsupported(Locale)
 
     var errorDescription: String? {
         switch self {
@@ -426,8 +446,6 @@ enum AppError: LocalizedError {
             "Carbon needs microphone access. Allow it in System Settings › Privacy & Security › Microphone."
         case .systemAudioRecordingDenied:
             "Carbon needs System Audio Recording access to hear the other participants. Allow it in System Settings › Privacy & Security › Screen & System Audio Recording."
-        case .languageUnsupported(let locale):
-            "On-device transcription doesn't support \(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)."
         }
     }
 }
