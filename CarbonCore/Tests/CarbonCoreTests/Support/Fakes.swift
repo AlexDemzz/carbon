@@ -124,6 +124,11 @@ final class ReplayTranscriber: Transcriber {
             frames.withLock { $0 += AVAudioFramePosition(buffer.frameLength) }
         }
 
+        func skip(_ duration: TimeInterval) {
+            frames.withLock { $0 += AVAudioFramePosition((duration * audioFormat.sampleRate).rounded()) }
+        }
+
+        /// The stream heard or skipped so far.
         var seconds: Double { Double(frames.withLock { $0 }) / audioFormat.sampleRate }
 
         func finish() async throws -> [TranscribedWord] {
