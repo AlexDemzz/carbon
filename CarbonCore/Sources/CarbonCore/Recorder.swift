@@ -280,9 +280,11 @@ public final class Recorder {
     public var pendingOffer: MeetingApp? { detector.pendingOffer }
 
     /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
+    /// Transcribe in <language> is the person's choice, so that Meeting's language is never identified.
     public func acceptOffer(language: Locale) async throws {
         guard liveCapture == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
-        try await begin(language: language, app: app, event: event, mode: .auto)
+        let chosen = language.identifier(.bcp47) != detectionLanguage?.identifier(.bcp47)
+        try await begin(language: language, app: app, event: event, mode: .auto, identifies: !chosen)
     }
 
     /// The offer was dismissed: its app is not offered again for 10 min.
@@ -330,11 +332,12 @@ public final class Recorder {
     }
 
     private func begin(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
+        identifies: Bool = true
     ) async throws {
         guard liveCapture == nil else { throw Failure.notIdle }
         do {
-            try await open(language: language, app: app, event: event, mode: mode)
+            try await open(language: language, app: app, event: event, mode: mode, identifies: identifies)
         } catch {
             detector.meetingStopped()
             throw error
@@ -342,7 +345,8 @@ public final class Recorder {
     }
 
     private func open(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
+        identifies: Bool
     ) async throws {
         guard systemAudioPermission() != .denied else { throw Failure.systemAudioRecordingDenied }
         var meeting = LiveMeeting(id: makeID(), title: "", start: now(), language: language, app: app)
@@ -357,7 +361,7 @@ public final class Recorder {
             opened.append(me)
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
             opened.append(them)
-            let identification = identifyLanguage(of: meeting.id, startingIn: language)
+            let identification = identifies ? identifyLanguage(of: meeting.id, startingIn: language) : nil
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, as: .me, tracksSound: app == nil, identification: identification)
             try capture(them, as: .them, tracksSound: app != nil, identification: identification)
