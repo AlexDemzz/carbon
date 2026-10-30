@@ -21,7 +21,7 @@ Each run lasts 150 s from 60 s into the recording. The CPU time of every process
 |---|---|---|---|---|
 | Call (`presentation`, 60% of the call channel is digital silence) | before | 5.9% | 7.1% | **13.0%** |
 | | no volatile results | 2.8% | 5.0% | 7.8% |
-| | + 100 ms feeding | 1.7–2.3% | 4.1–4.5% | 4.1–6.1% |
+| | + 100 ms feeding | 1.7% | 4.5% | 6.1% |
 | | + skip digital silence | 2.2% | 4.5% | **6.8%** (a stretch where the call talks) |
 | Meeting room (`meeting-oct-29`, the call channel is 100% zeros) | before | 5.8% | 6.8% | **12.6%** |
 | | after all three | 2.2% | 2.6% | **4.7%** |
