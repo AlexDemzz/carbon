@@ -35,7 +35,7 @@ struct CarbonApp: App {
         MenuBarExtra(isInserted: .constant(appIconPlacement.showsInMenuBar)) {
             MenuBarMenu(model: model, updater: updater)
         } label: {
-            MenuBarGlyph(isLive: model.isLive)
+            MenuBarGlyph(isLive: model.isLive, language: model.liveMeetingLanguageBadge)
                 .modifier(HandsOpenWindowToModel(model: model))
         }
         .menuBarExtraStyle(.menu)

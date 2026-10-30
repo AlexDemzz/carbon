@@ -61,11 +61,17 @@ extension AppModel {
         return MeetingLanguages.listed(chosen + [meeting.language])
     }
 
+    /// The menu bar's badge while transcribing: the live Meeting's language, "FR".
+    var liveMeetingLanguageBadge: String? {
+        guard case .live(let meeting) = recorder.state else { return nil }
+        return (meetingLanguages ?? MeetingLanguages(default: meeting.language)).abbreviation(of: meeting.language)
+    }
+
     func languageName(_ language: Locale) -> String {
         meetingLanguages?.name(of: language) ?? Notifier.languageName(language)
     }
 
-    /// Re-transcribes the live Meeting from the start in `language`. The start banner then says the new language.
+    /// Re-transcribes the live Meeting from the start in `language`. The menu bar then shows the new language.
     func switchLanguage(to language: Locale) {
         Task {
             do {
@@ -79,7 +85,6 @@ extension AppModel {
 
     /// The live Meeting is now transcribed in another language, picked by the person or identified.
     func meetingLanguageChanged(_ meeting: LiveMeeting) {
-        notifier.restateStarted(meeting, languages: meetingLanguages)
         AccessibilityNotification.Announcement("Transcribing in \(languageName(meeting.language))").post()
     }
 }
