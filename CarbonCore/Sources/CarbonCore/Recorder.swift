@@ -446,12 +446,19 @@ public final class Recorder {
     /// Starts identifying the language of the Meeting starting in `language`, when there are at least two checked
     /// languages the classifier tells apart. Nil otherwise: the model is never loaded.
     private func identifyLanguage(of id: UUID, startingIn language: Locale) -> LanguageIdentification? {
-        guard let languageClassifier, let speechGate,
-            let vote = LanguageVote(
-                candidates: [language] + meetingLanguageCandidates(), labels: languageClassifier.labels)
-        else { return nil }
+        guard let languageClassifier, let speechGate else { return nil }
+        let candidates = [language] + meetingLanguageCandidates()
+        let listed = candidates.map(MeetingFormat.bcp47).joined(separator: ", ")
+        guard let vote = LanguageVote(candidates: candidates, labels: languageClassifier.labels) else {
+            onDiagnostic?("Meeting Language not identified: nothing to tell apart among \(listed)")
+            return nil
+        }
+        onDiagnostic?("Identifying the Meeting Language among \(listed)")
         let identification = LanguageIdentification(
-            vote: vote, speechGate: speechGate, classifier: languageClassifier, after: lastLanguageIdentification
+            vote: vote, speechGate: speechGate, classifier: languageClassifier, after: lastLanguageIdentification,
+            onStopped: { [weak self] vote in
+                self?.onDiagnostic?("Meeting Language not identified before it was stopped: \(vote.standing)")
+            }
         ) { [weak self] outcome in
             await self?.identified(outcome, meeting: id)
         }

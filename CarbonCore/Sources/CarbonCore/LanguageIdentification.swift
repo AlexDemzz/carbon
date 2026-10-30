@@ -34,10 +34,12 @@ final class LanguageIdentification: Sendable {
     private let task = Mutex<Task<Void, Never>?>(nil)
 
     /// `onOutcome` gets the vote's decision, or `gaveUp`, or the gate's or the classifier's failure; never after
-    /// `stop()`. The chunks heard while `previous` finishes wait for it.
+    /// `stop()`, which hands `onStopped` the undecided vote instead. The chunks heard while `previous` finishes wait
+    /// for it.
     init(
         vote: LanguageVote, speechGate: any SpeechGate, classifier: any SpokenLanguageClassifier,
         after previous: LanguageIdentification?,
+        onStopped: @escaping @MainActor @Sendable (LanguageVote) -> Void = { _ in },
         onOutcome: @escaping @MainActor @Sendable (Result<LanguageVote.Outcome, any Error>) async -> Void
     ) {
         let (stream, chunks) = AsyncStream<(stream: AudioStream, audio: [Float])>.makeStream()
@@ -71,7 +73,11 @@ final class LanguageIdentification: Sendable {
             chunks.finish()
             await classifier.release()
             await speechGate.release()
-            if let outcome, !stopped { await onOutcome(outcome) }
+            if let outcome, !stopped {
+                await onOutcome(outcome)
+            } else if outcome == nil {
+                await onStopped(vote)
+            }
         }
         self.task.withLock { $0 = task }
     }
