@@ -135,9 +135,7 @@ struct MeetingPanel: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
-                if !meeting.participants.isEmpty {
-                    ParticipantTokens(model: model, meeting: meeting)
-                }
+                MeetingHeader(model: model, meeting: meeting)
                 Text("Transcript")
                     .font(.title3.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
@@ -147,12 +145,12 @@ struct MeetingPanel: View {
             }
             .frame(maxWidth: 520, alignment: .leading)
             .padding(.horizontal, 24)
-            .padding(.vertical, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // An editable title: double-click it in the title bar to rename the Meeting.
         .navigationTitle(Binding(get: { meeting.title }, set: { model.rename(meeting, to: $0) }))
-        .navigationSubtitle(meeting.titleBarDetails(in: .current))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit", systemImage: "square.and.pencil") { model.edit(meeting) }
