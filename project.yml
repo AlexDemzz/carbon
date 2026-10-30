@@ -34,6 +34,9 @@ targets:
       - path: App/LanguageIdentificationModel
         type: folder
         buildPhase: resources
+      - path: App/SpeechGateModel
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: CarbonCore
       - package: Sparkle
