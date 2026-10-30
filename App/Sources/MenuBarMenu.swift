@@ -40,7 +40,6 @@ struct MenuBarMenu: View {
         Divider()
         Button("Show Carbon") { model.showMainWindow() }
         Button("Reveal in Finder") { model.revealLibrary() }
-        MeetingLanguageMenu(model: model)
         Button("Check for Updates\u{2026}") { updater.checkForUpdates() }
         Button("Settings\u{2026}") {
             model.settingsTab = .general
@@ -51,40 +50,5 @@ struct MenuBarMenu: View {
         Divider()
         Button("Quit Carbon") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
-    }
-}
-
-/// Meeting Language ▸, with a check on the live Meeting's language, or on the next Meeting's outside one,
-/// and Add Languages… last, which opens the Languages settings.
-private struct MeetingLanguageMenu: View {
-    let model: AppModel
-    @Environment(\.openSettings) private var openSettings
-
-    var body: some View {
-        Menu("Meeting Language") {
-            Picker(
-                "Meeting Language",
-                selection: Binding(
-                    get: { model.menuLanguage?.identifier(.bcp47) ?? "" },
-                    set: { id in model.chooseMeetingLanguage(Locale(identifier: Locale.identifier(.icu, from: id))) })
-            ) {
-                ForEach(model.menuLanguages, id: \.self) { language in
-                    Text(model.languageName(language)).tag(language.identifier(.bcp47))
-                }
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-            .disabled(isFinishing)
-            Divider()
-            Button("Add Languages\u{2026}") {
-                model.settingsTab = .languages
-                NSApp.activate()
-                openSettings()
-            }
-        }
-    }
-
-    private var isFinishing: Bool {
-        if case .finishing = model.recorder.state { true } else { false }
     }
 }

@@ -8,4 +8,4 @@ Apple has no public spoken language identification API (docs/research/language-d
 - One decision per Meeting: a real change of language mid-Meeting is not followed, because the switch re-transcribes the whole Meeting in one language.
 - The classifier judges accent, not words: English spoken with a strong French accent can be identified as French. The thresholds stay conservative until they are calibrated on recorded Meetings, and the native SpeechTranscriber race remains the candidate tie-breaker.
 - A language the person did not check is never identified, and a Meeting whose language stays unclear keeps the language it started in.
-- The person's choice from the menu or the notification ends identification for that Meeting.
+- The person's choice from the notification ends identification for that Meeting.

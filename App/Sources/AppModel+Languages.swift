@@ -52,33 +52,8 @@ extension AppModel {
         return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
     }
 
-    /// The language the Meeting Language submenu checks: the live Meeting's, or the next Meeting's.
-    var menuLanguage: Locale? {
-        switch recorder.state {
-        case .live(let meeting), .finishing(let meeting): meeting.language
-        case .idle: meetingLanguages?.defaultLanguage
-        }
-    }
-
-    /// The submenu's languages: the checked ones, plus the live Meeting's if it was unchecked since.
-    var menuLanguages: [Locale] {
-        let chosen = meetingLanguages?.chosen ?? []
-        guard let current = menuLanguage, !chosen.contains(where: { $0.identifier(.bcp47) == current.identifier(.bcp47) })
-        else { return chosen }
-        return MeetingLanguages.listed(chosen + [current])
-    }
-
     func languageName(_ language: Locale) -> String {
         meetingLanguages?.name(of: language) ?? Notifier.languageName(language)
-    }
-
-    /// The submenu's choice: while live, re-transcribes the Meeting in it; otherwise, the next Meeting starts in it.
-    func chooseMeetingLanguage(_ language: Locale) {
-        switch recorder.state {
-        case .live: switchLanguage(to: language)
-        case .idle: meetingLanguages?.defaultLanguage = language
-        case .finishing: break
-        }
     }
 
     /// Re-transcribes the live Meeting from the start in `language`. The start banner then says the new language.
