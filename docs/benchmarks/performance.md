@@ -39,7 +39,18 @@ BENCH_SILENT_THEM=1 scripts/bench/run.sh <meeting>.m4a       # the call replaced
 - **Carbon**: the Bench process, which runs everything Carbon's app runs while transcribing.
 - **localspeechrecognition**: Apple's daemon that runs SpeechTranscriber's model. Activity Monitor doesn't show it under Carbon, but it works only for Carbon here, so the total counts it.
 
-"Before" is `main` at 0.3.1. "After" is 0.4.0 (PR #26). To measure "before" again, check out the four files PR #26 changed (`SpeechTranscriberAdapter.swift`, `StreamRecorder.swift`, `Ports.swift`, `SoundLevel.swift`) at their earlier version.
+"Before" is 0.3.1. "After" is 0.4.0 (PR #26). To measure "before" again on 0.4.0, undo PR #26's two behaviors and keep everything else, the mic meter included:
+
+```diff
+ App/Sources/Adapters/SpeechTranscriberAdapter.swift
+-            locale: locale, transcriptionOptions: [], reportingOptions: [],
++            locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
+ CarbonCore/Sources/CarbonCore/StreamRecorder.swift, in append(_:)
+-                    try Self.batch(converted, into: &state)
++                    try Self.feed(converted, to: &state)
+```
+
+The second line alone undoes both the 100 ms feeding and the silence skipping.
 
 **Not counted**: the audio capture itself (AVAudioEngine, the process tap), the menu bar meter (measured in `../research/menu-bar-mic-meter-performance.md`), coreaudiod and WindowServer.
 
