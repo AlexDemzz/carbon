@@ -1,3 +1,4 @@
+import CarbonCore
 import AppKit
 import Speech
 import SwiftUI
@@ -35,7 +36,7 @@ struct CarbonApp: App {
         MenuBarExtra(isInserted: .constant(appIconPlacement.showsInMenuBar)) {
             MenuBarMenu(model: model, updater: updater)
         } label: {
-            MenuBarGlyph(isLive: model.isLive, language: model.liveMeetingLanguageBadge)
+            MenuBarGlyph(isLive: model.isLive, language: model.liveMeetingLanguage)
                 .modifier(HandsOpenWindowToModel(model: model))
         }
         .menuBarExtraStyle(.menu)
@@ -103,13 +104,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch model.recorder.state {
         case .idle:
             menu.addItem(ActionMenuItem("Start Transcribing") { model.start() })
-        case .live:
+        case .live(let meeting):
+            if model.liveMeetingLanguages(meeting).count > 1 {
+                menu.addItem(Self.meetingLanguageItem(meeting, model: model))
+            }
             menu.addItem(ActionMenuItem("Stop") { model.stop() })
             menu.addItem(ActionMenuItem("Discard") { model.discard() })
         case .finishing:
             return nil
         }
         return menu
+    }
+
+    /// Meeting Language ▸ with a check on the live Meeting's, as in the menu bar menu.
+    @MainActor private static func meetingLanguageItem(_ meeting: LiveMeeting, model: AppModel) -> NSMenuItem {
+        let submenu = NSMenu()
+        for language in model.liveMeetingLanguages(meeting) {
+            let item = ActionMenuItem(model.languageName(language)) { model.switchLanguage(to: language) }
+            item.state = language.identifier(.bcp47) == meeting.language.identifier(.bcp47) ? .on : .off
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: "Meeting Language", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
     }
 }
 

@@ -61,10 +61,11 @@ extension AppModel {
         return MeetingLanguages.listed(chosen + [meeting.language])
     }
 
-    /// The menu bar's badge while transcribing: the live Meeting's language, "FR".
-    var liveMeetingLanguageBadge: String? {
+    /// The live Meeting's language for the menu bar: its badge, "FR", and its name, "French".
+    var liveMeetingLanguage: (badge: String, name: String)? {
         guard case .live(let meeting) = recorder.state else { return nil }
-        return (meetingLanguages ?? MeetingLanguages(default: meeting.language)).abbreviation(of: meeting.language)
+        let languages = meetingLanguages ?? MeetingLanguages(default: meeting.language)
+        return (languages.abbreviation(of: meeting.language), languageName(meeting.language))
     }
 
     func languageName(_ language: Locale) -> String {
