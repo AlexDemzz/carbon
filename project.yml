@@ -12,7 +12,10 @@ packages:
     exactVersion: 2.10.1
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
-    exactVersion: 0.17.7
+    exactVersion: 0.18.0
+    # Xcode enables only the traits listed here: diarization, without TTS or NeMo text normalization.
+    traits:
+      - Diarizer
 settings:
   base:
     SWIFT_VERSION: "6.0"
