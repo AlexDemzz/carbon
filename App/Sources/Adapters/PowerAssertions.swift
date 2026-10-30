@@ -3,11 +3,11 @@ import Foundation
 import IOKit.pwr_mgt
 
 /// The power assertions every process holds, from `IOPMCopyAssertionsByProcess()`: one Mach round trip to `powerd`
-/// (about 0.1 ms), so it is polled, off the main thread.
+/// (about 0.1 ms), so it is polled, off the main thread. Nil when the read fails: never read as "all released".
 enum PowerAssertions {
-    static func all() -> [PowerAssertion] {
+    static func all() -> [PowerAssertion]? {
         var copied: Unmanaged<CFDictionary>?
-        guard IOPMCopyAssertionsByProcess(&copied) == kIOReturnSuccess, let copied else { return [] }
+        guard IOPMCopyAssertionsByProcess(&copied) == kIOReturnSuccess, let copied else { return nil }
         let byPID = copied.takeRetainedValue() as NSDictionary
         var assertions: [PowerAssertion] = []
         for case let (pid as NSNumber, entries as [NSDictionary]) in byPID {

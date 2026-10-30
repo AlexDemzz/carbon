@@ -243,11 +243,14 @@ public final class Recorder {
                         continue
                     }
                     try await begin(language: language, app: app, event: event, mode: .auto)
+                    onDiagnostic?("Detection started a Meeting on \(app.bundleID)")
                     if case .live(let meeting) = state { onNotice?(.started(meeting)) }
                 case .event(let event):
                     try retarget(to: event)
-                case .end:
-                    if liveCapture != nil { try await finishInBackground() }
+                case .end(let reason):
+                    guard liveCapture != nil else { continue }
+                    onDiagnostic?("Detection ended the Meeting: \(reason)")
+                    try await finishInBackground()
                 case .offerSwitch(let app):
                     guard case .live(let meeting) = state else { continue }
                     onNotice?(.switchOffered(
@@ -288,6 +291,7 @@ public final class Recorder {
         guard liveCapture == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
         let chosen = language.identifier(.bcp47) != offeredLanguage?.identifier(.bcp47)
         try await begin(language: language, app: app, event: event, mode: .auto, identifies: !chosen)
+        onDiagnostic?("Detection started a Meeting on \(app.bundleID) from its offer")
     }
 
     /// The offer was dismissed: its app is not offered again for 10 min.
