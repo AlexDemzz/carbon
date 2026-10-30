@@ -1,0 +1,49 @@
+# What does Carbon cost the Mac while it transcribes?
+
+Measured 2026-10-30 on an M3 Pro (12 cores), macOS 27.0.1, Release builds, on a machine also running headless Chrome, Orca and Figma, so every reading carries a few tenths of a percent of noise. 100% is one core, as in Activity Monitor.
+
+## Verdict
+
+- **Idle, waiting for a Meeting:** about **0.05%** of a core, 5 to 7 threads, a 21 MB footprint at launch. Nothing to fix.
+- **Transcribing:** most of the cost is not in Carbon's process. SpeechTranscriber runs its model in Apple's `localspeechrecognition` daemon, which Activity Monitor doesn't count under Carbon. Any public figure has to add it.
+- **Before this change**, Carbon and the daemon together cost **about 13%** of a core during a Meeting. **After it, 4.7% in a meeting room and about 6% on a call**, with the same transcript.
+- **After the Meeting**, CarbonDiarizer runs for about 5 s per stream, peaks at about 450 MB, and exits.
+
+## Method
+
+A command-line harness built against `CarbonCore` and the app's own `SpeechTranscriberAdapter`, `CoreMLLanguageClassifier` and `CoreMLSpeechGate` runs the real `Recorder`: two live SpeechAnalyzer sessions, the CAF files, the language identification between fr-FR and en-US. Its two audio sources replay the two channels of a recorded Meeting from `~/Carbon` at real-time pace, resampled to 48 kHz: the mic in 100 ms buffers, the call in 10 ms buffers as a process tap delivers them. It needs no microphone or audio permission and plays nothing aloud.
+
+Each run lasts 150 s from 60 s into the recording. The CPU time of every process is read with `ps` before and after the middle 115 s. Not covered: the AVAudioEngine and process tap themselves, the menu bar meter (see `menu-bar-mic-meter-performance.md`), coreaudiod.
+
+## Results
+
+| Recording | Change | Carbon | `localspeechrecognition` | Total |
+|---|---|---|---|---|
+| Call (`presentation`, 60% of the call channel is digital silence) | before | 5.9% | 7.1% | **13.0%** |
+| | no volatile results | 2.8% | 5.0% | 7.8% |
+| | + 100 ms feeding | 1.7–2.3% | 4.1–4.5% | 4.1–6.1% |
+| | + skip digital silence | 2.2% | 4.5% | **6.8%** (a stretch where the call talks) |
+| Meeting room (`meeting-oct-29`, the call channel is 100% zeros) | before | 5.8% | 6.8% | **12.6%** |
+| | after all three | 2.2% | 2.6% | **4.7%** |
+
+Silence test, same call recording with its call channel replaced by zeros: the daemon cost 4.65% without skipping, as much as speech, and 2.43% with it.
+
+### Why
+
+1. **`volatileResults` was on, and nothing read them.** The adapter keeps only `isFinal` results. Each volatile result was computed by the daemon, sent over XPC and decoded in Carbon.
+2. **The call stream reached SpeechAnalyzer 10 ms at a time**, about 100 `AnalyzerInput`s a second, each waking a Swift task and the daemon. `StreamRecorder` now hands the session 100 ms at a time.
+3. **The speech service transcribes zeros at full cost.** In the Library's two Meetings, the call channel was digital silence 60% and 100% of the time: the tap delivers zeros while the call plays nothing, and a meeting room has no call audio at all. After 1 s of it, `StreamRecorder` skips it, and the next buffer carries a `bufferStartTime` so word timings stay on the stream's clock. Only a peak under −80 dBFS counts. A microphone's room never got that low: under −70 dBFS 0% of the time in both recordings.
+
+The CAF files still get every frame, so diarization, recovery and a language switch's replay are unchanged.
+
+### Transcript
+
+Two runs of the same build differ by about 3% of their words, because the live recognizer depends on timing. Every change stayed within that noise: same words count, same turn timestamps. Without volatile results, the transcript differed from the baseline by 1.6% of its words.
+
+## After the Meeting
+
+`CarbonDiarizer` on a 10 min call channel: 5.9 s, 3.9 s of CPU, 463 MB peak. On a 23 min mic channel: 5.3 s, 7.4 s of CPU, 439 MB peak. It runs once per diarized stream, then exits.
+
+## Before quoting a number
+
+Confirm it on a signed Release build during a real call: Activity Monitor's CPU column for Carbon plus `localspeechrecognition`, over a few minutes, and the same for the app being compared. The harness leaves out the capture itself and the menu bar.
