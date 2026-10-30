@@ -18,10 +18,12 @@ public struct LanguageVote: Sendable {
     /// The leader's mean lead over the runner-up, in log-probability per second of speech: ln 20, odds of 20 to 1.
     /// Untuned, like `minimumSpeech`.
     public static let minimumMargin = log(20.0)
-    /// The least the candidates together must score, over all the classifier's labels, for a window to count. The
-    /// classifier is closed-set and its en/fr split of music, ringtones and noise leans English: measured on TTS and
-    /// non-speech recordings, 0.1 drops 98% of non-speech windows and keeps 97% of English and French speech.
-    public static let minimumCandidateProbability = 0.1
+    /// The least the candidates together must score, over all the classifier's labels, for a window to count: only
+    /// windows the classifier is sure are another language. It is no test of speech, the speech gate is: no window
+    /// of 80 min of music passed it. Accented speech scatters over unrelated labels, so French-accented English
+    /// scored 0.005–0.24 for English and French together, yet led French in 8 of 9 windows
+    /// (docs/research/language-identification-thresholds.md).
+    public static let minimumCandidateProbability = 0.001
     /// The windows scored, counted or not, after which the vote gives up: a Meeting in a language that wasn't
     /// checked is never decided, and must not be scored for its whole length.
     public static let maximumWindows = 40
@@ -58,6 +60,15 @@ public struct LanguageVote: Sendable {
         }
         speech += seconds
         return outcome
+    }
+
+    /// "en-US leads fr-FR by 1.2 per s over 12 s of speech, 5 windows": where an undecided vote stands.
+    public var standing: String {
+        let ranked = candidates.sorted { scores[$0.label]! > scores[$1.label]! }
+        let lead = speech > 0 ? (scores[ranked[0].label]! - scores[ranked[1].label]!) / speech : 0
+        return "\(ranked[0].locale.identifier(.bcp47)) leads \(ranked[1].locale.identifier(.bcp47)) by "
+            + "\(lead.formatted(.number.precision(.fractionLength(1)))) per s over \(Int(speech)) s of speech, "
+            + "\(windows) windows"
     }
 
     public var outcome: Outcome {

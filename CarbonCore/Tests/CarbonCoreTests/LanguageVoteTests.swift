@@ -5,7 +5,7 @@ import Testing
 struct LanguageVoteTests {
     let english = Locale(identifier: "en_US")
     let french = Locale(identifier: "fr_FR")
-    let labels: Set<String> = ["en", "fr", "oc", "iw"]
+    let labels: Set<String> = ["en", "fr", "oc", "iw", "de", "fa", "tl"]
 
     /// A window the classifier scored: each label's probability, as log-probabilities.
     func scored(_ probabilities: [String: Double]) -> [String: Double] {
@@ -20,21 +20,30 @@ struct LanguageVoteTests {
         #expect(vote.add(french, speech: 4) == .decided(self.french))
     }
 
-    @Test func aWindowTheCandidatesBarelyScoreIsNotSpeechInTheirLanguages() throws {
+    @Test func aWindowTheClassifierIsSureIsAnotherLanguageDoesNotCount() throws {
         var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
-        // Hold music, as measured: under 10% for English and French together, leaning English 40 to 1.
-        let music = scored(["oc": 0.9, "en": 0.08, "fr": 0.002])
+        let hebrew = scored(["iw": 0.9995, "en": 0.0004, "fr": 0.00001])
         let french = scored(["fr": 0.9, "en": 0.01])
 
-        #expect(vote.add(music, speech: 4) == .undecided)
-        #expect(vote.add(music, speech: 4) == .undecided, "8 s of music is not 8 s of English")
-        #expect(vote.add(french, speech: 4) == .undecided, "the music didn't count toward the minimum speech")
+        #expect(vote.add(hebrew, speech: 4) == .undecided)
+        #expect(vote.add(hebrew, speech: 4) == .undecided, "8 s of Hebrew is not 8 s of English")
+        #expect(vote.add(french, speech: 4) == .undecided, "the Hebrew didn't count toward the minimum speech")
         #expect(vote.add(french, speech: 4) == .decided(self.french))
+    }
+
+    @Test func accentedSpeechScatteredOverOtherLanguagesStillCounts() throws {
+        var vote = try #require(LanguageVote(candidates: [french, english], labels: labels))
+        // French-accented English, as measured on two Meetings: most of each window on unrelated languages.
+        let persianLooking = scored(["fa": 0.86, "en": 0.007, "fr": 0.0001])
+        let tagalogLooking = scored(["tl": 0.45, "en": 0.043, "fr": 0.005])
+
+        #expect(vote.add(persianLooking, speech: 4) == .undecided)
+        #expect(vote.add(tagalogLooking, speech: 4) == .decided(english))
     }
 
     @Test func givesUpAfterFortyWindowsInNoCandidateLanguage() throws {
         var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
-        let german = scored(["de": 0.95, "en": 0.02, "fr": 0.01])
+        let german = scored(["de": 0.999, "en": 0.0005, "fr": 0.0002])
 
         for _ in 1...39 {
             #expect(vote.add(german, speech: 4) == .undecided)
@@ -49,6 +58,16 @@ struct LanguageVoteTests {
         for _ in 1...5 {
             #expect(vote.add(leaningFrench, speech: 4) == .undecided)
         }
+    }
+
+    @Test func aMeetingInAnUncheckedLanguageTheCandidatesSplitEvenlyIsNeverDecided() throws {
+        var vote = try #require(LanguageVote(candidates: [english, french], labels: labels))
+        let german = scored(["de": 0.95, "en": 0.02, "fr": 0.01])
+
+        for _ in 1...14 {
+            #expect(vote.add(german, speech: 4) == .undecided)
+        }
+        #expect(vote.add(german, speech: 4) == .gaveUp)
     }
 
     @Test func givesUpAfterAMinuteOfSpeechWithoutAClearLeader() throws {
