@@ -134,7 +134,7 @@ struct MeetingPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 if !meeting.participants.isEmpty {
                     ParticipantTokens(model: model, meeting: meeting)
                 }
