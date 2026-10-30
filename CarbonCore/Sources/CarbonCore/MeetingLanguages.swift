@@ -17,6 +17,36 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
         chosenIDs = [defaultID]
     }
 
+    /// The first launch's: the Mac's languages (`preferred`, in the Mac's order), each as a supported variant, one per
+    /// language code, at most `cap` of them, the first the default. en-US when none is supported.
+    public static func seeded(from preferred: [Locale], supported: [Locale], cap: Int) -> MeetingLanguages {
+        let supported = listed(supported)
+        var seenCodes: Set<String> = []
+        let seeds = preferred.compactMap { variant(of: $0, in: supported) }.filter {
+            seenCodes.insert($0.language.languageCode?.identifier ?? id($0)).inserted
+        }
+        var languages = MeetingLanguages(default: seeds.first ?? Locale(identifier: "en_US"))
+        for language in seeds.prefix(cap).dropFirst() {
+            languages.set(language, chosen: true)
+        }
+        return languages
+    }
+
+    /// `language` itself, else its language in its main region (en-FR → en-US), else its language's first listed
+    /// variant. SpeechTranscriber's `supportedLocale(equivalentTo:)` isn't used: it maps en-FR to en-IN or en-NZ,
+    /// differently from one call to the next.
+    private static func variant(of language: Locale, in supported: [Locale]) -> Locale? {
+        if let exact = supported.first(where: { id($0) == id(language) }) { return exact }
+        guard let code = language.language.languageCode else { return nil }
+        let main = Locale.Language(languageCode: code, script: language.language.script, region: nil).maximalIdentifier
+        if let region = Locale.Language(identifier: main).region,
+            let inMainRegion = supported.first(where: { id($0) == "\(code.identifier)-\(region.identifier)" })
+        {
+            return inMainRegion
+        }
+        return supported.first { $0.language.languageCode == code }
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         defaultID = try container.decode(String.self, forKey: .defaultID)

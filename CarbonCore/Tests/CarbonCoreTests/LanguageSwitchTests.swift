@@ -130,9 +130,9 @@ final class PushAudioSource: AudioSource {
         onBuffer.withLock { $0 = nil }
     }
 
-    func play(seconds: Double) {
+    func play(seconds: Double, amplitude: Double = 0.2) {
         guard let onBuffer = onBuffer.withLock({ $0 }) else { return }
-        let source = FakeAudioSource(seconds: seconds)
+        let source = FakeAudioSource(seconds: seconds, amplitude: amplitude)
         try? source.start(onBuffer)
     }
 }

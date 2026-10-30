@@ -77,6 +77,69 @@ struct MeetingLanguagesTests {
         #expect(languages.name(of: Locale(identifier: "en-US"), in: english) == "English (United States)")
     }
 
+    @Test func theFirstLaunchChecksTheMacsLanguagesWithTheFirstOneAsDefault() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("fr-FR", "en-US"), supported: locales("en-US", "fr-FR", "de-DE"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-US", "fr-FR"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "fr-FR")
+    }
+
+    @Test func aMacLanguageSpeechTranscriberLacksIsLeftUnchecked() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("nb-NO", "fr-FR"), supported: locales("en-US", "fr-FR"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["fr-FR"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "fr-FR")
+    }
+
+    @Test func onlyTheFirstOfTheMacsVariantsOfALanguageIsChecked() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("en-GB", "fr-FR", "en-US", "fr-CA"),
+            supported: locales("en-US", "en-GB", "fr-FR", "fr-CA"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-GB", "fr-FR"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "en-GB")
+    }
+
+    @Test func noMoreMacLanguagesAreCheckedThanCanBeReserved() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("de-DE", "fr-FR", "es-ES"), supported: locales("en-US", "fr-FR", "de-DE", "es-ES"), cap: 2)
+
+        #expect(bcp47(languages.chosen) == ["fr-FR", "de-DE"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "de-DE")
+    }
+
+    @Test func aMacWhoseLanguagesSpeechTranscriberLacksStartsInUSEnglish() {
+        let languages = MeetingLanguages.seeded(from: locales("nb-NO"), supported: locales("en-US", "fr-FR"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-US"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "en-US")
+    }
+
+    @Test func aMacLanguageInARegionSpeechTranscriberLacksTakesItsLanguagesMainRegion() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("en-FR", "de-FR", "zh-Hant-FR"),
+            supported: locales("en-IN", "en-NZ", "en-US", "de-CH", "de-DE", "zh-CN", "zh-TW"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-US", "de-DE", "zh-TW"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "en-US")
+    }
+
+    @Test func aMacLanguageWithNoRegionAndItsVariantsInOtherRegionsAreOneLanguage() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("en", "en-FR", "en-US"), supported: locales("en-IN", "en-GB", "en-US"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["en-US"])
+    }
+
+    @Test func aMacLanguageWhoseMainRegionSpeechTranscriberLacksTakesItsFirstListedVariant() {
+        let languages = MeetingLanguages.seeded(
+            from: locales("yue-Hant-HK"), supported: locales("en-US", "yue-CN"), cap: 5)
+
+        #expect(bcp47(languages.chosen) == ["yue-CN"])
+    }
+
     @Test func theSettingSurvivesARoundTripThroughItsStoredForm() throws {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-CA"), chosen: true)
