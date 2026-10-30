@@ -16,15 +16,20 @@ public struct Diarization: Equatable, Sendable, Codable {
         }
     }
 
-    /// One voice the diarizer found: its L2-normalized centroid embedding and how much it spoke.
+    /// One voice the diarizer found, and how much it spoke.
     public struct Cluster: Equatable, Sendable, Codable {
         public var id: String
+        /// L2-normalized mean embedding of all its speech, crosstalk and clustering mistakes included.
         public var centroid: [Float]
+        /// L2-normalized embedding of its clean speech only, what Voice Prints are matched and made from. Nil
+        /// when that speech is too short or too mixed to tell one voice: the cluster is neither matched nor enrolled.
+        public var voice: [Float]?
         public var speechSeconds: Double
 
-        public init(id: String, centroid: [Float], speechSeconds: Double) {
+        public init(id: String, centroid: [Float], voice: [Float]? = nil, speechSeconds: Double) {
             self.id = id
             self.centroid = centroid
+            self.voice = voice
             self.speechSeconds = speechSeconds
         }
     }

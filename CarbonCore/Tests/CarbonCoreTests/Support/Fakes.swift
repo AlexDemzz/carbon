@@ -313,3 +313,10 @@ struct MeanwhileSummarizer: Summarizer {
         return nil
     }
 }
+
+extension Diarization.Cluster {
+    /// A cluster whose clean speech sounds like all of it.
+    init(id: String, voice: [Float], speechSeconds: Double) {
+        self.init(id: id, centroid: voice, voice: voice, speechSeconds: speechSeconds)
+    }
+}

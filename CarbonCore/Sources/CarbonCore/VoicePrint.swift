@@ -2,7 +2,8 @@ import Foundation
 
 /// The remembered signature of a named Speaker's voice, one entry of `voiceprints.json`.
 public struct VoicePrint: Identifiable, Equatable, Sendable, Codable {
-    /// The embedding model Carbon ships: prints made by another model are never compared.
+    /// The embedding model Carbon ships: prints made by another model are never compared. FluidAudio 0.18.0 runs the
+    /// same model as 0.17.7, so the name stays.
     public static let currentModel = "fluidaudio/community-1@0.17.7"
     static let recentKept = 3
 

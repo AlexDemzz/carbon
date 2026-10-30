@@ -24,7 +24,7 @@ struct VoicePrintMatcherTests {
     }
 
     func cluster(_ id: String, seconds: Double = 60) -> Diarization.Cluster {
-        .init(id: id, centroid: [1, 0, 0], speechSeconds: seconds)
+        .init(id: id, voice: [1, 0, 0], speechSeconds: seconds)
     }
 
     @Test func theFarthestSamePersonPairStillMatches() {
@@ -74,8 +74,8 @@ struct VoicePrintMatcherTests {
     @Test func eachPrintNamesOneClusterTheClosest() {
         let matches = VoicePrintMatcher.match(
             [
-                .init(id: "S1", centroid: embedding(atDistance: 0.2), speechSeconds: 40),
-                .init(id: "S2", centroid: embedding(atDistance: 0.1, sign: -1), speechSeconds: 40),
+                .init(id: "S1", voice: embedding(atDistance: 0.2), speechSeconds: 40),
+                .init(id: "S2", voice: embedding(atDistance: 0.1, sign: -1), speechSeconds: 40),
             ],
             prints: [VoicePrint(
                 id: sam, name: "Sam Rivera", model: Self.model, centroid: [1, 0, 0],
@@ -93,5 +93,21 @@ struct VoicePrintMatcherTests {
             [cluster("S1", seconds: 9.9)], prints: [print(sam, "Sam Rivera", at: 0.05)], model: Self.model)
 
         #expect(matches == [:])
+    }
+
+    @Test func aClusterWithNoCleanVoiceIsNotMatchedHoweverCloseAllItsSpeechIs() {
+        let matches = VoicePrintMatcher.match(
+            [.init(id: "S1", centroid: [1, 0, 0], speechSeconds: 60)],
+            prints: [print(sam, "Sam Rivera", at: 0)], model: Self.model)
+
+        #expect(matches == [:])
+    }
+
+    @Test func aClusterIsMatchedByItsCleanVoiceNotAllItsSpeech() {
+        let matches = VoicePrintMatcher.match(
+            [.init(id: "S1", centroid: [0, 0, 1], voice: [1, 0, 0], speechSeconds: 60)],
+            prints: [print(sam, "Sam Rivera", at: 0.1)], model: Self.model)
+
+        #expect(matches == ["S1": .init(printID: sam, distance: 0.1)])
     }
 }

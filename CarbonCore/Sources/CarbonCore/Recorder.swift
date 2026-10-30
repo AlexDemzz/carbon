@@ -701,17 +701,16 @@ public final class Recorder {
         return Heard(me: me, them: them, split: split, clusters: clusters, owner: owner)
     }
 
-    /// The voice of an isolated mic, which is all the owner's however the diarizer split it: every cluster's
-    /// centroid weighed by its speech. Nil under `VoicePrintMatcher.minimumSpeechSeconds` in all.
+    /// The voice of an isolated mic, which is all the owner's however the diarizer split it: every cluster's clean
+    /// voice weighed by its speech. Nil under `VoicePrintMatcher.minimumSpeechSeconds` in all.
     private static func ownerVoice(_ mic: Diarization) -> [Float]? {
-        guard let length = mic.clusters.max(by: { $0.speechSeconds < $1.speechSeconds })?.centroid.count else {
-            return nil
-        }
-        // A centroid of another length can't be weighed in with the main voice: it is left out.
-        let clusters = mic.clusters.filter { $0.centroid.count == length }
-        guard clusters.reduce(0, { $0 + $1.speechSeconds }) >= VoicePrintMatcher.minimumSpeechSeconds else { return nil }
+        let voiced = mic.clusters.compactMap { cluster in cluster.voice.map { (voice: $0, seconds: cluster.speechSeconds) } }
+        guard let length = voiced.max(by: { $0.seconds < $1.seconds })?.voice.count else { return nil }
+        // A voice of another length can't be weighed in with the main voice: it is left out.
+        let clusters = voiced.filter { $0.voice.count == length }
+        guard clusters.reduce(0, { $0 + $1.seconds }) >= VoicePrintMatcher.minimumSpeechSeconds else { return nil }
         let sum = clusters.reduce(into: [Float](repeating: 0, count: length)) { sum, cluster in
-            for (index, value) in cluster.centroid.enumerated() { sum[index] += value * Float(cluster.speechSeconds) }
+            for (index, value) in cluster.voice.enumerated() { sum[index] += value * Float(cluster.seconds) }
         }
         return VoicePrint.normalized(sum)
     }
@@ -723,7 +722,7 @@ public final class Recorder {
             speakers: heard.clusters.map { letter, stream, cluster in
                 MeetingIndex.Speaker(
                     label: "Speaker \(letter)", cluster: letter, stream: stream, speechSeconds: cluster.speechSeconds,
-                    centroid: MeetingIndex.Speaker.encode(centroid: cluster.centroid))
+                    centroid: cluster.voice.map(MeetingIndex.Speaker.encode(centroid:)))
             },
             participants: participants,
             attendee: participants.count == 1 ? TranscriptBuilder.label(forName: participants[0].name) : nil)
@@ -779,7 +778,10 @@ public final class Recorder {
     ) {
         let prints = library.voicePrints.prints
         let matches = VoicePrintMatcher.match(
-            clusters.map { Diarization.Cluster(id: $0.letter, centroid: $0.cluster.centroid, speechSeconds: $0.cluster.speechSeconds) },
+            clusters.map { letter, _, cluster in
+                Diarization.Cluster(
+                    id: letter, centroid: cluster.centroid, voice: cluster.voice, speechSeconds: cluster.speechSeconds)
+            },
             prints: prints, model: library.voicePrintModel,
             ownerCandidates: Set(clusters.filter { $0.stream == .me }.map(\.letter)))
         for (letter, _, cluster) in clusters {
@@ -813,7 +815,7 @@ public final class Recorder {
             naming.speakers[position].label = label
             naming.speakers[position].name = label
             naming.labels[letter] = label
-            naming.heard.append((print.id, cluster.centroid))
+            if let voice = cluster.voice { naming.heard.append((print.id, voice)) }
         }
     }
 
