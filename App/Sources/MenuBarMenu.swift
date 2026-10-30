@@ -1,26 +1,6 @@
 import CarbonCore
 import SwiftUI
 
-/// The menu bar icon, followed while transcribing by the Meeting Language's badge, "FR".
-struct MenuBarGlyph: View {
-    let isLive: Bool
-    let language: (badge: String, name: String)?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(isLive ? "MenuBarRecording" : "MenuBarIdle")
-            if let language { Text(language.badge) }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        guard isLive else { return "Carbon" }
-        return language.map { "Carbon, transcribing in \($0.name)" } ?? "Carbon, transcribing"
-    }
-}
-
 struct MenuBarMenu: View {
     let model: AppModel
     let updater: Updater

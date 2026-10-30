@@ -17,6 +17,12 @@ struct CarbonApp: App {
         .defaultSize(width: 980, height: 640)
         .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
+        .onChange(of: appIconPlacement, initial: true) {
+            delegate.model = model
+            if delegate.statusItem == nil { delegate.statusItem = StatusItem(model: model, updater: updater) }
+            delegate.statusItem?.isVisible = appIconPlacement.showsInMenuBar
+            delegate.updateActivationPolicy()
+        }
 
         WindowGroup("Edit Meeting", id: AppModel.editorWindowID, for: UUID.self) { $id in
             if let id { EditorWindow(model: model, id: id) }
@@ -33,18 +39,6 @@ struct CarbonApp: App {
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
-        MenuBarExtra(isInserted: .constant(appIconPlacement.showsInMenuBar)) {
-            MenuBarMenu(model: model, updater: updater)
-        } label: {
-            MenuBarGlyph(isLive: model.isLive, language: model.liveMeetingLanguage)
-                .modifier(HandsOpenWindowToModel(model: model))
-        }
-        .menuBarExtraStyle(.menu)
-        .onChange(of: appIconPlacement, initial: true) {
-            delegate.model = model
-            delegate.updateActivationPolicy()
-        }
-
         Settings {
             SettingsView(model: model, updater: updater)
         }
@@ -53,6 +47,7 @@ struct CarbonApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    var statusItem: StatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard SpeechTranscriber.isAvailable else {
@@ -146,7 +141,7 @@ private final class ActionMenuItem: NSMenuItem {
 
 /// Gives the model SwiftUI's `openWindow`, so the global shortcut can show the main window and the first launch
 /// the onboarding.
-private struct HandsOpenWindowToModel: ViewModifier {
+struct HandsOpenWindowToModel: ViewModifier {
     let model: AppModel
     @Environment(\.openWindow) private var openWindow
 
