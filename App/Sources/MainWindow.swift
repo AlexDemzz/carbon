@@ -167,7 +167,7 @@ struct MeetingPanel: View {
     }
 }
 
-/// "Speaker · 0:19" above the Turn's text.
+/// The Speaker's badge and "0:19" above the Turn's text.
 struct TurnView: View {
     let model: AppModel
     let meeting: ListedMeeting
@@ -176,8 +176,10 @@ struct TurnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                SpeakerMenu(model: model, meeting: meeting, label: turn.speaker).fontWeight(.semibold)
-                Text("·").accessibilityHidden(true)
+                SpeakerMenu(model: model, meeting: meeting, label: turn.speaker)
+                    .fontWeight(.semibold)
+                    // The name lines up with the Turn's text below.
+                    .padding(.leading, -PersonBadge.inset)
                 Text(turn.elapsed).monospacedDigit()
                     .accessibilityLabel(turn.spokenElapsed())
             }

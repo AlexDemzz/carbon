@@ -54,7 +54,7 @@ private struct ParticipantToken: View {
     private var others: [Participant] { meeting.participants.filter { $0 != participant } }
 
     var body: some View {
-        Menu { actions } label: { Token(name: participant.name, showsChevron: isHovered) }
+        Menu { actions } label: { PersonBadge(name: participant.name, isHovered: isHovered) }
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
@@ -89,36 +89,6 @@ private struct ParticipantToken: View {
             }
         }
         .disabled(others.isEmpty)
-    }
-}
-
-/// A bordered badge sized by the name alone. On hover a fill fades in and the chevron floats over the name's end,
-/// which fades out beneath it, so nothing reserves room or moves.
-private struct Token: View {
-    let name: String
-    let showsChevron: Bool
-
-    var body: some View {
-        Text(name)
-            .foregroundStyle(showsChevron ? .primary : .secondary)
-            .mask {
-                HStack(spacing: 0) {
-                    Rectangle()
-                    LinearGradient(colors: [.black, .black.opacity(showsChevron ? 0 : 1)], startPoint: .leading, endPoint: .trailing)
-                        .frame(width: 14)
-                }
-            }
-            .overlay(alignment: .trailing) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 7, weight: .bold))
-                    .opacity(showsChevron ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(RoundedRectangle(cornerRadius: 5).fill(.quinary).opacity(showsChevron ? 1 : 0))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.quaternary))
-            .animation(.easeOut(duration: 0.15), value: showsChevron)
     }
 }
 

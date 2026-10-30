@@ -1,7 +1,7 @@
 import CarbonCore
 import SwiftUI
 
-/// A Speaker's name with a chevron: Me for a Speaker heard on a meeting room's mic, the Meeting's attendees, then
+/// A Speaker's name in a badge with a menu: Me for a Speaker heard on a meeting room's mic, the Meeting's attendees, then
 /// "Other Name…". Unnamed Speakers are blue. Me has no menu, except on a meeting room's mic.
 struct SpeakerMenu: View {
     let model: AppModel
@@ -10,6 +10,7 @@ struct SpeakerMenu: View {
     /// Called after a rename was written, e.g. to reload an editor.
     var didRename: () -> Void = {}
 
+    @State private var isHovered = false
     @State private var isAskingForName = false
     @State private var otherName = ""
 
@@ -17,7 +18,10 @@ struct SpeakerMenu: View {
 
     var body: some View {
         if label == TranscriptBuilder.me, !meeting.isOnMic(label) {
+            // No badge, since there is no menu, but the same inset so Me lines up with the badged names.
             Text(label)
+                .padding(.horizontal, PersonBadge.inset)
+                .padding(.vertical, 1)
         } else {
             Menu {
                 if model.recognizesVoices, meeting.tooLittleSpeechToRemember(label) {
@@ -38,12 +42,13 @@ struct SpeakerMenu: View {
                     isAskingForName = true
                 }
             } label: {
-                Text(label)
-                    .foregroundStyle(isUnnamed ? AnyShapeStyle(.blue) : AnyShapeStyle(.primary))
+                PersonBadge(name: label, isHovered: isHovered, style: isUnnamed ? AnyShapeStyle(.blue) : AnyShapeStyle(.primary))
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.visible)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .onHover { isHovered = $0 }
             .accessibilityLabel(isUnnamed ? "\(label), unnamed, rename" : "\(label), rename")
             .alert("Name \(label)", isPresented: $isAskingForName) {
                 TextField("Name", text: $otherName)
