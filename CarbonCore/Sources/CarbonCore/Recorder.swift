@@ -779,8 +779,9 @@ public final class Recorder {
         let prints = library.voicePrints.prints
         let matches = VoicePrintMatcher.match(
             clusters.map { letter, _, cluster in
-                Diarization.Cluster(
-                    id: letter, centroid: cluster.centroid, voice: cluster.voice, speechSeconds: cluster.speechSeconds)
+                var lettered = cluster
+                lettered.id = letter
+                return lettered
             },
             prints: prints, model: library.voicePrintModel,
             ownerCandidates: Set(clusters.filter { $0.stream == .me }.map(\.letter)))

@@ -25,7 +25,7 @@ struct SpeakerMenu: View {
         } else {
             Menu {
                 if model.recognizesVoices, meeting.tooLittleSpeechToRemember(label) {
-                    Text("Not enough speech to remember this voice.")
+                    Text("Not enough clear speech to remember this voice.")
                     Divider()
                 }
                 if meeting.isOnMic(label) {

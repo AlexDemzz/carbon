@@ -25,6 +25,7 @@ func bundledModelsDirectory() throws -> URL {
 func diarize(_ audio: URL) async throws -> Diarization {
     ModelHub.offlineMode = true
     var config = OfflineDiarizerConfig(clusteringThreshold: clusteringThreshold)
+    // What `cleanEmbeddingsBySpeaker` reads.
     config.exposeChunkEmbeddings = true
     // Same output and speed as the default 32 windows per call, at about half the peak memory on a 23-minute call.
     config.segmentation.batchSize = 8

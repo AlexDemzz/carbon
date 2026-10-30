@@ -186,6 +186,26 @@ struct VoicePrintTests {
         #expect(library.meetings[0].tooLittleSpeechToRemember("Dana Park"))
     }
 
+    @Test func aSpeakerWithNoCleanVoiceGetsTheNameButNoVoicePrintHoweverLongTheySpoke() throws {
+        let library = makeLibrary()
+        try createMeeting(library, speaker: MeetingIndex.Speaker(label: "Speaker A", cluster: "A", speechSeconds: 60))
+        #expect(library.meetings[0].tooLittleSpeechToRemember("Speaker A"))
+
+        try library.renameSpeaker(id, label: "Speaker A", name: "Dana Park")
+
+        #expect(!FileManager.default.fileExists(atPath: printsFile.path))
+        #expect(library.meetings[0].tooLittleSpeechToRemember("Dana Park"))
+    }
+
+    @Test func theOtherAttendeeOfA1to1WithoutDiarizationIsNotSaidToHaveTooLittleSpeech() throws {
+        let library = makeLibrary()
+        try createMeeting(library, speaker: MeetingIndex.Speaker(
+            label: "Dana Park", cluster: TranscriptBuilder.them, name: "Dana Park", match: .attendee1to1,
+            speechSeconds: 0))
+
+        #expect(!library.meetings[0].tooLittleSpeechToRemember("Dana Park"))
+    }
+
     @Test func namingAnotherMeetingsSpeakerAfterARememberedPersonUpdatesTheirPrint() throws {
         try rememberSam()
         let library = makeLibrary()
