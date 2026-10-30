@@ -30,7 +30,7 @@ extension MarkdownFile {
     }
 
     /// `Name <email>` as `yaml(_:)` writes an attendee, or a bare name.
-    private static func participant(_ entry: String) -> Participant {
+    static func participant(_ entry: String) -> Participant {
         guard let match = entry.wholeMatch(of: #/(.*?)\s*<([^<>\s]+)>/#), !match.output.1.isEmpty else {
             return Participant(name: entry)
         }
@@ -38,7 +38,7 @@ extension MarkdownFile {
     }
 
     /// A YAML scalar: double-quoted with escapes, single-quoted, or plain up to a ` #` comment.
-    private static func scalar(_ raw: some StringProtocol) -> String {
+    static func scalar(_ raw: some StringProtocol) -> String {
         let value = raw.trimmingCharacters(in: .whitespaces)
         if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
             var unescaped = ""

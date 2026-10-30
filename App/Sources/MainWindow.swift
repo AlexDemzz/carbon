@@ -136,7 +136,7 @@ struct MeetingPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if !meeting.participants.isEmpty {
-                    ParticipantTokens(participants: meeting.participants)
+                    ParticipantTokens(model: model, meeting: meeting)
                 }
                 Text("Transcript")
                     .font(.title3.weight(.semibold))

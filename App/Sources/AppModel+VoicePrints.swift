@@ -38,6 +38,17 @@ extension AppModel {
         perform("Carbon couldn't delete the Voice Prints") { try library.deleteAllVoicePrints() }
     }
 
+    /// Returns false, after telling the person, when it couldn't.
+    func editVoicePrint(_ print: VoicePrint, name: String, email: String) -> Bool {
+        do {
+            try library.editVoicePrint(print.id, name: name, email: email)
+            return true
+        } catch {
+            present(error, title: "Carbon couldn't edit the Voice Print")
+            return false
+        }
+    }
+
     func deleteVoicePrint(_ print: VoicePrint) {
         perform("Carbon couldn't delete the Voice Print") { try library.deleteVoicePrint(print.id) }
     }
