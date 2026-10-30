@@ -50,8 +50,7 @@ final class SpeechTranscriberAdapter: Transcriber {
         private let analyzer: SpeechAnalyzer
         private let input: AsyncStream<AnalyzerInput>.Continuation
         private let collecting: Task<[TranscribedWord], any Error>
-        /// Where the stream is, in seconds heard or skipped, and whether the next buffer follows a skip.
-        private let timeline = Mutex((position: TimeInterval(0), skipped: false))
+        private let clock = Mutex(StreamClock())
 
         init(
             audioFormat: AVAudioFormat, analyzer: SpeechAnalyzer, input: AsyncStream<AnalyzerInput>.Continuation,
@@ -64,24 +63,14 @@ final class SpeechTranscriberAdapter: Transcriber {
         }
 
         func append(_ buffer: AVAudioPCMBuffer) {
-            let start = timeline.withLock { timeline in
-                defer {
-                    timeline.position += Double(buffer.frameLength) / audioFormat.sampleRate
-                    timeline.skipped = false
-                }
-                return timeline.skipped ? timeline.position : nil
-            }
-            // After a skip, the start time keeps the words' timings on the stream's clock.
+            let start = clock.withLock { $0.hear(Double(buffer.frameLength) / audioFormat.sampleRate) }
             input.yield(AnalyzerInput(
                 buffer: buffer,
                 bufferStartTime: start.map { CMTime(seconds: $0, preferredTimescale: CMTimeScale(audioFormat.sampleRate)) }))
         }
 
         func skip(_ duration: TimeInterval) {
-            timeline.withLock { timeline in
-                timeline.position += duration
-                timeline.skipped = true
-            }
+            clock.withLock { $0.skip(duration) }
         }
 
         func finish() async throws -> [TranscribedWord] {

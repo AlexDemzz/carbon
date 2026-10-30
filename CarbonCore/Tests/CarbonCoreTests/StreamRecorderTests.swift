@@ -75,4 +75,21 @@ struct StreamRecorderTests {
         for frame in 0..<4_800 { buffer.floatChannelData![0][frame] = frame.isMultiple(of: 2) ? 0.001 : -0.001 }
         #expect(!SoundLevel.isDigitalSilence(buffer))
     }
+
+    @Test func aBufferHeardAfterSkipsStartsWhereTheSkippedSilenceEnds() throws {
+        var clock = StreamClock()
+        let first = clock.hear(0.1)
+        clock.skip(0.1)
+        clock.skip(0.1)
+        clock.skip(0.05)
+        let resumed = clock.hear(0.1)
+        let next = clock.hear(0.1)
+        clock.skip(1)
+        let again = clock.hear(0.1)
+
+        #expect(first == nil)
+        #expect(abs(try #require(resumed) - 0.35) < 1e-9)
+        #expect(next == nil)
+        #expect(abs(try #require(again) - 1.55) < 1e-9)
+    }
 }
