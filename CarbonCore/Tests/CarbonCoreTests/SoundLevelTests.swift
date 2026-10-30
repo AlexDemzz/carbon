@@ -21,4 +21,17 @@ struct SoundLevelTests {
         }
         #expect(abs(SoundLevel.rms(buffer) - 0.353_6) < 0.001)
     }
+
+    @Test func theMeterTakesTheLoudestLevelOfEach100msWhateverTheBufferSize() {
+        let small = MeterWindow()
+        #expect(small.add(0.2, frames: 1_200, sampleRate: 48_000) == nil)
+        #expect(small.add(0.7, frames: 1_200, sampleRate: 48_000) == nil)
+        #expect(small.add(0.1, frames: 1_200, sampleRate: 48_000) == nil)
+        #expect(small.add(0.3, frames: 1_200, sampleRate: 48_000) == 0.7)
+        #expect(small.add(0.4, frames: 1_200, sampleRate: 48_000) == nil)
+
+        let large = MeterWindow()
+        #expect(large.add(0.5, frames: 4_800, sampleRate: 48_000) == 0.5)
+        #expect(large.add(0, frames: 4_800, sampleRate: 48_000) == 0)
+    }
 }

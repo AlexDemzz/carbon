@@ -1,5 +1,6 @@
 import Accelerate
 @preconcurrency import AVFoundation
+import Synchronization
 
 /// Tells sound from silence in a captured buffer. Full-rate zeros, as a tap delivers when nothing plays, are silence.
 enum SoundLevel {
@@ -34,5 +35,22 @@ enum SoundLevel {
             return 0
         }
         return (sum / Float(channelCount)).squareRoot()
+    }
+}
+
+/// Turns the mic's buffers into meter levels every 100 ms of audio, whatever size the buffers come in: the loudest
+/// level heard in each window. The meter then moves at the same pace on every input device.
+final class MeterWindow: Sendable {
+    private let window = Mutex<(frames: Int, loudest: Float)>((0, 0))
+
+    /// The window's level once `frames` complete it, nil until then.
+    func add(_ level: Float, frames: Int, sampleRate: Double) -> Float? {
+        window.withLock { window in
+            window.frames += frames
+            window.loudest = max(window.loudest, level)
+            guard Double(window.frames) >= sampleRate / 10 else { return nil }
+            defer { window = (0, 0) }
+            return window.loudest
+        }
     }
 }

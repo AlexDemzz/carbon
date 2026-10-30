@@ -77,8 +77,13 @@ private final class MicMeterView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func hear(_ level: Float) {
-        // Falls at most by half a level at a time, like a VU meter, so silence settles in steps.
-        history = [max(level, history[0] / 2)] + history.dropLast()
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // Reduce Motion: a still waveform that only says Carbon is transcribing.
+            history = [0.8, 0.4, 0.4]
+        } else {
+            // Falls at most by half a level at a time, like a VU meter, so silence settles in steps.
+            history = [max(level, history[0] / 2)] + history.dropLast()
+        }
         move()
     }
 
