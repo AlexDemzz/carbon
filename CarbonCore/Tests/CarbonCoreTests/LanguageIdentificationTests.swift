@@ -26,7 +26,9 @@ struct LanguageIdentificationTests {
         ],
     ])
 
-    func makeRecorder(classifier: ReplayLanguageClassifier, candidates: [Locale]) -> Recorder {
+    func makeRecorder(
+        classifier: ReplayLanguageClassifier, speechGate: ScriptedSpeechGate = ScriptedSpeechGate(), candidates: [Locale]
+    ) -> Recorder {
         let clock = clock
         let meetingID = meetingID
         let systemAudio = systemAudio
@@ -38,6 +40,7 @@ struct LanguageIdentificationTests {
             diarizer: ScriptedDiarizer([.fail, .fail]),
             diarizationTimeout: { _ in .milliseconds(100) },
             languageClassifier: classifier,
+            speechGate: speechGate,
             library: Library(folder: library.url, supportFolder: support.url, now: { clock.now }, moveToTrash: { _ in }),
             inProgressFolder: support.url.appending(path: "InProgress"),
             timeZone: TimeZone(identifier: "America/New_York")!,
@@ -55,7 +58,8 @@ struct LanguageIdentificationTests {
 
     @Test func aFrenchMeetingStartedInEnglishEndsWrittenInFrench() async throws {
         let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
-        let recorder = makeRecorder(classifier: classifier, candidates: [english, french])
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(classifier: classifier, speechGate: speechGate, candidates: [english, french])
         var notices: [Recorder.Notice] = []
         recorder.onNotice = { notices.append($0) }
 
@@ -70,6 +74,7 @@ struct LanguageIdentificationTests {
         #expect(markdown.contains("language: fr-FR"))
         #expect(markdown.hasSuffix("**Me** [0:01] Bonjour à tous.\n\n**Them** [0:02] Salut.\n"))
         #expect(classifier.released, "the model is let go once the Meeting Language is decided")
+        #expect(speechGate.released, "and the speech gate's with it")
     }
 
     @Test func anEnglishMeetingStartedInEnglishStaysInEnglishWithNothingToSee() async throws {
@@ -108,7 +113,8 @@ struct LanguageIdentificationTests {
 
     @Test func withOneCheckedLanguageTheModelIsNeverUsed() async throws {
         let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
-        let recorder = makeRecorder(classifier: classifier, candidates: [english])
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(classifier: classifier, speechGate: speechGate, candidates: [english])
 
         try await recorder.start(language: english)
         speak()
@@ -116,21 +122,75 @@ struct LanguageIdentificationTests {
 
         #expect(try String(contentsOf: file, encoding: .utf8).contains("language: en-US"))
         #expect(classifier.windows.isEmpty)
-        #expect(!classifier.released, "never loaded, so never let go")
+        #expect(speechGate.chunks.isEmpty)
+        #expect(!classifier.released && !speechGate.released, "never loaded, so never let go")
     }
 
-    @Test func onlySpeechReachesTheClassifier() async throws {
+    @Test func loudSoundTheSpeechGateDoesNotCallSpeechNeverReachesTheClassifier() async throws {
         let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
         let recorder = makeRecorder(classifier: classifier, candidates: [english, french])
 
         try await recorder.start(language: english)
-        microphone.play(seconds: 10, amplitude: 0.001)
-        systemAudio.play(seconds: 10, amplitude: 0)
+        microphone.play(seconds: 10, amplitude: 0.05)
+        systemAudio.play(seconds: 10, amplitude: 0.05)
         microphone.play(seconds: 5)
         try await eventually { !classifier.peaks.isEmpty }
         await recorder.discard()
 
-        #expect(classifier.peaks.first! > 0.1, "the first window scored is the speech after 10 s of silence")
+        #expect(classifier.peaks.first! > 0.1, "the first window scored is the speech after 10 s of music")
+    }
+
+    @Test func aChunkTheSpeechGateIsLessThan85PercentSureOfIsNotSpeech() async throws {
+        let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
+        let speechGate = ScriptedSpeechGate(speech: 0.8)
+        let recorder = makeRecorder(classifier: classifier, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        speak()
+        try await eventually { speechGate.chunks.count >= 2 * 39 }
+        await recorder.discard()
+
+        #expect(classifier.windows.isEmpty)
+    }
+
+    @Test func eachStreamIsJudgedAsItsOwnStream() async throws {
+        let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(classifier: classifier, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 2)
+        systemAudio.play(seconds: 1, amplitude: 0)
+        try await eventually { speechGate.chunks.count >= 7 + 3 }
+        await recorder.discard()
+
+        #expect(speechGate.chunks.filter { $0.stream == .me }.allSatisfy { $0.peak > 0.1 })
+        #expect(speechGate.chunks.filter { $0.stream == .them }.allSatisfy { $0.peak == 0 })
+    }
+}
+
+/// Stands in for Silero VAD: a chunk whose loudest sample passes 0.1 is speech with probability `speech`, any other
+/// is speech with probability 0.01. Notes every chunk it was asked about.
+final class ScriptedSpeechGate: SpeechGate {
+    let chunkSize = 4096
+    let speech: Double
+    private let state = Mutex((chunks: [(stream: AudioStream, peak: Float)](), released: false))
+
+    init(speech: Double = 0.97) {
+        self.speech = speech
+    }
+
+    var chunks: [(stream: AudioStream, peak: Float)] { state.withLock { $0.chunks } }
+    var released: Bool { state.withLock { $0.released } }
+
+    func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double {
+        let peak = chunk.map(abs).max() ?? 0
+        state.withLock { $0.chunks.append((stream, peak)) }
+        return peak > 0.1 ? speech : 0.01
+    }
+
+    func release() async {
+        state.withLock { $0.released = true }
     }
 }
 

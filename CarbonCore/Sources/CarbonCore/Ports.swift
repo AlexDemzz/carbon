@@ -109,6 +109,18 @@ public protocol SpokenLanguageClassifier: Sendable {
     func release() async
 }
 
+/// Voice activity detection on 16 kHz mono audio, such as Silero VAD in Core ML: tells speech from silence, music
+/// and noise.
+public protocol SpeechGate: Sendable {
+    /// The samples of each chunk it judges.
+    var chunkSize: Int { get }
+    /// The probability that `chunk` is speech, given the chunks of `stream` before it: each stream is judged on its
+    /// own. Loads the model on first use.
+    func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double
+    /// Lets the model go and forgets every stream, until the next `speechProbability`.
+    func release() async
+}
+
 /// A Meeting's recap: what was said and what comes next.
 public struct Summary: Equatable, Sendable {
     public var keyPoints: [String]

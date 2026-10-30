@@ -2,52 +2,60 @@
 import Foundation
 import Synchronization
 
-/// Identifies a live Meeting's language once: hears both streams, keeps only their speech, has each window of
-/// `window` seconds scored and votes, until the vote decides or gives up, or `stop()`. The model is let go as soon as
-/// it is no longer needed, before the outcome is handed over.
+/// Identifies a live Meeting's language once: hears both streams, has a speech gate keep only their speech, has each
+/// window of `window` seconds scored and votes, until the vote decides or gives up, or `stop()`. The capture threads
+/// only resample: gating and scoring run in one task. The models are let go as soon as they are no longer needed,
+/// before the outcome is handed over.
 final class LanguageIdentification: Sendable {
     /// Seconds of speech per window the classifier scores, within the 3–5 s the research note measured.
     static let window: TimeInterval = 4
-    /// RMS of −40 dBFS over `gateFrame`: above a quiet room, below speech. Untuned: an energy gate, not a voice
-    /// activity model, so music or loud noise gets through.
-    static let speechLevel: Float = 0.01
-    /// 30 ms at 16 kHz.
-    static let gateFrame = 480
+    /// The least probability of speech the gate must give a chunk for it to be speech: FluidAudio's default for Silero
+    /// VAD. Measured on synthetic audio, speech scores 0.93–0.97, music and noise 0.00–0.01, notification sounds 0.03.
+    static let speechProbability = 0.85
 
     private static let format = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: LogMel.sampleRate, channels: 1, interleaved: false)!
     private static var windowSamples: Int { Int(window * LogMel.sampleRate) }
 
-    /// One stream's audio on its way to the classifier.
-    private struct StreamSpeech {
+    /// One stream's audio on its way to the speech gate.
+    private struct StreamAudio {
         var converter: AVAudioConverter?
-        /// Audio not yet gated: less than one gate frame.
+        /// Audio not yet gated: less than one chunk.
         var pending: [Float] = []
-        /// Speech not yet scored: less than one window.
-        var speech: [Float] = []
     }
 
     /// One lock per stream, so neither capture thread waits on the other's resampling.
-    private let me = Mutex(StreamSpeech())
-    private let them = Mutex(StreamSpeech())
+    private let me = Mutex(StreamAudio())
+    private let them = Mutex(StreamAudio())
+    private let chunkSize: Int
     private let stopped = Atomic(false)
-    private let windows: AsyncStream<[Float]>.Continuation
+    private let chunks: AsyncStream<(stream: AudioStream, audio: [Float])>.Continuation
 
-    /// `onOutcome` gets the vote's decision, or `gaveUp`, or the classifier's failure; never after `stop()`.
+    /// `onOutcome` gets the vote's decision, or `gaveUp`, or the gate's or the classifier's failure; never after
+    /// `stop()`.
     init(
-        vote: LanguageVote, classifier: any SpokenLanguageClassifier,
+        vote: LanguageVote, speechGate: any SpeechGate, classifier: any SpokenLanguageClassifier,
         onOutcome: @escaping @MainActor @Sendable (Result<LanguageVote.Outcome, any Error>) async -> Void
     ) {
-        let (stream, windows) = AsyncStream<[Float]>.makeStream()
-        self.windows = windows
+        let (stream, chunks) = AsyncStream<(stream: AudioStream, audio: [Float])>.makeStream()
+        self.chunks = chunks
+        chunkSize = speechGate.chunkSize
         Task.detached { [self] in
             var vote = vote
+            var speech: [AudioStream: [Float]] = [:]
             var outcome: Result<LanguageVote.Outcome, any Error>?
-            // The windows heard before `stop()` are still in the stream: they are dropped unscored.
-            for await window in stream where !self.stopped.load(ordering: .acquiring) {
+            // The chunks heard before `stop()` are still in the stream: they are dropped unjudged.
+            for await chunk in stream where !self.stopped.load(ordering: .acquiring) {
                 do {
+                    guard try await speechGate.speechProbability(of: chunk.audio, on: chunk.stream)
+                        >= Self.speechProbability
+                    else { continue }
+                    speech[chunk.stream, default: []] += chunk.audio
+                    guard speech[chunk.stream]!.count >= Self.windowSamples else { continue }
+                    let window = Array(speech[chunk.stream]!.prefix(Self.windowSamples))
+                    speech[chunk.stream]!.removeFirst(Self.windowSamples)
                     let scores = try await classifier.classify(window)
-                    let decision = vote.add(scores, speech: Double(window.count) / LogMel.sampleRate)
+                    let decision = vote.add(scores, speech: Self.window)
                     if decision != .undecided { outcome = .success(decision) }
                 } catch {
                     outcome = .failure(error)
@@ -55,8 +63,9 @@ final class LanguageIdentification: Sendable {
                 if outcome != nil { break }
             }
             let stopped = self.stopped.exchange(true, ordering: .acquiringAndReleasing)
-            windows.finish()
+            chunks.finish()
             await classifier.release()
+            await speechGate.release()
             if let outcome, !stopped { await onOutcome(outcome) }
         }
     }
@@ -64,41 +73,31 @@ final class LanguageIdentification: Sendable {
     /// Takes in one captured buffer of `stream`, on the capture's thread.
     func hear(_ buffer: AVAudioPCMBuffer, on stream: AudioStream) {
         guard !stopped.load(ordering: .acquiring) else { return }
+        let chunkSize = chunkSize
         let ready = stream == .me
-            ? me.withLock { Self.gate(buffer, into: &$0) }
-            : them.withLock { Self.gate(buffer, into: &$0) }
-        for window in ready { windows.yield(window) }
+            ? me.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
+            : them.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
+        for chunk in ready { chunks.yield((stream, chunk)) }
     }
 
-    /// Adds `buffer`'s speech to `audio`. Returns the windows it completes.
-    private static func gate(_ buffer: AVAudioPCMBuffer, into audio: inout StreamSpeech) -> [[Float]] {
+    /// Adds `buffer`, resampled, to `audio`. Returns the chunks it completes.
+    private static func chunk(_ buffer: AVAudioPCMBuffer, into audio: inout StreamAudio, size: Int) -> [[Float]] {
         guard let converted = try? StreamRecorder.convert(buffer, to: format, with: &audio.converter) else {
             return []
         }
         audio.pending += UnsafeBufferPointer(start: converted.floatChannelData![0], count: Int(converted.frameLength))
-        var start = 0
-        while audio.pending.count - start >= gateFrame {
-            let frame = audio.pending[start..<start + gateFrame]
-            if isSpeech(frame) { audio.speech += frame }
-            start += gateFrame
-        }
-        audio.pending.removeFirst(start)
         var ready: [[Float]] = []
-        while audio.speech.count >= windowSamples {
-            ready.append(Array(audio.speech.prefix(windowSamples)))
-            audio.speech.removeFirst(windowSamples)
+        while audio.pending.count >= size {
+            ready.append(Array(audio.pending.prefix(size)))
+            audio.pending.removeFirst(size)
         }
         return ready
     }
 
-    /// Stops hearing and scoring. A window being scored is dropped, and the model is let go.
+    /// Stops hearing, gating and scoring. A chunk being gated or a window being scored is dropped, and the models are
+    /// let go.
     func stop() {
         stopped.store(true, ordering: .releasing)
-        windows.finish()
-    }
-
-    private static func isSpeech(_ frame: ArraySlice<Float>) -> Bool {
-        let power = frame.reduce(0) { $0 + $1 * $1 } / Float(frame.count)
-        return power.squareRoot() > speechLevel
+        chunks.finish()
     }
 }
