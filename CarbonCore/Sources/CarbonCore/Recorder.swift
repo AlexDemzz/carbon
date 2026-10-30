@@ -128,6 +128,8 @@ public final class Recorder {
     private var languageSwitch: Task<Void, any Error>?
     /// The live Meeting's language identification, until it decides, gives up or the person picks a language.
     private var languageIdentification: (meeting: UUID, identification: LanguageIdentification)?
+    /// The language the pending offer's Transcribe starts in.
+    private var offeredLanguage: Locale?
     /// The last language identification started, which the next one waits for.
     private var lastLanguageIdentification: LanguageIdentification?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
@@ -255,6 +257,7 @@ public final class Recorder {
                         detector.offerDeclined(at: snapshot.time)
                         continue
                     }
+                    offeredLanguage = language
                     onNotice?(.offered(Offer(
                         app: app, title: title(of: event, startingAt: now()),
                         provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))),
@@ -283,7 +286,7 @@ public final class Recorder {
     /// Transcribe in <language> is the person's choice, so that Meeting's language is never identified.
     public func acceptOffer(language: Locale) async throws {
         guard liveCapture == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
-        let chosen = language.identifier(.bcp47) != detectionLanguage?.identifier(.bcp47)
+        let chosen = language.identifier(.bcp47) != offeredLanguage?.identifier(.bcp47)
         try await begin(language: language, app: app, event: event, mode: .auto, identifies: !chosen)
     }
 
