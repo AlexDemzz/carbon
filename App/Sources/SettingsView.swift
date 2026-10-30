@@ -35,6 +35,7 @@ private struct GeneralSettings: View {
     @Bindable var updater: Updater
     @AppStorage(SettingsKey.keepAudio) private var keepAudio = false
     @AppStorage(SettingsKey.debugMode) private var debugMode = false
+    @AppStorage(SettingsKey.appIconPlacement) private var appIconPlacement = AppIconPlacement.dockAndMenuBar
     @State private var launchesAtLogin = false
 
     var body: some View {
@@ -69,6 +70,9 @@ private struct GeneralSettings: View {
                         launchesAtLogin = model.launchesAtLogin
                     }
                 Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                Picker("Show app icon in", selection: $appIconPlacement) {
+                    ForEach(AppIconPlacement.allCases, id: \.self) { Text($0.title) }
+                }
             }
             Section {
                 Toggle("Debug mode", isOn: $debugMode)
