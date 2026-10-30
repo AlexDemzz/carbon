@@ -152,6 +152,18 @@ struct PersonEditTests {
         #expect(library.voicePrints.prints.first { $0.id == romainPrint }?.name == "Romain Dupont")
     }
 
+    @Test func aParticipantTakesTheEmailTheirVoicePrintWasGivenInSettings() throws {
+        try rememberPeople()
+        let library = makeLibrary()
+        try createMeeting(library)
+        try library.editVoicePrint(romainPrint, name: "Romain", email: "romain@carbon.app")
+
+        try library.editParticipant(id, romain, name: "Romain", email: "romain@carbon.app")
+
+        #expect(try entry(library).participants.last == Participant(name: "Romain", email: "romain@carbon.app"))
+        #expect(library.voicePrints.prints.first { $0.id == romainPrint }?.email == "romain@carbon.app")
+    }
+
     /// Adds a print for `person` to the ones `rememberPeople()` wrote.
     func library(addingPrint printID: UUID, for person: Participant) throws {
         let url = support.url.appending(path: "voiceprints.json")

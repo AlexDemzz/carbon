@@ -86,22 +86,29 @@ extension Library {
     /// The Voice Prints `participant` was heard as in the Meeting, or is by email, or by name for a print with none.
     public func voicePrints(of participant: Participant, in id: UUID) -> [VoicePrint] {
         let linked = (try? entry(id, in: loadIndex())).map { entry in
-            Set(entry.speakers.filter { $0.label == TranscriptBuilder.label(forName: participant.name) }
-                .compactMap(\.voicePrintId))
+            linkedVoicePrints(
+                of: [participant], labels: Set([TranscriptBuilder.label(forName: participant.name)].compactMap(\.self)),
+                in: entry)
         } ?? []
         return voicePrints.prints.filter { isVoicePrint($0, of: [participant], linked: linked) }
     }
 
-    /// A linked print with an email is theirs only when one of them has that email or has none: two people can
-    /// share a name, and so a Speaker label.
     private func isVoicePrint(_ print: VoicePrint, of people: [Participant], linked: Set<UUID>) -> Bool {
-        guard !print.owner else { return false }
-        if linked.contains(print.id), print.email == nil || people.contains(where: {
-            $0.email == nil || $0.isPerson(print.person)
-        }) {
-            return true
-        }
-        return people.contains { (print.email == nil || $0.email != nil) && $0.isPerson(print.person) }
+        !print.owner && (linked.contains(print.id) || people.contains {
+            (print.email == nil || $0.email != nil) && $0.isPerson(print.person)
+        })
+    }
+
+    /// The prints `labels`' Speakers were heard as, less those another Participant of the Meeting has the email of:
+    /// two people can share a name, and so a Speaker label.
+    private func linkedVoicePrints(
+        of people: [Participant], labels: Set<String>, in entry: MeetingIndex.Entry
+    ) -> Set<UUID> {
+        let others = entry.participants.filter { !people.contains($0) && $0.email != nil }
+        return Set(entry.speakers.filter { labels.contains($0.label) }.compactMap(\.voicePrintId).filter { id in
+            guard let print = voicePrints.prints.first(where: { $0.id == id }), print.email != nil else { return true }
+            return !others.contains { $0.isPerson(print.person) }
+        })
     }
 
     /// Writes `edited` in `target`'s place and removes `source`, in the index and surgically in the file; renames
@@ -117,7 +124,7 @@ extension Library {
            MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: markdown) == nil {
             throw LibraryError.participantsNotInFile
         }
-        let linked = Set(entry.speakers.filter { labels.contains($0.label) }.compactMap(\.voicePrintId))
+        let linked = linkedVoicePrints(of: people, labels: labels, in: entry)
         try writeSurgically(id, updating: { entry in
             // Only the first of each, as in the file.
             if let position = entry.participants.firstIndex(of: target) { entry.participants[position] = edited }
