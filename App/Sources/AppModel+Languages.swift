@@ -37,16 +37,12 @@ extension AppModel {
         if meetingLanguages.chosen != old?.chosen { languageAssets.keep(meetingLanguages.chosen) }
     }
 
-    /// The checked languages a Meeting may turn out to be spoken in: those whose assets are ready. None when
-    /// "Identify the Meeting Language automatically" is off.
+    /// The checked languages a Meeting may turn out to be spoken in: those whose assets are ready.
     var meetingLanguageCandidates: [Locale] {
-        guard UserDefaults.standard.bool(forKey: SettingsKey.identifyMeetingLanguage), let meetingLanguages else {
-            return []
-        }
-        return meetingLanguages.chosen.filter { languageAssets.state(of: $0) == .ready }
+        meetingLanguages?.chosen.filter { languageAssets.state(of: $0) == .ready } ?? []
     }
 
-    /// The language a manual Meeting starts in.
+    /// The language a manual Meeting starts in: the last Meeting's while it is checked, else the first checked.
     func nextMeetingLanguage() async -> Locale {
         if let meetingLanguages { return meetingLanguages.defaultLanguage }
         return Self.macLanguages(supported: await SpeechTranscriber.supportedLocales).defaultLanguage
@@ -61,18 +57,11 @@ extension AppModel {
         return MeetingLanguages.listed(chosen + [meeting.language])
     }
 
-    /// The live Meeting's language for the menu bar: its badge, "FR", and its name, "French".
-    var liveMeetingLanguage: (badge: String, name: String)? {
-        guard case .live(let meeting) = recorder.state else { return nil }
-        let languages = meetingLanguages ?? MeetingLanguages(default: meeting.language)
-        return (languages.abbreviation(of: meeting.language), languageName(meeting.language))
-    }
-
     func languageName(_ language: Locale) -> String {
         meetingLanguages?.name(of: language) ?? Notifier.languageName(language)
     }
 
-    /// Re-transcribes the live Meeting from the start in `language`. The menu bar then shows the new language.
+    /// Re-transcribes the live Meeting from the start in `language`. Meeting Language ▸ then checks the new one.
     func switchLanguage(to language: Locale) {
         Task {
             do {
@@ -84,8 +73,10 @@ extension AppModel {
         }
     }
 
-    /// The live Meeting is now transcribed in another language, picked by the person or identified.
+    /// The live Meeting is now transcribed in another language, picked by the person or identified. The next Meeting
+    /// starts in it.
     func meetingLanguageChanged(_ meeting: LiveMeeting) {
+        meetingLanguages?.rememberLastMeeting(in: meeting.language)
         AccessibilityNotification.Announcement("Transcribing in \(languageName(meeting.language))").post()
     }
 }

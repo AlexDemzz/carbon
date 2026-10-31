@@ -194,19 +194,20 @@ struct DetectionRecorderTests {
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...100, [zoom])]))
 
         #expect(notices.list == [
-            .offered(.init(app: zoom, title: "Meeting Oct 23, 9:15 AM", provider: "Zoom", language: Locale(identifier: "en_US"))),
+            .offered(.init(app: zoom, title: "Meeting Oct 23, 9:15 AM", provider: "Zoom")),
             .offerWithdrawn(zoom),
         ])
         #expect(recorder.state == .idle)
     }
 
-    @Test func transcribingAnOfferStartsTheMeetingInTheChosenLanguage() async throws {
+    @Test func transcribingAnOfferStartsTheMeetingInTheDetectionLanguage() async throws {
         let recorder = try makeRecorder()
         recorder.autoTranscribe = false
+        recorder.detectionLanguage = Locale(identifier: "fr_FR")
         let notices = recordNotices(of: recorder)
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: start, [(0...20, [zoom])]))
-        try await recorder.acceptOffer(language: Locale(identifier: "fr_FR"))
+        try await recorder.acceptOffer()
 
         guard case .live(let meeting) = recorder.state else {
             Issue.record("no live Meeting")
