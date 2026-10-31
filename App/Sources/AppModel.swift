@@ -61,7 +61,6 @@ final class AppModel {
             transcriber: SpeechTranscriberAdapter(),
             diarizer: HelperProcessDiarizer(),
             summarizer: NoSummarizer(),
-            languageClassifier: CoreMLLanguageClassifier(),
             speechGate: CoreMLSpeechGate(),
             library: library,
             outputRoute: CoreAudioOutputRoute(),

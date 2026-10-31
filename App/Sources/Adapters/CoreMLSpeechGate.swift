@@ -5,7 +5,7 @@ import Foundation
 /// Silero VAD in Core ML, shipped in the app (`App/SpeechGateModel`). It judges 4096 samples at a time, after the
 /// last 64 samples of the stream's chunk before and the LSTM state that chunk left, so each stream keeps its own. The
 /// model is loaded on the first chunk it judges and let go, with every stream's state, on `release()`. It runs on the
-/// CPU, like the classifier: about 0.2 ms per chunk there, no faster on the Neural Engine, which takes longer to load.
+/// CPU: about 0.2 ms per chunk there, no faster on the Neural Engine, which takes longer to load.
 actor CoreMLSpeechGate: SpeechGate {
     enum Failure: LocalizedError {
         case missingModel

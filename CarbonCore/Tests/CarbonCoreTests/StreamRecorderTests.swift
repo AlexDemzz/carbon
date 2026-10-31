@@ -9,6 +9,7 @@ struct StreamRecorderTests {
     /// What a session was handed, in order: "<ms> ms" per buffer heard, "skip <ms> ms" per skip.
     final class LoggingSession: TranscriptionSession {
         let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let finalWords = AsyncStream<[TranscribedWord]> { $0.finish() }
         private let events = Mutex<[String]>([])
 
         var log: [String] { events.withLock { $0 } }

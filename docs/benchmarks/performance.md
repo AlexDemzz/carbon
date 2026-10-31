@@ -27,7 +27,7 @@ CPU % = CPU time gained ÷ 120 s. Wakeups per second = `idlew` ÷ 20. The Carbon
 
 ## 2. Transcribing
 
-`scripts/bench` replays a recording through Carbon's real `Recorder`, the app's `SpeechTranscriberAdapter`, and the Core ML language identification, at real-time pace. The mic arrives in 100 ms buffers and the call in 10 ms buffers, as the taps deliver them. It needs no permission and plays nothing aloud.
+`scripts/bench` replays a recording through Carbon's real `Recorder`, the app's `SpeechTranscriberAdapter` and `CoreMLSpeechGate`, and the transcript's language identification, at real-time pace. The mic arrives in 100 ms buffers and the call in 10 ms buffers, as the taps deliver them. It needs no permission and plays nothing aloud.
 
 ```sh
 scripts/bench/run.sh ~/Carbon/2026/<meeting>.m4a 150 60      # 150 s from 60 s in

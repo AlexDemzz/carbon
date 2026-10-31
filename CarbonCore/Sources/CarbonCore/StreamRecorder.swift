@@ -103,9 +103,27 @@ final class StreamRecorder: Sendable {
         }
     }
 
-    private func replay(_ frames: AVAudioFramePosition, to session: any TranscriptionSession) throws {
+    /// Has `session` hear the stretch of the stream recorded between `range`'s bounds, in seconds, on the stream's
+    /// clock: it skips to the stretch's start first. Reads the file, so keep it off the main actor.
+    func replay(_ range: ClosedRange<TimeInterval>, to session: any TranscriptionSession) throws {
+        let recorded = try state.withLock { state in
+            if state.closed { throw CocoaError(.fileWriteUnknown) }
+            if let error = state.error { throw error }
+            try Self.flush(&state)
+            return state.file.length
+        }
+        let start = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
+        guard start < recorded else { return }
+        if start > 0 { session.skip(Double(start) / fileFormat.sampleRate) }
+        try replay(min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate)), from: start, to: session)
+    }
+
+    private func replay(
+        _ frames: AVAudioFramePosition, from start: AVAudioFramePosition = 0, to session: any TranscriptionSession
+    ) throws {
         let file = try AVAudioFile(
             forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        file.framePosition = start
         let chunk = AVAudioFrameCount(fileFormat.sampleRate)
         var converter: AVAudioConverter?
         while file.framePosition < frames {
