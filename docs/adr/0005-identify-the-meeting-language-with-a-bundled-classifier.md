@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0006
+---
+
 # Identify the Meeting Language with a bundled acoustic classifier, once per Meeting
 
 Apple has no public spoken language identification API (docs/research/language-detection.md), so Carbon ships SpeechBrain's VoxLingua107 ECAPA-TDNN classifier (Core ML, 43 MB, Apache-2.0) in the app. When the person checked several Meeting Languages, it scores the first seconds of both streams' speech, restricted to those languages, and decides once: a different winner re-transcribes the whole Meeting through the existing language switch. This beats racing one SpeechTranscriber per candidate language (twice the transcription during the window, more per extra language) and Whisper's language detection (larger, slower, worse on 2 s clips); see docs/research/offline-spoken-language-identification.md.

@@ -34,19 +34,23 @@ final class SpeechTranscriberAdapter: Transcriber {
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         try await analyzer.prepareToAnalyze(in: format)
         let (input, continuation) = AsyncStream<AnalyzerInput>.makeStream()
+        let (finalWords, finalized) = AsyncStream<[TranscribedWord]>.makeStream()
         let collecting = Task {
+            defer { finalized.finish() }
             var words = WordBuilder()
             for try await result in transcriber.results where result.isFinal {
-                words.append(result.text)
+                finalized.yield(words.append(result.text))
             }
             return words.finish()
         }
         try await analyzer.start(inputSequence: input)
-        return Session(audioFormat: format, analyzer: analyzer, input: continuation, collecting: collecting)
+        return Session(
+            audioFormat: format, analyzer: analyzer, input: continuation, finalWords: finalWords, collecting: collecting)
     }
 
     final class Session: TranscriptionSession {
         let audioFormat: AVAudioFormat
+        let finalWords: AsyncStream<[TranscribedWord]>
         private let analyzer: SpeechAnalyzer
         private let input: AsyncStream<AnalyzerInput>.Continuation
         private let collecting: Task<[TranscribedWord], any Error>
@@ -54,9 +58,10 @@ final class SpeechTranscriberAdapter: Transcriber {
 
         init(
             audioFormat: AVAudioFormat, analyzer: SpeechAnalyzer, input: AsyncStream<AnalyzerInput>.Continuation,
-            collecting: Task<[TranscribedWord], any Error>
+            finalWords: AsyncStream<[TranscribedWord]>, collecting: Task<[TranscribedWord], any Error>
         ) {
             self.audioFormat = audioFormat
+            self.finalWords = finalWords
             self.analyzer = analyzer
             self.input = input
             self.collecting = collecting
@@ -88,7 +93,9 @@ private struct WordBuilder {
     private var start: TimeInterval?
     private var end: TimeInterval = 0
 
-    mutating func append(_ result: AttributedString) {
+    /// Returns the words `result` completes.
+    mutating func append(_ result: AttributedString) -> [TranscribedWord] {
+        let before = words.count
         for run in result.runs {
             let range = run[AttributeScopes.SpeechAttributes.TimeRangeAttribute.self]
             for character in result[run.range].characters {
@@ -102,6 +109,7 @@ private struct WordBuilder {
             }
         }
         flush()
+        return Array(words[before...])
     }
 
     mutating func finish() -> [TranscribedWord] {

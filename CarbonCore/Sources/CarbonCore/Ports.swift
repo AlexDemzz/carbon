@@ -99,16 +99,6 @@ public protocol Diarizer: Sendable {
     func diarize(_ audio: URL) async throws -> Diarization
 }
 
-/// Spoken language identification of a window of speech, such as SpeechBrain's VoxLingua107 classifier in Core ML.
-public protocol SpokenLanguageClassifier: Sendable {
-    /// The languages it scores, by VoxLingua107 label, such as "en" or "fr".
-    var labels: Set<String> { get }
-    /// Each label's log-probability for a window of 16 kHz mono speech. Loads the model on first use.
-    func classify(_ speech: [Float]) async throws -> [String: Double]
-    /// Lets the model go until the next `classify`.
-    func release() async
-}
-
 /// Voice activity detection on 16 kHz mono audio, such as Silero VAD in Core ML: tells speech from silence, music
 /// and noise.
 public protocol SpeechGate: Sendable {
@@ -117,6 +107,8 @@ public protocol SpeechGate: Sendable {
     /// The probability that `chunk` is speech, given the chunks of `stream` before it: each stream is judged on its
     /// own. Loads the model on first use.
     func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double
+    /// Judges `stream`'s next chunk as if it followed silence: the chunks before it weren't all heard.
+    func forget(_ stream: AudioStream) async
     /// Lets the model go and forgets every stream, until the next `speechProbability`.
     func release() async
 }
@@ -153,6 +145,9 @@ public protocol TranscriptionSession: AnyObject, Sendable {
     func append(_ buffer: AVAudioPCMBuffer)
     /// The stream went on for `duration` of silence that isn't fed: the next buffer starts that much later.
     func skip(_ duration: TimeInterval)
+    /// Each run of words as they become final, in order, until `finish()`: what the Meeting Language is identified
+    /// from while the Meeting goes on.
+    var finalWords: AsyncStream<[TranscribedWord]> { get }
     /// Ends the input and returns every final word of the stream.
     func finish() async throws -> [TranscribedWord]
 }

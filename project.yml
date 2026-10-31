@@ -34,9 +34,6 @@ targets:
       - path: App/DiarizationModels
         type: folder
         buildPhase: resources
-      - path: App/LanguageIdentificationModel
-        type: folder
-        buildPhase: resources
       - path: App/SpeechGateModel
         type: folder
         buildPhase: resources

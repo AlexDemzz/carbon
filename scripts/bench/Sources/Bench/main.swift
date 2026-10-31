@@ -96,7 +96,6 @@ let recorder = await MainActor.run {
         systemAudio: { _ in ReplaySource(samples: them, chunkSeconds: 0.01, label: "tap") },
         systemAudioPermission: { .granted },
         transcriber: SpeechTranscriberAdapter(), diarizer: NoDiarizer(),
-        languageClassifier: CoreMLLanguageClassifier(folder: app.appending(path: "LanguageIdentificationModel")),
         speechGate: CoreMLSpeechGate(folder: app.appending(path: "SpeechGateModel")),
         library: Library(folder: root.appending(path: "Library"), supportFolder: root),
         inProgressFolder: root.appending(path: "InProgress"))

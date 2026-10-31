@@ -113,26 +113,49 @@ final class ReplayTranscriber: Transcriber {
     final class Session: TranscriptionSession {
         let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
         let words: [TranscribedWord]
-        private let frames = Mutex<AVAudioFramePosition>(0)
+        let finalWords: AsyncStream<[TranscribedWord]>
+        private let heardOnly: Bool
+        private let finalized: AsyncStream<[TranscribedWord]>.Continuation
+        /// The frames heard or skipped, where the first heard one was, and how many words were final so far.
+        private let state = Mutex<(frames: AVAudioFramePosition, heardFrom: AVAudioFramePosition?, final: Int)>((0, nil, 0))
 
-        init(words: [TranscribedWord]) {
+        /// `heardOnly` returns only the words within the audio heard, as a session fed a stretch of a stream does;
+        /// otherwise every word, whatever was heard.
+        init(words: [TranscribedWord], heardOnly: Bool = false) {
             self.words = words
+            self.heardOnly = heardOnly
+            (finalWords, finalized) = AsyncStream.makeStream()
         }
 
         func append(_ buffer: AVAudioPCMBuffer) {
             precondition(buffer.format == audioFormat, "the transcriber only accepts its analyzer format")
-            frames.withLock { $0 += AVAudioFramePosition(buffer.frameLength) }
+            let words = words
+            let sampleRate = audioFormat.sampleRate
+            let final = state.withLock { state -> ArraySlice<TranscribedWord> in
+                if state.heardFrom == nil { state.heardFrom = state.frames }
+                state.frames += AVAudioFramePosition(buffer.frameLength)
+                let heard = Double(state.frames) / sampleRate
+                let start = state.final
+                while state.final < words.count, words[state.final].end <= heard { state.final += 1 }
+                return words[start..<state.final]
+            }
+            if !final.isEmpty { finalized.yield(Array(final)) }
         }
 
         func skip(_ duration: TimeInterval) {
-            frames.withLock { $0 += AVAudioFramePosition((duration * audioFormat.sampleRate).rounded()) }
+            state.withLock { $0.frames += AVAudioFramePosition((duration * audioFormat.sampleRate).rounded()) }
         }
 
         /// The stream heard or skipped so far.
-        var seconds: Double { Double(frames.withLock { $0 }) / audioFormat.sampleRate }
+        var seconds: Double { Double(state.withLock { $0.frames }) / audioFormat.sampleRate }
 
         func finish() async throws -> [TranscribedWord] {
-            words
+            finalized.finish()
+            guard heardOnly else { return words }
+            let (frames, heardFrom) = state.withLock { ($0.frames, $0.heardFrom) }
+            guard let heardFrom else { return [] }
+            let (start, end) = (Double(heardFrom) / audioFormat.sampleRate, Double(frames) / audioFormat.sampleRate)
+            return words.filter { $0.start >= start && $0.end <= end }
         }
     }
 }
@@ -217,10 +240,11 @@ final class ScriptedOutputRoute: OutputRouteSource {
     }
 }
 
-/// Waits until `condition` holds, for at most 10 s.
+/// Waits until `condition` holds, for at most 30 s: the suites' tests share the main actor, and the ones playing minutes
+/// of audio hold it for a second or more each.
 @MainActor
 func eventually(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !condition(), ContinuousClock.now < deadline {
         try await Task.sleep(for: .milliseconds(5))
     }

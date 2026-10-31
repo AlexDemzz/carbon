@@ -9,6 +9,7 @@ struct StreamRecorderTests {
     /// What a session was handed, in order: "<ms> ms" per buffer heard, "skip <ms> ms" per skip.
     final class LoggingSession: TranscriptionSession {
         let audioFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let finalWords = AsyncStream<[TranscribedWord]> { $0.finish() }
         private let events = Mutex<[String]>([])
 
         var log: [String] { events.withLock { $0 } }
@@ -64,6 +65,24 @@ struct StreamRecorderTests {
 
         #expect(log.filter { !$0.hasPrefix("skip") }.count == 10)
         #expect(log.count == 30)
+    }
+
+    @Test func aStretchReadBackWhileRecordingHoldsTheAudioRecordedThen() throws {
+        let session = LoggingSession()
+        let file = FileManager.default.temporaryDirectory.appending(path: "stream-\(UUID().uuidString).caf")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let recorder = try StreamRecorder(session: session, cafFile: file)
+        for second in 0..<3 {
+            for _ in 0..<100 { recorder.append(tapBuffer(sound: second == 1, format: session.audioFormat)) }
+        }
+
+        let samples = try recorder.samples(0.5...2.5, in: LanguageIdentification.format)
+        try recorder.close()
+
+        #expect(samples.count == 32_000)
+        #expect(samples[0..<8_000].allSatisfy { $0 == 0 })
+        #expect(samples[8_000..<24_000].contains { $0 > 0.1 })
+        #expect(samples[24_000...].allSatisfy { $0 == 0 })
     }
 
     @Test func onlyZerosAreDigitalSilenceNotAQuietRoom() throws {

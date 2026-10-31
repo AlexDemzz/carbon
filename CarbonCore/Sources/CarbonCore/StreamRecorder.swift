@@ -103,9 +103,61 @@ final class StreamRecorder: Sendable {
         }
     }
 
-    private func replay(_ frames: AVAudioFramePosition, to session: any TranscriptionSession) throws {
+    /// Has `session` hear the stretch of the stream recorded between `range`'s bounds, in seconds, on the stream's
+    /// clock: it skips to the stretch's start first. Reads the file, so keep it off the main actor.
+    func replay(_ range: ClosedRange<TimeInterval>, to session: any TranscriptionSession) throws {
+        let recorded = try flushed()
+        let start = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
+        guard start < recorded else { return }
+        if start > 0 { session.skip(Double(start) / fileFormat.sampleRate) }
+        try replay(
+            min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate)), from: start, to: session,
+            skippingSilence: true)
+    }
+
+    /// The stretch of the stream recorded between `range`'s bounds, in seconds, as the first channel of `format`.
+    /// Reads the file, so keep it off the main actor.
+    func samples(_ range: ClosedRange<TimeInterval>, in format: AVAudioFormat) throws -> [Float] {
+        let recorded = try flushed()
+        let end = min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate))
         let file = try AVAudioFile(
             forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        file.framePosition = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
+        guard file.framePosition < end,
+            let buffer = AVAudioPCMBuffer(
+                pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(fileFormat.sampleRate))
+        else { return [] }
+        var converter: AVAudioConverter?
+        var converted: AVAudioPCMBuffer?
+        var samples: [Float] = []
+        while file.framePosition < end {
+            let count = min(buffer.frameCapacity, AVAudioFrameCount(end - file.framePosition))
+            try file.read(into: buffer, frameCount: count)
+            if buffer.frameLength == 0 { break }
+            let output = try Self.convert(buffer, to: format, with: &converter, reusing: &converted)
+            samples += UnsafeBufferPointer(start: output.floatChannelData![0], count: Int(output.frameLength))
+        }
+        return samples
+    }
+
+    /// The frames recorded so far, all of them written to the file.
+    private func flushed() throws -> AVAudioFramePosition {
+        try state.withLock { state in
+            if state.closed { throw CocoaError(.fileWriteUnknown) }
+            if let error = state.error { throw error }
+            try Self.flush(&state)
+            return state.file.length
+        }
+    }
+
+    /// `skippingSilence` skips each second of digital silence instead of having the session hear it.
+    private func replay(
+        _ frames: AVAudioFramePosition, from start: AVAudioFramePosition = 0, to session: any TranscriptionSession,
+        skippingSilence: Bool = false
+    ) throws {
+        let file = try AVAudioFile(
+            forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        file.framePosition = start
         let chunk = AVAudioFrameCount(fileFormat.sampleRate)
         var converter: AVAudioConverter?
         while file.framePosition < frames {
@@ -115,6 +167,10 @@ final class StreamRecorder: Sendable {
             }
             try file.read(into: buffer, frameCount: count)
             if buffer.frameLength == 0 { break }
+            if skippingSilence, SoundLevel.isDigitalSilence(buffer) {
+                session.skip(Double(buffer.frameLength) / fileFormat.sampleRate)
+                continue
+            }
             session.append(try Self.convert(buffer, to: session.audioFormat, with: &converter))
         }
     }
@@ -194,6 +250,16 @@ final class StreamRecorder: Sendable {
     static func convert(
         _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?
     ) throws -> AVAudioPCMBuffer {
+        var output: AVAudioPCMBuffer?
+        return try convert(buffer, to: format, with: &converter, reusing: &output)
+    }
+
+    /// Converts into `output` when it is big enough, else into a new buffer left in `output`: the result is only
+    /// valid until the next conversion.
+    static func convert(
+        _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?,
+        reusing output: inout AVAudioPCMBuffer?
+    ) throws -> AVAudioPCMBuffer {
         if buffer.format == format { return buffer }
         if converter?.inputFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: format)
@@ -201,9 +267,10 @@ final class StreamRecorder: Sendable {
         guard let converter else { throw CocoaError(.featureUnsupported) }
         let ratio = format.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-            throw CocoaError(.featureUnsupported)
+        if output?.format != format || (output?.frameCapacity ?? 0) < capacity {
+            output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
         }
+        guard let output else { throw CocoaError(.featureUnsupported) }
         nonisolated(unsafe) var consumed = false
         var error: NSError?
         converter.convert(to: output, error: &error) { _, status in

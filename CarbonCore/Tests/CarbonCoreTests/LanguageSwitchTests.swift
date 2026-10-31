@@ -145,8 +145,12 @@ final class LanguageReplayTranscriber: Transcriber {
     private let started = Mutex<[(language: String, stream: AudioStream, session: ReplayTranscriber.Session)]>([])
     private let failingLanguages = Mutex<Set<String>>([])
 
-    init(_ words: [String: [AudioStream: [TranscribedWord]]]) {
+    let heardOnly: Bool
+
+    /// `heardOnly` sessions return only the words within the audio they heard.
+    init(_ words: [String: [AudioStream: [TranscribedWord]]], heardOnly: Bool = false) {
         self.words = words
+        self.heardOnly = heardOnly
     }
 
     /// Languages whose session fails to start, like a locale whose assets are missing.
@@ -165,7 +169,7 @@ final class LanguageReplayTranscriber: Transcriber {
     func start(locale: Locale, stream: AudioStream) async throws -> any TranscriptionSession {
         let language = locale.identifier(.bcp47)
         if failing.contains(language) { throw Unavailable() }
-        let session = ReplayTranscriber.Session(words: words[language]?[stream] ?? [])
+        let session = ReplayTranscriber.Session(words: words[language]?[stream] ?? [], heardOnly: heardOnly)
         started.withLock { $0.append((language, stream, session)) }
         return session
     }

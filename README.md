@@ -17,7 +17,7 @@ I wanted the transcript without the bot, as a plain file I could hand to an AI a
 - **It starts on its own.** When Zoom, Google Meet, Teams, Webex, FaceTime or any other meeting app starts using your microphone, Carbon starts transcribing. A notification says so, and the dot in its menu bar icon stays red for the whole meeting. Stop on that notification discards everything.
 - **It hears both sides.** Carbon records your microphone as "Me" and the call's audio as the other participants, and transcribes both on your Mac with Apple's SpeechTranscriber.
 - **It tells voices apart.** The other participants become Speaker A, Speaker B, Speaker C. Name a speaker once and Carbon remembers their Voice Print, so it names them in later meetings. On headphones, your microphone hears only you, so it stays Me, and Carbon learns your voice from it. When the sound plays on speakers, your microphone may be shared, as in a meeting room: each voice on it becomes its own Speaker, the call heard back through the speakers is left out, and Carbon recognizes you as Me from the voice it learnt on headphones. When it can't tell the voices apart, it falls back to Me and Them.
-- **It hears which language you speak.** Carbon starts with your Mac's languages, which you can change in Settings. With several, it listens to the first seconds of speech and switches the meeting to the one it hears, on your Mac. You can still switch by hand from the menu bar.
+- **It hears which language you speak.** Carbon starts with your Mac's languages, which you can change in Settings. With several, it reads what it transcribes, all meeting long, and switches the meeting to the one you speak, on your Mac. You can still switch by hand from the menu bar.
 - **It names the meeting.** With calendar access, Carbon takes the title and participants from the matching event.
 - **It files a Markdown file.** When the call ends, each meeting becomes one file in `~/Carbon`, organized by year. Press <kbd>⇧</kbd> <kbd>⌘</kbd> <kbd>C</kbd> to copy its path and paste it into Claude Code, Codex or whatever you use.
 
@@ -113,10 +113,8 @@ Try system audio capture from the built app, not from a terminal: launched from 
 
 Speaker diarization by [FluidAudio](https://github.com/FluidInference/FluidAudio). Its models ship inside Carbon (`App/DiarizationModels`): [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/speaker-diarization-coreml) of pyannote's [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), modified for Apple platforms, with work by pyannote, WeSpeaker and BUT Speech@FIT. The models are licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); see `App/DiarizationModels/speaker-diarization/NOTICE.md`.
 
-Spoken language identification by [SpeechBrain](https://speechbrain.github.io)'s [VoxLingua107 ECAPA-TDNN model](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa), in [aufklarer's Core ML conversion](https://huggingface.co/aufklarer/SpeechBrain-ECAPA-VoxLingua107-21M-CoreML), licensed Apache-2.0. It ships inside Carbon (`App/LanguageIdentificationModel`).
-
-Speech is told from music and noise, before identifying the Meeting Language, by [Silero VAD](https://github.com/snakers4/silero-vad) in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/silero-vad-coreml), licensed MIT. It ships inside Carbon (`App/SpeechGateModel`).
+Speech is told from music and noise, to count how many words the transcript should hold per second of speech when identifying the Meeting Language, by [Silero VAD](https://github.com/snakers4/silero-vad) in [Fluid Inference's Core ML conversion](https://huggingface.co/FluidInference/silero-vad-coreml), licensed MIT. It ships inside Carbon (`App/SpeechGateModel`).
 
 ## License
 
-Carbon is released under the [MIT License](LICENSE). The bundled diarization models keep their own CC BY 4.0 licence, the language identification model its Apache-2.0 licence, and the speech gate model its MIT licence, as noted above.
+Carbon is released under the [MIT License](LICENSE). The bundled diarization models keep their own CC BY 4.0 licence, and the speech gate model its MIT licence, as noted above.
