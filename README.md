@@ -93,7 +93,7 @@ Carbon updates itself with [Sparkle](https://sparkle-project.org).
 
 ## Build from source
 
-You need macOS 26 on Apple silicon, Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46 or later, the first to pass package traits to Xcode. `Carbon.xcodeproj` is generated from `project.yml`.
+You need macOS 26 or later on Apple silicon, Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46 or later, the first to pass package traits to Xcode. `Carbon.xcodeproj` is generated from `project.yml`.
 
 ```sh
 brew install xcodegen
