@@ -220,6 +220,26 @@ struct LanguageIdentificationTests {
         await recorder.discard()
     }
 
+    @Test func aRejectedGuardsWaitIsJudgedFromTheLatestSpeechNotFromTheRejection() async throws {
+        // No words for 30 s, then 140 s the transcript keeps up with, then no words again.
+        let words = (0..<5).flatMap { Self.spoken(Self.englishSpeech, from: 30 + 28 * Double($0), perSecond: 2.5) }
+        let transcriber = LanguageReplayTranscriber(["en-US": [.me: words]], heardOnly: true)
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 30)
+        try await eventually { sessions(transcriber, "fr-FR", .me) == 1 }
+        let judgedBefore = speechGate.chunks.count
+        microphone.play(seconds: 175)
+        try await eventually { sessions(transcriber, "fr-FR", .me) == 2 }
+        await recorder.discard()
+
+        #expect(
+            speechGate.chunks.count - judgedBefore < speechGate.chunks(in: 120),
+            "the latest minute of speech holds the wait: the minutes before it aren't all judged")
+    }
+
     @Test func aTranscriptReadingAsFrenchIsSwitchedEvenWhenTheFrenchModelWritesFewerWordsThanTheEnglish() async throws {
         // Measured on a Meeting going from English to French: on the French stretch, the English model wrote 2.7 words
         // per second of speech, the French one 2.3.

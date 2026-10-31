@@ -240,10 +240,11 @@ final class ScriptedOutputRoute: OutputRouteSource {
     }
 }
 
-/// Waits until `condition` holds, for at most 10 s.
+/// Waits until `condition` holds, for at most 30 s: the suites' tests share the main actor, and the ones playing minutes
+/// of audio hold it for a second or more each.
 @MainActor
 func eventually(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + .seconds(30)
     while !condition(), ContinuousClock.now < deadline {
         try await Task.sleep(for: .milliseconds(5))
     }

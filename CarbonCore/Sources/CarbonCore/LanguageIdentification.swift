@@ -381,10 +381,17 @@ struct BackOff {
         return wait
     }
 
-    /// Whether `speech` holds the wait since the last rejection, or there was none.
+    /// Whether `speech` holds the wait since the last rejection, or there was none. Sound the gate hasn't judged
+    /// counts as speech.
     func isOver(in speech: SpeechTimeline) -> Bool {
         guard let since else { return true }
         return speech.speech(from: since, to: speech.end) >= wait
+    }
+
+    /// Whether the speech the gate judged since the last rejection holds the wait, or there was none.
+    func isSurelyOver(in speech: SpeechTimeline) -> Bool {
+        guard let since else { return true }
+        return speech.judgedSpeech(from: since, to: speech.end) >= wait
     }
 }
 
@@ -456,7 +463,7 @@ struct StreamEvidence {
     /// back off. Sound the gate hasn't judged counts as speech.
     private func guardStretch() -> ClosedRange<TimeInterval>? {
         let end = guardEnd
-        guard end > since, guardBackOff.isOver(in: speech) else { return nil }
+        guard end > since, guardBackOff.isSurelyOver(in: speech) else { return nil }
         let start = max(
             since, speech.start(ofLast: LanguageIdentification.guardWindow, before: end),
             end - LanguageIdentification.maximumStretch)
@@ -470,8 +477,9 @@ struct StreamEvidence {
     /// second of it: speech is never more than sound, so the latest speech holds as many, and the guard can't fire
     /// whatever the gate says.
     ///
-    /// Once the guard's wait after a rejection seems over, the sound since the rejection is judged first, at most
-    /// `maximumStretch` at a time, so that music doesn't count as the speech it waits for.
+    /// Once the guard's wait after a rejection seems over, the sound since the rejection is judged first, latest first
+    /// and `guardWindow` at a time, until the speech judged holds the wait: music doesn't count as the
+    /// speech it waits for, and a long stretch the transcript kept up with isn't judged for it.
     func unjudgedGuardStretch() -> ClosedRange<TimeInterval>? {
         let end = guardEnd
         guard end > since else { return nil }
@@ -482,8 +490,10 @@ struct StreamEvidence {
         guard Double(count(in: soundStart...end)) < LanguageIdentification.guardRate * sound,
             guardBackOff.isOver(in: speech)
         else { return nil }
-        if let rejected = guardBackOff.since, let first = speech.firstUnjudged(from: rejected, to: end) {
-            return first...min(speech.end, first + LanguageIdentification.maximumStretch)
+        if let rejected = guardBackOff.since, !guardBackOff.isSurelyOver(in: speech),
+            let last = speech.lastUnjudgedEnd(from: rejected, to: end)
+        {
+            return max(rejected, last - LanguageIdentification.guardWindow)...speech.end
         }
         guard let stretch = guardStretch(), let first = speech.firstUnjudged(from: stretch.lowerBound, to: end)
         else { return nil }
@@ -558,6 +568,8 @@ struct SpeechTimeline {
     private var cumulative: [TimeInterval] = [0]
     /// The sound in the stream's first n chunks, at n.
     private var soundCumulative: [TimeInterval] = [0]
+    /// The sound the gate hasn't judged in the stream's first n chunks, at n.
+    private var unjudgedCumulative: [TimeInterval] = [0]
 
     init(chunkSeconds: TimeInterval) {
         self.chunkSeconds = chunkSeconds
@@ -568,6 +580,7 @@ struct SpeechTimeline {
             chunks.append(sound ? .sound : .silence)
             cumulative.append(cumulative.last! + (sound ? chunkSeconds : 0))
             soundCumulative.append(soundCumulative.last! + (sound ? chunkSeconds : 0))
+            unjudgedCumulative.append(unjudgedCumulative.last! + (sound ? chunkSeconds : 0))
         }
     }
 
@@ -580,7 +593,18 @@ struct SpeechTimeline {
         for chunk in first..<chunks.count {
             let counts = chunks[chunk] == .sound || chunks[chunk] == .speech
             cumulative[chunk + 1] = cumulative[chunk] + (counts ? chunkSeconds : 0)
+            unjudgedCumulative[chunk + 1] = unjudgedCumulative[chunk] + (chunks[chunk] == .sound ? chunkSeconds : 0)
         }
+    }
+
+    /// The speech the gate judged from `start` to `end`, leaving out the sound it hasn't judged.
+    func judgedSpeech(from start: TimeInterval, to end: TimeInterval) -> TimeInterval {
+        speech(from: start, to: end) - (unjudgedCumulative[index(end)] - unjudgedCumulative[index(start)])
+    }
+
+    /// Where the last chunk from `start` to `end` that is sound the gate hasn't judged ends, if any.
+    func lastUnjudgedEnd(from start: TimeInterval, to end: TimeInterval) -> TimeInterval? {
+        (index(start)..<index(end)).last { chunks[$0] == .sound }.map { Double($0 + 1) * chunkSeconds }
     }
 
     /// The stream time heard up to.
