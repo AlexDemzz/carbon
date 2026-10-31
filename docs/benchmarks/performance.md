@@ -52,6 +52,29 @@ BENCH_SILENT_THEM=1 scripts/bench/run.sh <meeting>.m4a       # the call replaced
 
 The second line alone undoes both the 100 ms feeding and the silence skipping.
 
+### Meeting Language identification (ADR 0006)
+
+Measured 2026-10-31 on the same Mac, under the same kind of background load (headless Chrome, other agents), which moved every reading by up to a point from one run to the next: `localspeechrecognition` alone read 1.9–2.8% on the same input.
+
+**Steady state**: `run.sh` on the Meeting room recording (2026-10-29, 11:34), 150 s from 60 s in, French transcribed with en-US also checked. Nothing challenges the language there, so this is what identification costs while it agrees.
+
+| Build | Carbon | localspeechrecognition | Total |
+|---|---|---|---|
+| main (0.4.0, acoustic classifier, decides in the first seconds) | 1.89, 2.02, 1.15% | 2.59, 2.71, 2.02% | 4.48, 4.73, 3.17% |
+| PR #30 before these changes (Silero on every chunk) | 2.97, 1.49% | 2.61, 1.94% | 5.59, 3.43% |
+| PR #30 now (gate only when a challenge needs it) | 2.34, 2.28, 1.37, 1.17, 2.22% | 2.68, 2.75, 2.10, 2.00, 2.74% | 5.01, 5.03, 3.48, 3.17, 4.96% |
+
+The three builds overlap within that noise. Earlier the same day, under lighter load, the same recording read Carbon 1.96–2.21% with Silero on every chunk, 1.29–1.57% with the gate run only when needed, and 1.17% with identification off: identification now costs Carbon's process a few tenths of a point at most while nothing challenges.
+
+**Switching**: a 160 s clip of English speech on the mic, call replaced by zeros (`BENCH_SILENT_THEM=1`), starting in fr-FR with en-US checked (2 candidates). One vote, confirmed, switches to en-US about 30 s in; the whole Meeting is then transcribed again in English. CPU over the whole run, sampled every 0.5 s:
+
+| Build | Carbon | localspeechrecognition | Total |
+|---|---|---|---|
+| PR #30 before these changes | 2.81, 2.97% | 3.26, 3.46% | 6.08, 6.42% |
+| PR #30 now | 1.89, 2.01, 1.97% | 3.48, 3.42, 3.41% | 5.37, 5.44, 5.38% |
+
+The confirmation itself (re-transcribing the vote's stretch in en-US) took 0.5–0.6 s and about 1 CPU-s of the speech service in both.
+
 **Not counted**: the audio capture itself (AVAudioEngine, the process tap), the menu bar meter (measured in `../research/menu-bar-mic-meter-performance.md`), coreaudiod and WindowServer.
 
 **Transcript quality**: compare the `BENCH_OUT` Transcripts word by word. Two runs of the same build already differ by about 3% of their words. Every change stayed within that, with the same word count and Turn timestamps.

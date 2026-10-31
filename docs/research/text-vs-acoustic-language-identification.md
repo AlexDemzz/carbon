@@ -267,14 +267,14 @@ Before ADR 0006, the rule above was replayed offline: TTS clips (native, accente
 
 **Acoustic classifier replayed on the same clips.** With four candidates (fr, en, de, es), ECAPA confidently picked the speaker's native language on every accented clip (5 of 5 wrong), and never followed a mid-Meeting language change, by design of its once-per-Meeting vote.
 
-**Two candidates (fr-FR, en-US), confirmation "candidate words ≥ current words and most chunks ≥ 0.9".** Every clip ended in the right locale, with no false switch:
+**Two candidates (fr-FR, en-US), confirmation "candidate words ≥ current words and most chunks ≥ 0.9".** Every clip but English then French ended in the right locale, with no false switch (that one is fixed below):
 
 | Clip | Started in | What fired | Outcome |
 |---|---|---|---|
 | English, native (US, GB) | fr-FR | vote at 11–12 s | en-US |
 | English, French accent (2 voices, plus phone band) | fr-FR | vote at 19–23 s, or the rate guard at 21 s (0.05 words/s) | en-US |
 | French, native, franglais, phone band | fr-FR | nothing | stays fr-FR (0 of 14–16 chunks read as English) |
-| English then French | fr-FR | vote → en-US at 23 s; first vote back rejected (fewer words), second confirmed at 58 s | follows both changes |
+| English then French | fr-FR | vote → en-US at 23 s; vote back at 49 s rejected (fr-FR 2.3 against en-US 2.7 words/s), and the 20 s vote back-off outlasted the 70 s clip | stays en-US (corrected: an earlier run of this table said "follows both changes") |
 | Maintainer's accented English, 40 s | fr-FR | vote at 32 s (en-US 2.19 against fr-FR 1.27 words/s, 6 of 6 chunks) | en-US |
 | Two real French Meetings, 3 min, both streams | fr-FR | nothing | stays fr-FR (0 of 39–51 chunks read as English) |
 | French native, French Meetings | en-US | vote (first one rejected at 11 s, confirmed at 23 s), or the rate guard at 25 s (0.05 words/s) | fr-FR |
@@ -283,5 +283,16 @@ Before ADR 0006, the rule above was replayed offline: TTS clips (native, accente
 A stricter confirmation, "candidate writes twice the current words", would have missed every vote-triggered switch: a wrong locale on native speech still writes 1.1–1.8 words per second of speech against 2.6–3.4 for the right one.
 
 **Four candidates (fr-FR, en-US, de-DE, es-ES), rate guard at 1.0 words per second of speech.** Native German, Spanish and English, accented English (German, Spanish, French accents), Spanish with French accent, Spanish full of loanwords, and German then English all ended in the spoken language, by vote or by the guard trying every other candidate and keeping the best words-per-second × share. German with a French accent was the one miss: every candidate's transcript was rejected (de-DE 0.84 words/s at a 0.66 share), so it stayed fr-FR, a miss rather than a false switch. With the guard at 0.2 instead of 1.0, Spanish clips through fr-FR (0.4–1.0 words/s) waited for the vote, up to 37 s.
+
+**Confirmation past the guard's rate, and a gate that runs only when needed (2026-10-31, later).** The English-then-French miss came from the confirmation, not the vote: on French speech the English model still wrote 2.7 words per second of speech, the French one 2.3, so "at least as many words as the current language" rejected the right language. A candidate now has to match the current language's rate only up to the guard's rate (1 word per second of speech); its chunks must still read as it. In the same replay, the speech gate judged a stretch only when a challenge needed it (see ADR 0006): while the latest 30 s of sound (RMS over −50 dBFS) hold a word per second of it, the guard can't fire, so nothing is judged. Over all 89 cases (66 TTS, 6 real, 9 French Meeting then a clip, 8 clips on the call stream; 2 and 4 candidates):
+
+| Suite | Cases | Same final language as before | False switches | Probes (before → after) | Chunks the gate judged |
+|---|---|---|---|---|---|
+| TTS clips | 66 | 62; the 4 English-then-French cases now end in fr-FR (vote back confirmed at 48.6–49.7 s) | 0 | 67 → 65 | 10.9% |
+| Real recordings | 6 | 6 | 0 | 2 → 2 | 9.2% |
+| French Meeting, then a clip | 9 | 9 | 0 | 21 → 21 | 5.5% |
+| Clip on the call stream | 8 | 8 | 0 | 16 → 16 | 19.0% |
+
+German with a French accent stays the one miss (both start languages). Before, the gate judged every chunk (50–72% once digital silence is skipped).
 
 What these show **(inference)**: the transcript is the stronger signal for accented speech, the rate guard covers the case where the wrong model writes almost nothing, and the confirmation run is what keeps a vote from switching on its own. Real VoIP "Them" audio and three-language real Meetings remain to be measured on recorded Meetings, from the diagnostic log.
