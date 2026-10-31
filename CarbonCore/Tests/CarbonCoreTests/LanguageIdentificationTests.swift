@@ -204,6 +204,22 @@ struct LanguageIdentificationTests {
         #expect(languageIdentified(notices).isEmpty)
     }
 
+    @Test func musicAfterARejectedGuardDoesNotShortenItsMinuteOfSpeech() async throws {
+        let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 30)
+        try await eventually { sessions(transcriber, "fr-FR", .me) == 1 }
+        microphone.play(seconds: 60, amplitude: 0.05)
+        microphone.play(seconds: 45)
+        try await settled()
+        #expect(sessions(transcriber, "fr-FR", .me) == 1, "45 s of speech since the rejection, not 60")
+        microphone.play(seconds: 25)
+        try await eventually { sessions(transcriber, "fr-FR", .me) == 2 }
+        await recorder.discard()
+    }
+
     @Test func aTranscriptReadingAsFrenchIsSwitchedEvenWhenTheFrenchModelWritesFewerWordsThanTheEnglish() async throws {
         // Measured on a Meeting going from English to French: on the French stretch, the English model wrote 2.7 words
         // per second of speech, the French one 2.3.

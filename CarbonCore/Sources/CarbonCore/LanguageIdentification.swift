@@ -363,20 +363,28 @@ struct LanguageEvidence {
 /// rejection since the last switch, up to 8 times `first`.
 struct BackOff {
     let first: TimeInterval
-    /// The stream's total speech before which it doesn't challenge.
-    private(set) var until: TimeInterval = 0
+    /// The stream time of the last rejection, if any.
+    private(set) var since: TimeInterval?
+    /// The speech the stream waits for from `since`.
+    private(set) var wait: TimeInterval = 0
     private var rejections = 0
 
     init(first: TimeInterval) {
         self.first = first
     }
 
-    /// Backs off from `speech`, the stream's total speech now. Returns the wait.
-    mutating func reject(at speech: TimeInterval) -> TimeInterval {
-        let wait = first * pow(2, Double(min(rejections, 3)))
+    /// Backs off from `time`, the stream time now. Returns the wait.
+    mutating func reject(at time: TimeInterval) -> TimeInterval {
+        wait = first * pow(2, Double(min(rejections, 3)))
         rejections += 1
-        until = speech + wait
+        since = time
         return wait
+    }
+
+    /// Whether `speech` holds the wait since the last rejection, or there was none.
+    func isOver(in speech: SpeechTimeline) -> Bool {
+        guard let since else { return true }
+        return speech.speech(from: since, to: speech.end) >= wait
     }
 }
 
@@ -431,7 +439,7 @@ struct StreamEvidence {
             let shares = reader.shares(of: words)
             chunks.append((start...words.last!.end, shares))
             if chunks.count > LexicalVote.window { chunks.removeFirst() }
-            guard let language = vote.add(shares), speech.total >= voteBackOff.until else { continue }
+            guard let language = vote.add(shares), voteBackOff.isOver(in: speech) else { continue }
             let range = chunks.first!.range.lowerBound
                 ... chunks.last!.range.upperBound + LanguageIdentification.voteMargin
             let read = chunks.map { LanguageProbe.format($0.shares[language] ?? 0) }.joined(separator: ", ")
@@ -444,12 +452,11 @@ struct StreamEvidence {
     }
 
     /// The stretch the guard counts words over: the latest `guardWindow` of speech since the stream was last judged,
-    /// within `maximumStretch`, once it holds `guardMinimumSpeech` of speech and the guard doesn't back off. Sound the
-    /// gate hasn't judged counts as speech. The words of the last `finalizationLag` of audio may not be final yet, so
-    /// that audio is left out unless words already reach into it.
+    /// within `maximumStretch` and up to `guardEnd`, once it holds `guardMinimumSpeech` of speech and the guard doesn't
+    /// back off. Sound the gate hasn't judged counts as speech.
     private func guardStretch() -> ClosedRange<TimeInterval>? {
-        let end = min(speech.end, max(wordEnds.last ?? 0, speech.end - LanguageIdentification.finalizationLag))
-        guard end > since, speech.total >= guardBackOff.until else { return nil }
+        let end = guardEnd
+        guard end > since, guardBackOff.isOver(in: speech) else { return nil }
         let start = max(
             since, speech.start(ofLast: LanguageIdentification.guardWindow, before: end),
             end - LanguageIdentification.maximumStretch)
@@ -462,17 +469,31 @@ struct StreamEvidence {
     /// `finalizationLag`, are judged with it. None while the latest `guardWindow` of sound holds `guardRate` words per
     /// second of it: speech is never more than sound, so the latest speech holds as many, and the guard can't fire
     /// whatever the gate says.
+    ///
+    /// Once the guard's wait after a rejection seems over, the sound since the rejection is judged first, at most
+    /// `maximumStretch` at a time, so that music doesn't count as the speech it waits for.
     func unjudgedGuardStretch() -> ClosedRange<TimeInterval>? {
-        guard let stretch = guardStretch() else { return nil }
-        let end = stretch.upperBound
+        let end = guardEnd
+        guard end > since else { return nil }
         let soundStart = max(
             since, speech.start(ofLastSound: LanguageIdentification.guardWindow, before: end),
             end - LanguageIdentification.maximumStretch)
         let sound = speech.sound(from: soundStart, to: end)
         guard Double(count(in: soundStart...end)) < LanguageIdentification.guardRate * sound,
-            let first = speech.firstUnjudged(from: stretch.lowerBound, to: end)
+            guardBackOff.isOver(in: speech)
+        else { return nil }
+        if let rejected = guardBackOff.since, let first = speech.firstUnjudged(from: rejected, to: end) {
+            return first...min(speech.end, first + LanguageIdentification.maximumStretch)
+        }
+        guard let stretch = guardStretch(), let first = speech.firstUnjudged(from: stretch.lowerBound, to: end)
         else { return nil }
         return first...speech.end
+    }
+
+    /// Where the guard's stretch ends: the words of the last `finalizationLag` of audio may not be final yet, so that
+    /// audio is left out unless words already reach into it.
+    private var guardEnd: TimeInterval {
+        min(speech.end, max(wordEnds.last ?? 0, speech.end - LanguageIdentification.finalizationLag))
     }
 
     /// The guard's challenge, if the latest speech, all of it judged by the gate, holds too few words.
@@ -520,8 +541,8 @@ struct StreamEvidence {
         vote.reset()
         chunks = []
         switch kind {
-        case .vote: return voteBackOff.reject(at: speech.total)
-        case .rateGuard: return guardBackOff.reject(at: speech.total)
+        case .vote: return voteBackOff.reject(at: speech.end)
+        case .rateGuard: return guardBackOff.reject(at: speech.end)
         }
     }
 }
@@ -564,7 +585,6 @@ struct SpeechTimeline {
 
     /// The stream time heard up to.
     var end: TimeInterval { Double(chunks.count) * chunkSeconds }
-    var total: TimeInterval { cumulative.last! }
 
     func speech(from start: TimeInterval, to end: TimeInterval) -> TimeInterval {
         cumulative[index(end)] - cumulative[index(start)]
