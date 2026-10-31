@@ -106,18 +106,48 @@ final class StreamRecorder: Sendable {
     /// Has `session` hear the stretch of the stream recorded between `range`'s bounds, in seconds, on the stream's
     /// clock: it skips to the stretch's start first. Reads the file, so keep it off the main actor.
     func replay(_ range: ClosedRange<TimeInterval>, to session: any TranscriptionSession) throws {
-        let recorded = try state.withLock { state in
-            if state.closed { throw CocoaError(.fileWriteUnknown) }
-            if let error = state.error { throw error }
-            try Self.flush(&state)
-            return state.file.length
-        }
+        let recorded = try flushed()
         let start = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
         guard start < recorded else { return }
         if start > 0 { session.skip(Double(start) / fileFormat.sampleRate) }
         try replay(
             min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate)), from: start, to: session,
             skippingSilence: true)
+    }
+
+    /// The stretch of the stream recorded between `range`'s bounds, in seconds, as the first channel of `format`.
+    /// Reads the file, so keep it off the main actor.
+    func samples(_ range: ClosedRange<TimeInterval>, in format: AVAudioFormat) throws -> [Float] {
+        let recorded = try flushed()
+        let end = min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate))
+        let file = try AVAudioFile(
+            forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
+        file.framePosition = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
+        guard file.framePosition < end,
+            let buffer = AVAudioPCMBuffer(
+                pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(fileFormat.sampleRate))
+        else { return [] }
+        var converter: AVAudioConverter?
+        var converted: AVAudioPCMBuffer?
+        var samples: [Float] = []
+        while file.framePosition < end {
+            let count = min(buffer.frameCapacity, AVAudioFrameCount(end - file.framePosition))
+            try file.read(into: buffer, frameCount: count)
+            if buffer.frameLength == 0 { break }
+            let output = try Self.convert(buffer, to: format, with: &converter, reusing: &converted)
+            samples += UnsafeBufferPointer(start: output.floatChannelData![0], count: Int(output.frameLength))
+        }
+        return samples
+    }
+
+    /// The frames recorded so far, all of them written to the file.
+    private func flushed() throws -> AVAudioFramePosition {
+        try state.withLock { state in
+            if state.closed { throw CocoaError(.fileWriteUnknown) }
+            if let error = state.error { throw error }
+            try Self.flush(&state)
+            return state.file.length
+        }
     }
 
     /// `skippingSilence` skips each second of digital silence instead of having the session hear it.

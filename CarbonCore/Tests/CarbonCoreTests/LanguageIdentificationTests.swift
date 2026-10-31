@@ -75,10 +75,9 @@ struct LanguageIdentificationTests {
         notices.compactMap { if case .languageIdentified(let meeting) = $0 { meeting.language } else { nil } }
     }
 
-    /// Waits until the gate was asked about `seconds` of `streams`' audio, then lets the judging of the last chunk end.
-    func judged(_ speechGate: ScriptedSpeechGate, seconds: Double, streams: Int = 1) async throws {
-        try await eventually { speechGate.chunks.count >= streams * speechGate.chunks(in: seconds) }
-        try await Task.sleep(for: .milliseconds(200))
+    /// Lets the identification take in the audio played so far: hearing it costs it next to nothing.
+    func settled() async throws {
+        try await Task.sleep(for: .milliseconds(300))
     }
 
     @Test func aFrenchMeetingStartedInEnglishIsSwitchedOnceItsTranscriptReadsAsFrench() async throws {
@@ -173,7 +172,8 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         microphone.play(seconds: 75)
-        try await judged(speechGate, seconds: 75)
+        try await eventually { sessions(transcriber, "fr-FR", .me) == 1 }
+        try await settled()
         #expect(sessions(transcriber, "fr-FR", .me) == 1, "tried once after 20 s of speech, then backs off for 60 s")
         microphone.play(seconds: 15)
         try await eventually { sessions(transcriber, "fr-FR", .me) == 2 }
@@ -214,7 +214,7 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         microphone.play(seconds: 15)
-        try await judged(speechGate, seconds: 15)
+        try await eventually { diagnostics.contains { $0.hasPrefix("Me: stays en-US") } }
         let file = try await recorder.stop()
 
         #expect(try String(contentsOf: file, encoding: .utf8).contains("language: en-US"))
@@ -222,7 +222,7 @@ struct LanguageIdentificationTests {
         #expect(diagnostics.contains { $0.hasPrefix("Me: fr-FR writes") && $0.hasSuffix("rejected") })
     }
 
-    @Test func anEnglishMeetingInEnglishIsNeverTranscribedAgain() async throws {
+    @Test func anEnglishMeetingInEnglishIsNeverTranscribedAgainNorGated() async throws {
         let transcriber = LanguageReplayTranscriber([
             "en-US": [
                 .me: Self.spoken(Self.englishSpeech, perSecond: 2.5),
@@ -237,12 +237,31 @@ struct LanguageIdentificationTests {
         try await recorder.start(language: english)
         microphone.play(seconds: 30)
         systemAudio.play(seconds: 30)
-        try await judged(speechGate, seconds: 30, streams: 2)
+        try await settled()
         let file = try await recorder.stop()
 
         #expect(try String(contentsOf: file, encoding: .utf8).contains("language: en-US"))
         #expect(transcriber.sessions == ["en-US me 30.0 s", "en-US them 30.0 s"])
         #expect(languageIdentified(notices).isEmpty)
+        #expect(speechGate.chunks.isEmpty, "a transcript keeping up with the sound can't have missed speech")
+    }
+
+    @Test func aFewWordlessSecondsAfterALongSilenceAreTooLittleSpeechForTheGuard() async throws {
+        // Measured on a real French Meeting: 1 word over the 1.8 s of speech in the last 120 s.
+        let transcriber = LanguageReplayTranscriber([
+            "en-US": [.me: Self.spoken(Self.englishSpeech, perSecond: 2.5)]
+        ], heardOnly: true)
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 25)
+        microphone.play(seconds: 120, amplitude: 0)
+        microphone.play(seconds: 15)
+        try await settled()
+        await recorder.discard()
+
+        #expect(sessions(transcriber, "fr-FR", .me) == 0)
     }
 
     @Test func aLanguageThePersonPicksIsNeverOverridden() async throws {
@@ -343,10 +362,12 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         microphone.play(seconds: 40, amplitude: 0.05)
-        try await judged(speechGate, seconds: 40)
+        try await eventually { speechGate.chunks.count >= speechGate.chunks(in: 20) }
+        try await settled()
         await recorder.discard()
 
         #expect(sessions(transcriber, "fr-FR", .me) == 0, "40 s of music and no words")
+        #expect(speechGate.chunks.allSatisfy { abs($0.peak - 0.05) < 0.01 }, "judged as recorded")
         #expect(speechGate.released)
     }
 
@@ -357,10 +378,26 @@ struct LanguageIdentificationTests {
 
         try await recorder.start(language: english)
         microphone.play(seconds: 40)
-        try await judged(speechGate, seconds: 40)
+        try await eventually { speechGate.chunks.count >= speechGate.chunks(in: 20) }
+        try await settled()
         await recorder.discard()
 
         #expect(sessions(transcriber, "fr-FR", .me) == 0)
+    }
+
+    @Test func audioUnderTheSilenceThresholdIsNeverSpeechNorGated() async throws {
+        let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 40, amplitude: 0.002)
+        systemAudio.play(seconds: 40, amplitude: 0)
+        try await settled()
+        await recorder.discard()
+
+        #expect(sessions(transcriber, "fr-FR", .me) == 0)
+        #expect(speechGate.chunks.isEmpty)
     }
 
     @Test func eachStreamIsJudgedAsItsOwnStream() async throws {
@@ -369,13 +406,30 @@ struct LanguageIdentificationTests {
             transcriber: LanguageReplayTranscriber([:]), speechGate: speechGate, candidates: [english, french])
 
         try await recorder.start(language: english)
-        microphone.play(seconds: 2)
-        systemAudio.play(seconds: 1, amplitude: 0)
-        try await eventually { speechGate.chunks.count >= speechGate.chunks(in: 2) + speechGate.chunks(in: 1) }
+        microphone.play(seconds: 30)
+        systemAudio.play(seconds: 30, amplitude: 0.05)
+        try await eventually {
+            speechGate.chunks.filter { $0.stream == .me }.count >= speechGate.chunks(in: 20)
+                && speechGate.chunks.filter { $0.stream == .them }.count >= speechGate.chunks(in: 20)
+        }
         await recorder.discard()
 
         #expect(speechGate.chunks.filter { $0.stream == .me }.allSatisfy { $0.peak > 0.1 })
-        #expect(speechGate.chunks.filter { $0.stream == .them }.allSatisfy { $0.peak == 0 })
+        #expect(speechGate.chunks.filter { $0.stream == .them }.allSatisfy { abs($0.peak - 0.05) < 0.01 })
+    }
+
+    @Test func noChunkIsJudgedTwice() async throws {
+        let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
+        let speechGate = ScriptedSpeechGate()
+        let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 90, amplitude: 0.05)
+        try await eventually { speechGate.chunks.count >= speechGate.chunks(in: 60) }
+        try await settled()
+        await recorder.discard()
+
+        #expect(speechGate.chunks.count <= speechGate.chunks(in: 90))
     }
 
     @Test func aMeetingStartedRightAfterAnotherIsJudgedOnlyOnceTheFirstLetTheGateGo() async throws {
@@ -383,13 +437,14 @@ struct LanguageIdentificationTests {
         let recorder = makeRecorder(
             transcriber: LanguageReplayTranscriber([:]), speechGate: speechGate, candidates: [english, french])
 
+        // Sound and no words: the gate judges what the guard counts.
         try await recorder.start(language: english)
-        microphone.play(seconds: 1)
+        microphone.play(seconds: 30)
         try await eventually { !speechGate.chunks.isEmpty }
         await recorder.discard()
         let judgedInTheFirst = speechGate.chunks.count
         try await recorder.start(language: english)
-        microphone.play(seconds: 1)
+        microphone.play(seconds: 30)
         try await eventually { speechGate.chunks.count > judgedInTheFirst }
         await recorder.discard()
 

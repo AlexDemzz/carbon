@@ -105,7 +105,8 @@ struct LanguageProbe: Equatable, Sendable {
     }
 
     var confirms: Bool {
-        rate >= max(min(currentRate, LanguageIdentification.guardRate), Self.minimumRate) && confirmedChunks * 2 > chunks
+        rate >= max(min(currentRate, LanguageIdentification.guardRate), Self.minimumRate)
+            && confirmedChunks * 2 > chunks
     }
 
     /// "en-US writes 2.65 words/s against 1.74, 6 of 6 chunks read as en-US"

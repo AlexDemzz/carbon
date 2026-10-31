@@ -10,15 +10,23 @@ import Synchronization
 ///   per second of speech, so its model doesn't understand what is said. Every other candidate is then tried.
 ///
 /// Neither switches on its own: the stretch that made the challenge is first transcribed again in the candidate
-/// language, which must confirm it (`LanguageProbe`). A rejected challenge backs off (`BackOff`). A speech gate measures each stream's speech, so
-/// silence, music and noise never count as speech the transcript missed. Gating, voting and probing run in one task;
-/// the capture threads only resample. The gate outlives a Meeting, so an identification starts gating only once the
-/// one before it has let it go: its release can't wipe the newer one's stream state.
+/// language, which must confirm it (`LanguageProbe`). A rejected challenge backs off (`BackOff`).
+///
+/// A speech gate measures each stream's speech, so silence, music and noise never count as speech the transcript
+/// missed. It only runs when a challenge needs it: the capture threads only tell sound from silence, and while the
+/// stream's latest sound holds `guardRate` words per second of it, its speech does too, so the guard can't fire.
+/// Otherwise the gate judges the sound the guard counts, or a vote's stretch holds, read back from the stream's
+/// recording, each chunk once. Gating, voting and probing run in one task. The gate outlives a Meeting, so an
+/// identification starts gating only once the one before it has let it go: its release can't wipe the newer one's
+/// stream state.
 final class LanguageIdentification: Sendable {
     /// The least probability of speech the gate must give a chunk for it to be speech: FluidAudio's default for Silero
     /// VAD. Measured on synthetic audio, speech scores 0.93–0.97, music and noise 0.00–0.01, notification sounds 0.03.
     static let speechProbability = 0.85
     static let sampleRate = 16_000.0
+    /// The format the gate judges a stream in, read back from its recording.
+    static let format = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
     /// Below this many words per second of speech, the stream's model doesn't understand it. Correct models wrote
     /// 1.25–3.9 on the recordings measured, real Meetings 2.2–3.7; a model given accented or related speech 0.2–0.8.
     static let guardRate = 1.0
@@ -39,30 +47,28 @@ final class LanguageIdentification: Sendable {
     /// How far SpeechTranscriber's final words may lag behind the audio: the guard doesn't count the latest speech
     /// as speech without words until then.
     static let finalizationLag: TimeInterval = 5
-
-    private static let format = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)!
+    /// The gate's chunks a capture thread tells sound from silence over at once, about a second: the task wakes once
+    /// per second of each stream.
+    static let chunksHeardAtOnce = 4
 
     private enum Event {
-        case audio(AudioStream, [Float])
+        /// `chunks` more of a stream's audio, sound when any of it passed `SoundLevel.threshold`.
+        case heard(AudioStream, chunks: Int, sound: Bool)
         /// Final words from the stream's session numbered `session`.
         case words(AudioStream, session: Int, [TranscribedWord])
     }
 
-    /// One stream's audio on its way to the speech gate.
-    private struct StreamAudio {
-        var converter: AVAudioConverter?
-        /// The converter's output, reused from buffer to buffer: allocating and freeing one per capture buffer costs as
-        /// much as resampling it.
-        var converted: AVAudioPCMBuffer?
-        /// Audio not yet gated: less than one chunk.
-        var pending: [Float] = []
+    /// One stream's audio short of `chunksHeardAtOnce` chunks, and whether any of it was sound.
+    private struct Unheard {
+        var seconds: TimeInterval = 0
+        var sound = false
     }
 
-    /// One lock per stream, so neither capture thread waits on the other's resampling.
-    private let me = Mutex(StreamAudio())
-    private let them = Mutex(StreamAudio())
-    private let chunkSize: Int
+    /// One lock per stream, so neither capture thread waits on the other.
+    private let me = Mutex(Unheard())
+    private let them = Mutex(Unheard())
+    /// The audio in `chunksHeardAtOnce` chunks.
+    private let heardAtOnce: TimeInterval
     private let stopped = Atomic(false)
     private let events: AsyncStream<Event>.Continuation
     /// The session each stream's words are taken from, numbered: words from an older one are dropped.
@@ -70,19 +76,20 @@ final class LanguageIdentification: Sendable {
     private let task = Mutex<Task<Void, Never>?>(nil)
 
     /// Starts in `current` among `reader`'s candidates. `probe` transcribes a stretch of a stream again in a language,
-    /// `switchTo` switches the Meeting to the language confirmed and says whether it did. The chunks heard while
-    /// `previous` finishes wait for it.
+    /// `recorded` reads a stretch of a stream back in `format`, `switchTo` switches the Meeting to the language
+    /// confirmed and says whether it did. The audio heard while `previous` finishes waits for it.
     init(
         current: Locale, reader: TextLanguage, speechGate: any SpeechGate, after previous: LanguageIdentification?,
         probe: @escaping @MainActor @Sendable (Locale, AudioStream, ClosedRange<TimeInterval>) async throws
             -> [TranscribedWord],
+        recorded: @escaping @MainActor @Sendable (AudioStream, ClosedRange<TimeInterval>) async throws -> [Float],
         switchTo: @escaping @MainActor @Sendable (Locale) async -> Bool,
         onDiagnostic: @escaping @MainActor @Sendable (String) -> Void
     ) {
         let (stream, events) = AsyncStream<Event>.makeStream()
         self.events = events
-        chunkSize = speechGate.chunkSize
-        let chunkSeconds = Double(chunkSize) / Self.sampleRate
+        let chunkSeconds = Double(speechGate.chunkSize) / Self.sampleRate
+        heardAtOnce = chunkSeconds * Double(Self.chunksHeardAtOnce)
         let task = Task.detached { [self] in
             await previous?.finished()
             var evidence = LanguageEvidence(current: current, reader: reader, chunkSeconds: chunkSeconds)
@@ -90,22 +97,31 @@ final class LanguageIdentification: Sendable {
             for await event in stream where !self.stopped.load(ordering: .acquiring) {
                 let heardOn: AudioStream
                 switch event {
-                case .audio(let heard, let chunk):
+                case .heard(let heard, let chunks, let sound):
                     heardOn = heard
-                    do {
-                        let probability = try await speechGate.speechProbability(of: chunk, on: heard)
-                        evidence.heard(speech: probability >= Self.speechProbability, on: heard)
-                    } catch {
-                        await onDiagnostic("Meeting Language identification stopped: \(error.localizedDescription)")
-                        self.stop()
-                        continue
-                    }
+                    evidence.heard(chunks, sound: sound, on: heard)
                 case .words(let heard, let session, let words):
                     guard self.listeners.withLock({ $0[heard]?.session }) == session else { continue }
                     heardOn = heard
                     evidence.heard(words, on: heard)
                 }
-                guard let challenge = evidence.challenge(on: heardOn) else { continue }
+                let challenge: LanguageEvidence.Challenge
+                do {
+                    while let stretch = evidence.unjudgedGuardStretch(on: heardOn),
+                        try await self.judge(stretch, on: heardOn, into: &evidence, with: speechGate, from: recorded)
+                    {}
+                    guard let found = evidence.challenge(on: heardOn) else { continue }
+                    // A vote's stretch may hold sound the gate hasn't judged: its rates need its speech.
+                    try await self.judge(
+                        found.range, on: found.stream, into: &evidence, with: speechGate, from: recorded)
+                    challenge = evidence.measured(found)
+                } catch {
+                    if !self.stopped.load(ordering: .acquiring) {
+                        await onDiagnostic("Meeting Language identification stopped: \(error.localizedDescription)")
+                    }
+                    self.stop()
+                    continue
+                }
                 await onDiagnostic("\(challenge.stream.label): \(challenge.reason)")
                 let confirmed = await self.confirm(
                     challenge, reader: evidence.reader, probe: probe, onDiagnostic: onDiagnostic)
@@ -123,6 +139,30 @@ final class LanguageIdentification: Sendable {
             await speechGate.release()
         }
         self.task.withLock { $0 = task }
+    }
+
+    /// Has the gate judge the sound of `stream` within `range` it hasn't judged, read back from the recording at once.
+    /// Returns whether it judged any: audio the recording doesn't hold yet stays unjudged.
+    private func judge(
+        _ range: ClosedRange<TimeInterval>, on stream: AudioStream, into evidence: inout LanguageEvidence,
+        with speechGate: any SpeechGate,
+        from recorded: @MainActor @Sendable (AudioStream, ClosedRange<TimeInterval>) async throws -> [Float]
+    ) async throws -> Bool {
+        let chunks = evidence.unjudged(in: range, on: stream)
+        guard let first = chunks.first, let last = chunks.last else { return false }
+        let size = speechGate.chunkSize
+        let chunkSeconds = Double(size) / Self.sampleRate
+        let samples = try await recorded(stream, Double(first) * chunkSeconds...Double(last + 1) * chunkSeconds)
+        var speech: [Int: Bool] = [:]
+        for chunk in chunks where !stopped.load(ordering: .acquiring) {
+            let offset = (chunk - first) * size
+            guard offset + size <= samples.count else { break }
+            let probability = try await speechGate.speechProbability(
+                of: Array(samples[offset..<offset + size]), on: stream)
+            speech[chunk] = probability >= Self.speechProbability
+        }
+        evidence.judge(speech, on: stream)
+        return !speech.isEmpty
     }
 
     /// The candidate the challenge's stretch confirms once transcribed again, if any: the vote's language, or the
@@ -152,13 +192,14 @@ final class LanguageIdentification: Sendable {
         return confirmed.max { $0.rate * $0.share < $1.rate * $1.share }?.candidate
     }
 
-    /// Takes in one captured buffer of `stream`, on the capture's thread.
-    func hear(_ buffer: AVAudioPCMBuffer, on stream: AudioStream) {
+    /// Takes in `duration` more of `stream`, `sound` when it passed `SoundLevel.threshold`, on the capture's thread.
+    func hear(_ duration: TimeInterval, sound: Bool, on stream: AudioStream) {
         guard !stopped.load(ordering: .acquiring) else { return }
-        let ready = stream == .me
-            ? me.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
-            : them.withLock { Self.chunk(buffer, into: &$0, size: chunkSize) }
-        for chunk in ready { events.yield(.audio(stream, chunk)) }
+        let period = heardAtOnce
+        let heard = stream == .me
+            ? me.withLock { Self.add(duration, sound: sound, to: &$0, every: period) }
+            : them.withLock { Self.add(duration, sound: sound, to: &$0, every: period) }
+        for sound in heard { events.yield(.heard(stream, chunks: Self.chunksHeardAtOnce, sound: sound)) }
     }
 
     /// Takes each stream's final words from `me` and `them` from now on, instead of from their sessions before.
@@ -177,19 +218,19 @@ final class LanguageIdentification: Sendable {
         }
     }
 
-    /// Adds `buffer`, resampled, to `audio`. Returns the chunks it completes.
-    private static func chunk(_ buffer: AVAudioPCMBuffer, into audio: inout StreamAudio, size: Int) -> [[Float]] {
-        guard
-            let converted = try? StreamRecorder.convert(
-                buffer, to: format, with: &audio.converter, reusing: &audio.converted)
-        else { return [] }
-        audio.pending += UnsafeBufferPointer(start: converted.floatChannelData![0], count: Int(converted.frameLength))
-        var ready: [[Float]] = []
-        while audio.pending.count >= size {
-            ready.append(Array(audio.pending.prefix(size)))
-            audio.pending.removeFirst(size)
+    /// Adds `duration` to `unheard`. Returns, for each `period` it completes, whether any of it was sound.
+    private static func add(
+        _ duration: TimeInterval, sound: Bool, to unheard: inout Unheard, every period: TimeInterval
+    ) -> [Bool] {
+        unheard.seconds += duration
+        unheard.sound = unheard.sound || sound
+        var heard: [Bool] = []
+        while unheard.seconds >= period {
+            heard.append(unheard.sound)
+            unheard.seconds -= period
+            unheard.sound = sound && unheard.seconds > 0
         }
-        return ready
+        return heard
     }
 
     /// Returns once the gate is let go.
@@ -197,8 +238,8 @@ final class LanguageIdentification: Sendable {
         await task.withLock { $0 }?.value
     }
 
-    /// Stops hearing, gating and judging. A chunk being gated or a stretch being transcribed again is dropped, and the
-    /// gate is let go.
+    /// Stops hearing, gating and judging. A stretch being judged or transcribed again is dropped, and the gate is let
+    /// go.
     func stop() {
         stopped.store(true, ordering: .releasing)
         events.finish()
@@ -246,12 +287,35 @@ struct LanguageEvidence {
         }
     }
 
-    mutating func heard(speech: Bool, on stream: AudioStream) {
-        streams[stream]!.speech.add(speech)
+    mutating func heard(_ chunks: Int, sound: Bool, on stream: AudioStream) {
+        streams[stream]!.speech.add(chunks, sound: sound)
     }
 
     mutating func heard(_ words: [TranscribedWord], on stream: AudioStream) {
         streams[stream]!.add(words)
+    }
+
+    /// The stretch of `stream` the gate must judge before its guard can be checked, if any.
+    func unjudgedGuardStretch(on stream: AudioStream) -> ClosedRange<TimeInterval>? {
+        streams[stream]!.unjudgedGuardStretch()
+    }
+
+    /// The chunks of `stream` within `range` that are sound the gate hasn't judged, by number.
+    func unjudged(in range: ClosedRange<TimeInterval>, on stream: AudioStream) -> [Int] {
+        streams[stream]!.speech.unjudged(from: range.lowerBound, to: range.upperBound)
+    }
+
+    /// The gate judged each of `stream`'s chunks, by number, speech or not.
+    mutating func judge(_ speech: [Int: Bool], on stream: AudioStream) {
+        streams[stream]!.speech.judge(speech)
+    }
+
+    /// `challenge` with the speech its stretch holds, as judged now.
+    func measured(_ challenge: Challenge) -> Challenge {
+        var measured = challenge
+        measured.speech = streams[challenge.stream]!.speech.speech(
+            from: challenge.range.lowerBound, to: challenge.range.upperBound)
+        return measured
     }
 
     /// `stream`'s challenge to the current language, if its evidence makes one now.
@@ -335,7 +399,7 @@ struct StreamEvidence {
         }
     }
 
-    /// Votes on each chunk of words whose speech the gate has judged, then checks the guard.
+    /// Votes on each chunk of words whose audio the stream has heard, then checks the guard.
     mutating func challenge(reader: TextLanguage, current: Locale) -> LanguageEvidence.Challenge? {
         while pending.count >= TextLanguage.chunkWords, pending[TextLanguage.chunkWords - 1].end <= speech.end {
             let words = pending.prefix(TextLanguage.chunkWords)
@@ -357,20 +421,48 @@ struct StreamEvidence {
         return rateGuard(reader: reader, current: current)
     }
 
-    /// The guard's challenge, if the latest speech holds too few words. The words of the last
-    /// `LanguageIdentification.finalizationLag` of audio may not be final yet, so that audio is left out unless words
-    /// already reach into it.
-    private func rateGuard(reader: TextLanguage, current: Locale) -> LanguageEvidence.Challenge? {
+    /// The stretch the guard counts words over: the latest `guardWindow` of speech since the stream was last judged,
+    /// within `maximumStretch`, once it holds `guardMinimumSpeech` of speech and the guard doesn't back off. Sound the
+    /// gate hasn't judged counts as speech. The words of the last `finalizationLag` of audio may not be final yet, so
+    /// that audio is left out unless words already reach into it.
+    private func guardStretch() -> ClosedRange<TimeInterval>? {
         let end = min(speech.end, max(wordEnds.last ?? 0, speech.end - LanguageIdentification.finalizationLag))
-        guard end > since, speech.speech(from: since, to: end) >= LanguageIdentification.guardMinimumSpeech,
-            speech.total >= guardBackOff.until
+        guard end > since, speech.total >= guardBackOff.until else { return nil }
+        let start = max(
+            since, speech.start(ofLast: LanguageIdentification.guardWindow, before: end),
+            end - LanguageIdentification.maximumStretch)
+        guard speech.speech(from: start, to: end) >= LanguageIdentification.guardMinimumSpeech else { return nil }
+        return start...end
+    }
+
+    /// The stretch the gate must judge before the guard can be checked, if any: from the guard's first sound the gate
+    /// hasn't judged to all the stream heard, so the guard's next seconds, which leave out the latest
+    /// `finalizationLag`, are judged with it. None while the latest `guardWindow` of sound holds `guardRate` words per
+    /// second of it: speech is never more than sound, so the latest speech holds as many, and the guard can't fire
+    /// whatever the gate says.
+    func unjudgedGuardStretch() -> ClosedRange<TimeInterval>? {
+        guard let stretch = guardStretch() else { return nil }
+        let end = stretch.upperBound
+        let soundStart = max(
+            since, speech.start(ofLastSound: LanguageIdentification.guardWindow, before: end),
+            end - LanguageIdentification.maximumStretch)
+        let sound = speech.sound(from: soundStart, to: end)
+        guard Double(count(in: soundStart...end)) < LanguageIdentification.guardRate * sound,
+            let first = speech.firstUnjudged(from: stretch.lowerBound, to: end)
         else { return nil }
-        let start = max(since, speech.start(ofLast: LanguageIdentification.guardWindow, before: end))
-        let words = count(in: start...end)
-        let seconds = speech.speech(from: start, to: end)
+        return first...speech.end
+    }
+
+    /// The guard's challenge, if the latest speech, all of it judged by the gate, holds too few words.
+    private func rateGuard(reader: TextLanguage, current: Locale) -> LanguageEvidence.Challenge? {
+        guard let stretch = guardStretch(),
+            speech.firstUnjudged(from: stretch.lowerBound, to: stretch.upperBound) == nil
+        else { return nil }
+        let words = count(in: stretch)
+        let seconds = speech.speech(from: stretch.lowerBound, to: stretch.upperBound)
         guard Double(words) / seconds < LanguageIdentification.guardRate else { return nil }
         return challenge(
-            .rateGuard, for: reader.candidates.filter { !reader.same($0, current) }, over: start...end,
+            .rateGuard, for: reader.candidates.filter { !reader.same($0, current) }, over: stretch,
             reason: "\(LanguageProbe.format(Double(words) / seconds)) words per second of speech in "
                 + "\(MeetingFormat.bcp47(current)), \(words) words over \(String(format: "%.1f", seconds)) s of speech")
     }
@@ -412,37 +504,84 @@ struct StreamEvidence {
     }
 }
 
-/// Which of a stream's chunks the speech gate judged speech, from the start of the stream.
+/// A stream's chunks from its start: silence, sound the speech gate hasn't judged, or judged speech or not. Sound the
+/// gate hasn't judged counts as speech.
 struct SpeechTimeline {
+    private enum Chunk { case silence, sound, speech, notSpeech }
+
     let chunkSeconds: TimeInterval
+    private var chunks: [Chunk] = []
     /// The speech in the stream's first n chunks, at n.
     private var cumulative: [TimeInterval] = [0]
+    /// The sound in the stream's first n chunks, at n.
+    private var soundCumulative: [TimeInterval] = [0]
 
     init(chunkSeconds: TimeInterval) {
         self.chunkSeconds = chunkSeconds
     }
 
-    mutating func add(_ isSpeech: Bool) {
-        cumulative.append(cumulative.last! + (isSpeech ? chunkSeconds : 0))
+    mutating func add(_ count: Int, sound: Bool) {
+        for _ in 0..<count {
+            chunks.append(sound ? .sound : .silence)
+            cumulative.append(cumulative.last! + (sound ? chunkSeconds : 0))
+            soundCumulative.append(soundCumulative.last! + (sound ? chunkSeconds : 0))
+        }
     }
 
-    /// The stream time the gate has judged up to.
-    var end: TimeInterval { Double(cumulative.count - 1) * chunkSeconds }
+    /// Sets the gate's judgement of each chunk, by number, it hasn't judged yet.
+    mutating func judge(_ speech: [Int: Bool]) {
+        guard let first = speech.keys.min() else { return }
+        for (chunk, isSpeech) in speech where chunks[chunk] == .sound {
+            chunks[chunk] = isSpeech ? .speech : .notSpeech
+        }
+        for chunk in first..<chunks.count {
+            let counts = chunks[chunk] == .sound || chunks[chunk] == .speech
+            cumulative[chunk + 1] = cumulative[chunk] + (counts ? chunkSeconds : 0)
+        }
+    }
+
+    /// The stream time heard up to.
+    var end: TimeInterval { Double(chunks.count) * chunkSeconds }
     var total: TimeInterval { cumulative.last! }
 
     func speech(from start: TimeInterval, to end: TimeInterval) -> TimeInterval {
         cumulative[index(end)] - cumulative[index(start)]
     }
 
+    func sound(from start: TimeInterval, to end: TimeInterval) -> TimeInterval {
+        soundCumulative[index(end)] - soundCumulative[index(start)]
+    }
+
+    /// The chunks from `start` to `end` that are sound the gate hasn't judged, by number.
+    func unjudged(from start: TimeInterval, to end: TimeInterval) -> [Int] {
+        (index(start)..<index(end)).filter { chunks[$0] == .sound }
+    }
+
+    /// Where the first chunk from `start` to `end` that is sound the gate hasn't judged starts, if any.
+    func firstUnjudged(from start: TimeInterval, to end: TimeInterval) -> TimeInterval? {
+        (index(start)..<index(end)).first { chunks[$0] == .sound }.map { Double($0) * chunkSeconds }
+    }
+
     /// The time from which the stream holds `seconds` of speech up to `end`, or its start if it holds less.
     func start(ofLast seconds: TimeInterval, before end: TimeInterval) -> TimeInterval {
-        let target = cumulative[index(end)] - seconds
+        Self.start(ofLast: seconds, before: index(end), in: cumulative, chunkSeconds: chunkSeconds)
+    }
+
+    /// The time from which the stream holds `seconds` of sound up to `end`, or its start if it holds less.
+    func start(ofLastSound seconds: TimeInterval, before end: TimeInterval) -> TimeInterval {
+        Self.start(ofLast: seconds, before: index(end), in: soundCumulative, chunkSeconds: chunkSeconds)
+    }
+
+    private static func start(
+        ofLast seconds: TimeInterval, before end: Int, in cumulative: [TimeInterval], chunkSeconds: TimeInterval
+    ) -> TimeInterval {
+        let target = cumulative[end] - seconds
         guard target > 0 else { return 0 }
         let position = cumulative.lastIndex { $0 <= target } ?? 0
         return Double(position) * chunkSeconds
     }
 
     private func index(_ time: TimeInterval) -> Int {
-        min(max(0, Int((time / chunkSeconds).rounded())), cumulative.count - 1)
+        min(max(0, Int((time / chunkSeconds).rounded())), chunks.count)
     }
 }

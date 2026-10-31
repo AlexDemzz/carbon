@@ -461,6 +461,11 @@ public final class Recorder {
                 guard let self else { throw Failure.notLive }
                 return try await transcribe(stream, of: id, in: language, over: range)
             },
+            recorded: { [weak self] stream, range in
+                guard let self, let capture = liveCapture, capture.meeting.id == id else { throw Failure.notLive }
+                let recorder = stream == .me ? capture.me.recorder : capture.them.recorder
+                return try await Task.detached { try recorder.samples(range, in: LanguageIdentification.format) }.value
+            },
             switchTo: { [weak self] language in
                 await self?.identified(language, meeting: id) ?? false
             },
@@ -881,7 +886,7 @@ public final class Recorder {
         let now = now
         let meterWindow = kind == .me ? MeterWindow() : nil
         try stream.source.start { [weak self] buffer in
-            let rms = lastSound != nil || meterWindow != nil ? SoundLevel.rms(buffer) : 0
+            let rms = lastSound != nil || meterWindow != nil || identification != nil ? SoundLevel.rms(buffer) : 0
             if let lastSound, rms > SoundLevel.threshold { lastSound.value = now() }
             if let level = meterWindow?.add(
                 SoundLevel.meter(rms: rms), frames: Int(buffer.frameLength), sampleRate: buffer.format.sampleRate)
@@ -889,7 +894,8 @@ public final class Recorder {
                 Task { @MainActor in self?.onMicLevel?(level) }
             }
             recorder.append(buffer)
-            identification?.hear(buffer, on: kind)
+            identification?.hear(
+                Double(buffer.frameLength) / buffer.format.sampleRate, sound: rms > SoundLevel.threshold, on: kind)
         }
     }
 }
