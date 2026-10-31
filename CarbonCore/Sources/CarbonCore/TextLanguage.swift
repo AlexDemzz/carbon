@@ -1,5 +1,6 @@
 import Foundation
 import NaturalLanguage
+import Synchronization
 
 /// Reads which of the checked Meeting Languages a transcript is written in, with `NLLanguageRecognizer` constrained to
 /// them: about 1.5 ms a call, from 30 to 500 words. Languages it can't tell apart, such as en-US and en-GB, count as
@@ -11,6 +12,8 @@ struct TextLanguage: Sendable {
     static let minimumChunkWords = 5
 
     private let languages: [(locale: Locale, language: NLLanguage)]
+    /// One recognizer for every read: a new one loads its model again, two thirds of a read's cost.
+    private let recognizer = SharedRecognizer()
 
     /// Nil when fewer than two of `candidates` are different languages: there is nothing to tell apart.
     init?(candidates: [Locale]) {
@@ -34,10 +37,13 @@ struct TextLanguage: Sendable {
 
     /// Each candidate's share of `words`, the shares adding up to 1, by candidate.
     func shares(of words: some Collection<TranscribedWord>) -> [Locale: Double] {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.languageConstraints = languages.map(\.language)
-        recognizer.processString(words.map(\.text).joined(separator: " "))
-        let hypotheses = recognizer.languageHypotheses(withMaximum: languages.count)
+        let text = words.map(\.text).joined(separator: " ")
+        let hypotheses = recognizer.recognizer.withLock { recognizer in
+            recognizer.reset()
+            recognizer.languageConstraints = languages.map(\.language)
+            recognizer.processString(text)
+            return recognizer.languageHypotheses(withMaximum: languages.count)
+        }
         return Dictionary(uniqueKeysWithValues: languages.map { ($0.locale, hypotheses[$0.language] ?? 0) })
     }
 
@@ -57,6 +63,10 @@ struct TextLanguage: Sendable {
         let script = locale.language.script ?? Locale.Language(identifier: locale.language.maximalIdentifier).script
         return script == Locale.Script("Hant") ? .traditionalChinese : .simplifiedChinese
     }
+}
+
+private final class SharedRecognizer: Sendable {
+    let recognizer = Mutex(NLLanguageRecognizer())
 }
 
 /// One re-transcription of a stretch of a stream in a candidate language, judged against the current language's
