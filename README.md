@@ -6,6 +6,8 @@ Carbon is a free, native macOS app that sits in your menu bar and turns every me
 
 **[Download Carbon for Mac](https://carbon.alexandrejoly.me/download)** · [carbon.alexandrejoly.me](https://carbon.alexandrejoly.me)
 
+<img src="docs/images/carbon-window.png" width="800" alt="Carbon's window: a list of Meetings on the left, and on the right the Meeting “Weekly design sync” with its date, length, app, language and participants, then its transcript by Speaker.">
+
 ## Why
 
 On a call you want to listen, not take notes. When it ends, what was decided and who said they'd do what is gone, unless you let a note taker bot into the call or upload the audio to someone's cloud.
@@ -91,7 +93,7 @@ Carbon updates itself with [Sparkle](https://sparkle-project.org).
 
 ## Build from source
 
-You need macOS 26 on Apple silicon, Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46 or later, the first to pass package traits to Xcode. `Carbon.xcodeproj` is generated from `project.yml`.
+You need macOS 26 or later on Apple silicon, Xcode 26 or later and [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46 or later, the first to pass package traits to Xcode. `Carbon.xcodeproj` is generated from `project.yml`.
 
 ```sh
 brew install xcodegen
