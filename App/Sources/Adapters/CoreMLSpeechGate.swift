@@ -79,7 +79,8 @@ actor CoreMLSpeechGate: SpeechGate {
     }
 
     private static func values(of array: MLMultiArray) -> [Float] {
-        (0..<array.count).map { array[$0].floatValue }
+        guard array.dataType == .float32 else { return (0..<array.count).map { array[$0].floatValue } }
+        return array.withUnsafeBufferPointer(ofType: Float.self) { Array($0.prefix(array.count)) }
     }
 
     private func loaded() async throws -> MLModel {
