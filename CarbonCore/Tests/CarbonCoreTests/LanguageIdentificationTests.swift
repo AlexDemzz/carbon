@@ -183,10 +183,29 @@ struct LanguageIdentificationTests {
         #expect(languageIdentified(notices).isEmpty)
     }
 
-    @Test func aTranscriptThatReadsAsFrenchStaysEnglishWhenTheFrenchModelWritesLess() async throws {
+    @Test func aTranscriptThatReadsAsFrenchIsSwitchedEvenWhenTheFrenchModelWritesFewerWordsThanTheEnglishOne() async throws {
+        // Measured on a Meeting going from English to French: on the French stretch, the English model wrote 2.7 words
+        // per second of speech, the French one 2.3.
         let transcriber = LanguageReplayTranscriber([
             "en-US": [.me: Self.spoken(Self.frenchSpeech, perSecond: 3)],
-            "fr-FR": [.me: Self.spoken(Self.frenchSpeech, perSecond: 1)],
+            "fr-FR": [.me: Self.spoken(Self.frenchSpeech, perSecond: 2)],
+        ], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [english, french])
+        var notices: [Recorder.Notice] = []
+        recorder.onNotice = { notices.append($0) }
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 20)
+        try await eventually { !notices.isEmpty }
+        await recorder.discard()
+
+        #expect(languageIdentified(notices) == [french])
+    }
+
+    @Test func aTranscriptThatReadsAsFrenchStaysEnglishWhenTheFrenchModelBarelyWrites() async throws {
+        let transcriber = LanguageReplayTranscriber([
+            "en-US": [.me: Self.spoken(Self.frenchSpeech, perSecond: 3)],
+            "fr-FR": [.me: Self.spoken(Self.frenchSpeech, perSecond: 0.5)],
         ], heardOnly: true)
         let speechGate = ScriptedSpeechGate()
         let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])

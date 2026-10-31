@@ -70,10 +70,12 @@ private final class SharedRecognizer: Sendable {
 }
 
 /// One re-transcription of a stretch of a stream in a candidate language, judged against the current language's
-/// transcript of the same stretch. It confirms the candidate when the candidate writes at least as many words, and at
-/// least `minimumRate` per second of speech, and most of its chunks read as the candidate. A model given a language it
-/// doesn't know writes 0.2–0.8 words per second of speech, or fluent text in its own language
-/// (docs/research/text-vs-acoustic-language-identification.md).
+/// transcript of the same stretch. It confirms the candidate when most of its chunks read as the candidate, and it
+/// writes at least `minimumRate` words per second of speech and as many as the current language, or the guard's rate
+/// once the current language writes more than that. A model given a language it doesn't know writes 0.2–0.8 words per
+/// second of speech, or fluent text in its own language (docs/research/text-vs-acoustic-language-identification.md).
+/// Past the guard's rate, the current language's count says nothing about the candidate: on a Meeting going from
+/// English to French, the English model wrote 2.7 words per second of the French speech, the French one 2.3.
 struct LanguageProbe: Equatable, Sendable {
     /// The fewest words per second of speech a candidate's transcript must reach.
     static let minimumRate = 0.2
@@ -103,7 +105,7 @@ struct LanguageProbe: Equatable, Sendable {
     }
 
     var confirms: Bool {
-        rate >= max(currentRate, Self.minimumRate) && confirmedChunks * 2 > chunks
+        rate >= max(min(currentRate, LanguageIdentification.guardRate), Self.minimumRate) && confirmedChunks * 2 > chunks
     }
 
     /// "en-US writes 2.65 words/s against 1.74, 6 of 6 chunks read as en-US"
