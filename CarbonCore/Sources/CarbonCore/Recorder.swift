@@ -70,14 +70,11 @@ public final class Recorder {
         public var app: MeetingApp
         public var title: String
         public var provider: String
-        /// The language Transcribe starts the Meeting in.
-        public var language: Locale
 
-        public init(app: MeetingApp, title: String, provider: String, language: Locale) {
+        public init(app: MeetingApp, title: String, provider: String) {
             self.app = app
             self.title = title
             self.provider = provider
-            self.language = language
         }
     }
 
@@ -95,7 +92,7 @@ public final class Recorder {
     /// "Transcribe Meetings automatically": off, Detection offers Meetings instead of starting them.
     public var autoTranscribe = true
     /// The checked Meeting Languages a Meeting may turn out to be spoken in, read as each Meeting starts: those
-    /// whose assets are ready, or none when the person turned identification off.
+    /// whose assets are ready.
     @ObservationIgnored public var meetingLanguageCandidates: @MainActor () -> [Locale] = { [] }
     @ObservationIgnored public var onNotice: (@MainActor (Notice) -> Void)?
     /// How loud the live Meeting's microphone is, from 0 (silence) to 1, about ten times a second, for a meter.
@@ -129,8 +126,6 @@ public final class Recorder {
     private var languageSwitch: Task<Void, any Error>?
     /// The live Meeting's language identification, until the Meeting ends or the person picks a language.
     private var languageIdentification: (meeting: UUID, identification: LanguageIdentification)?
-    /// The language the pending offer's Transcribe starts in.
-    private var offeredLanguage: Locale?
     /// The last language identification started, which the next one waits for.
     private var lastLanguageIdentification: LanguageIdentification?
     /// Meetings Detection ended that are still being filed, so the next Meeting never waits on a diarization.
@@ -255,15 +250,13 @@ public final class Recorder {
                     onNotice?(.switchOffered(
                         SwitchOffer(app: app, provider: vendorTable.provider(for: app), meeting: meeting)))
                 case .offer(let app, let event):
-                    guard let language = detectionLanguage, liveCapture == nil else {
+                    guard detectionLanguage != nil, liveCapture == nil else {
                         detector.offerDeclined(at: snapshot.time)
                         continue
                     }
-                    offeredLanguage = language
                     onNotice?(.offered(Offer(
                         app: app, title: title(of: event, startingAt: now()),
-                        provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))),
-                        language: language)))
+                        provider: vendorTable.provider(for: app, link: event.flatMap(matcher.link(in:))))))
                 case .withdrawOffer(let app):
                     onNotice?(.offerWithdrawn(app))
                 }
@@ -284,12 +277,11 @@ public final class Recorder {
     /// The app of the offer waiting for an answer.
     public var pendingOffer: MeetingApp? { detector.pendingOffer }
 
-    /// Transcribe (or Transcribe in <language>) on the offer. Does nothing once the offer is withdrawn.
-    /// Transcribe in <language> is the person's choice, so that Meeting's language is never identified.
-    public func acceptOffer(language: Locale) async throws {
-        guard liveCapture == nil, let (app, event) = detector.offerAccepted(at: now()) else { return }
-        let chosen = language.identifier(.bcp47) != offeredLanguage?.identifier(.bcp47)
-        try await begin(language: language, app: app, event: event, mode: .auto, identifies: !chosen)
+    /// Transcribe on the offer: starts the Meeting in the Detection language. Does nothing once the offer is withdrawn.
+    public func acceptOffer() async throws {
+        guard liveCapture == nil, let language = detectionLanguage, let (app, event) = detector.offerAccepted(at: now())
+        else { return }
+        try await begin(language: language, app: app, event: event, mode: .auto)
         onDiagnostic?("Detection started a Meeting on \(app.bundleID) from its offer")
     }
 
@@ -338,12 +330,11 @@ public final class Recorder {
     }
 
     private func begin(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
-        identifies: Bool = true
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
     ) async throws {
         guard liveCapture == nil else { throw Failure.notIdle }
         do {
-            try await open(language: language, app: app, event: event, mode: mode, identifies: identifies)
+            try await open(language: language, app: app, event: event, mode: mode)
         } catch {
             detector.meetingStopped()
             throw error
@@ -351,8 +342,7 @@ public final class Recorder {
     }
 
     private func open(
-        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode,
-        identifies: Bool
+        language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
     ) async throws {
         guard systemAudioPermission() != .denied else { throw Failure.systemAudioRecordingDenied }
         var meeting = LiveMeeting(id: makeID(), title: "", start: now(), language: language, app: app)
@@ -367,7 +357,7 @@ public final class Recorder {
             opened.append(me)
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
             opened.append(them)
-            let identification = identifies ? identifyLanguage(of: meeting.id, startingIn: language) : nil
+            let identification = identifyLanguage(of: meeting.id, startingIn: language)
             identification?.listen(me: me.session, them: them.session)
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, as: .me, tracksSound: app == nil, identification: identification)

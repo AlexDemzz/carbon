@@ -2,7 +2,7 @@
 # scripts/bench/run.sh <recording.m4a> [seconds = 150] [offset = 60]
 # Replays the recording through Bench and prints the CPU of Bench (Carbon's process) and of Apple's
 # localspeechrecognition daemon over the steady part of the run: from 20 s in to 15 s before the end.
-# 100% is one core, as in Activity Monitor. See docs/benchmarks/performance.md.
+# 100% is one core, as in Activity Monitor. See docs/research/transcription-cpu-cost.md.
 set -e
 cd "${0:A:h}"
 recording=$1; seconds=${2:-150}; offset=${3:-60}

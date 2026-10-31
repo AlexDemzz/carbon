@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Replays a recorded Meeting through Carbon's real Recorder and transcription adapters, at real-time pace.
-// See docs/benchmarks/performance.md.
+// See docs/research/transcription-cpu-cost.md.
 let package = Package(
     name: "Bench",
     platforms: [.macOS(.v26)],

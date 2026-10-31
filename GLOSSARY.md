@@ -29,7 +29,7 @@ The raw, machine-generated text of what was said in one Meeting, attributed to s
 _Avoid_: Notes, minutes, recording, summary
 
 **Meeting Language**:
-The spoken language a Meeting is transcribed in. A Meeting starts in the person's default one; when they checked several, Carbon identifies which of them is spoken from what it transcribes, all Meeting long, and the person can still pick one by hand, which Carbon never overrides.
+The spoken language a Meeting is transcribed in. A Meeting starts in the last Meeting's while the person keeps it checked, else in the first checked one; when they checked several, Carbon identifies which of them is spoken from what it transcribes, all Meeting long, and the person can still pick one by hand, which Carbon never overrides.
 _Avoid_: Locale, transcription language
 
 **Speaker**:

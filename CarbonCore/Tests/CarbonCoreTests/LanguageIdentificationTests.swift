@@ -354,48 +354,13 @@ struct LanguageIdentificationTests {
         let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
 
         await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, [(0...20, [zoom])]))
-        try await recorder.acceptOffer(language: english)
+        try await recorder.acceptOffer()
         systemAudio.play(seconds: 20)
         try await eventually { !languageIdentified(notices).isEmpty }
         let file = try await recorder.stop()
 
         #expect(languageIdentified(notices) == [french])
         #expect(try String(contentsOf: file, encoding: .utf8).contains("language: fr-FR"))
-    }
-
-    @Test func anOfferTranscribedInAnotherLanguageIsNeverIdentified() async throws {
-        let speechGate = ScriptedSpeechGate()
-        let recorder = makeRecorder(
-            transcriber: LanguageReplayTranscriber([:]), speechGate: speechGate, candidates: [english, french])
-        recorder.detectionLanguage = english
-        recorder.autoTranscribe = false
-        let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
-
-        await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, [(0...20, [zoom])]))
-        try await recorder.acceptOffer(language: french)
-        microphone.play(seconds: 10)
-        let file = try await recorder.stop()
-
-        #expect(try String(contentsOf: file, encoding: .utf8).contains("language: fr-FR"))
-        #expect(speechGate.chunks.isEmpty)
-    }
-
-    @Test func anOfferTranscribedInAnotherLanguageStaysChosenWhenTheDefaultChangesMeanwhile() async throws {
-        let speechGate = ScriptedSpeechGate()
-        let recorder = makeRecorder(
-            transcriber: LanguageReplayTranscriber([:]), speechGate: speechGate, candidates: [english, french])
-        recorder.detectionLanguage = english
-        recorder.autoTranscribe = false
-        let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
-
-        await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, [(0...20, [zoom])]))
-        recorder.detectionLanguage = french
-        try await recorder.acceptOffer(language: french)
-        microphone.play(seconds: 10)
-        let file = try await recorder.stop()
-
-        #expect(try String(contentsOf: file, encoding: .utf8).contains("language: fr-FR"))
-        #expect(speechGate.chunks.isEmpty)
     }
 
     @Test func withOneCheckedLanguageTheSpeechGateIsNeverUsed() async throws {

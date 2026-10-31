@@ -1,7 +1,7 @@
 // Bench <recording.m4a> [seconds = 150] [offset = 60]
 // Runs Carbon's real Recorder, SpeechTranscriber sessions and Core ML models on a recorded Meeting from the Library:
 // channel 0 replays as the mic, channel 1 as the call, at real-time pace. Needs no microphone or audio permission
-// and plays nothing aloud. scripts/bench/run.sh measures it; see docs/benchmarks/performance.md.
+// and plays nothing aloud. scripts/bench/run.sh measures it; see docs/research/transcription-cpu-cost.md.
 // Environment: BENCH_SILENT_THEM=1 replaces the call with zeros; BENCH_OUT=<path> keeps the Transcript.
 @preconcurrency import AVFoundation
 import CarbonCore
