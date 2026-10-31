@@ -49,21 +49,23 @@ struct MeetingLanguagesTests {
         #expect(!languages.canUncheck(Locale(identifier: "en-US")))
     }
 
-    @Test func makingAnUncheckedLanguageTheDefaultChecksIt() {
+    @Test func theNextMeetingStartsInTheLastMeetingsLanguage() {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
+        languages.set(Locale(identifier: "fr-FR"), chosen: true)
 
-        languages.defaultLanguage = Locale(identifier: "fr-FR")
+        languages.meetingWasIn(Locale(identifier: "fr_FR"))
 
-        #expect(bcp47(languages.chosen) == ["en-US", "fr-FR"])
         #expect(languages.defaultLanguage.identifier(.bcp47) == "fr-FR")
     }
 
-    @Test func theSwitchChoicesAreTheOtherCheckedLanguages() {
+    @Test func aMeetingInAnUncheckedLanguageNeitherChecksItNorStartsTheNextOneInIt() {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-FR"), chosen: true)
-        languages.set(Locale(identifier: "es-ES"), chosen: true)
 
-        #expect(bcp47(languages.others(than: Locale(identifier: "fr_FR"))) == ["en-US", "es-ES"])
+        languages.meetingWasIn(Locale(identifier: "de-DE"))
+
+        #expect(bcp47(languages.chosen) == ["en-US", "fr-FR"])
+        #expect(languages.defaultLanguage.identifier(.bcp47) == "en-US")
     }
 
     @Test func aLanguageIsNamedByItsRegionOnlyWhenAnotherCheckedVariantSharesItsName() {
@@ -75,16 +77,6 @@ struct MeetingLanguagesTests {
         #expect(languages.name(of: Locale(identifier: "fr-FR"), in: english) == "French")
         #expect(languages.name(of: Locale(identifier: "en-GB"), in: english) == "English (United Kingdom)")
         #expect(languages.name(of: Locale(identifier: "en-US"), in: english) == "English (United States)")
-    }
-
-    @Test func aLanguageIsAbbreviatedWithItsRegionOnlyWhenAnotherCheckedVariantSharesItsCode() {
-        var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
-        languages.set(Locale(identifier: "en-GB"), chosen: true)
-        languages.set(Locale(identifier: "fr-FR"), chosen: true)
-
-        #expect(languages.abbreviation(of: Locale(identifier: "fr_FR")) == "FR")
-        #expect(languages.abbreviation(of: Locale(identifier: "en_GB")) == "EN-GB")
-        #expect(languages.abbreviation(of: Locale(identifier: "de_DE")) == "DE")
     }
 
     @Test func theFirstLaunchChecksTheMacsLanguagesWithTheFirstOneAsDefault() {
@@ -153,7 +145,7 @@ struct MeetingLanguagesTests {
     @Test func theSettingSurvivesARoundTripThroughItsStoredForm() throws {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-CA"), chosen: true)
-        languages.defaultLanguage = Locale(identifier: "fr-CA")
+        languages.meetingWasIn(Locale(identifier: "fr-CA"))
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys

@@ -1,6 +1,7 @@
 import Foundation
 
-/// The Meeting Languages the person checked in Settings › Languages, and the default one Meetings start in.
+/// The Meeting Languages the person checked in Settings › Languages, and the default one Meetings start in: the last
+/// Meeting's while it is checked, else the first checked.
 /// Languages are kept by BCP 47 identifier, in the order `listed(_:)` gives; at least one stays checked.
 public struct MeetingLanguages: Equatable, Sendable, Codable {
     private var chosenIDs: [String]
@@ -56,13 +57,12 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
     /// The checked languages, in list order.
     public var chosen: [Locale] { chosenIDs.map(Self.locale) }
 
-    /// The language the next Meeting starts in. Making an unchecked language the default checks it.
-    public var defaultLanguage: Locale {
-        get { Self.locale(defaultID) }
-        set {
-            defaultID = Self.id(newValue)
-            set(newValue, chosen: true)
-        }
+    /// The language the next Meeting starts in.
+    public var defaultLanguage: Locale { Self.locale(defaultID) }
+
+    /// The Meeting just transcribed in `language`: the next one starts in it, unless it is unchecked.
+    public mutating func meetingWasIn(_ language: Locale) {
+        if isChosen(language) { defaultID = Self.id(language) }
     }
 
     public func isChosen(_ language: Locale) -> Bool {
@@ -85,11 +85,6 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
         }
     }
 
-    /// The checked languages other than `language`: the offer's "Transcribe in <language>" choices.
-    public func others(than language: Locale) -> [Locale] {
-        chosenIDs.filter { $0 != Self.id(language) }.map(Self.locale)
-    }
-
     /// "French", or "English (United Kingdom)" when another checked language would also be "English".
     public func name(of language: Locale, in displayLocale: Locale = .current) -> String {
         let code = language.language.languageCode?.identifier
@@ -97,13 +92,6 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
             return full
         }
         return code.flatMap { displayLocale.localizedString(forLanguageCode: $0) } ?? Self.id(language)
-    }
-
-    /// The menu bar's badge: "FR", or "EN-GB" when another checked language would also be "EN".
-    public func abbreviation(of language: Locale) -> String {
-        guard let code = language.language.languageCode?.identifier else { return Self.id(language).uppercased() }
-        guard sharesCode(language), let region = language.region?.identifier else { return code.uppercased() }
-        return "\(code)-\(region)".uppercased()
     }
 
     private func sharesCode(_ language: Locale) -> Bool {

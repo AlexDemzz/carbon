@@ -7,7 +7,7 @@ import UserNotifications
 final class Notifier: NSObject {
     enum Response {
         case stop(meetingID: UUID)
-        case transcribe(app: String, language: Locale)
+        case transcribe(app: String)
         /// The offer was dismissed.
         case decline(app: String)
         case never(app: String)
@@ -20,7 +20,7 @@ final class Notifier: NSObject {
     var onResponse: ((Response) -> Void)?
 
     private let center = UNUserNotificationCenter.current()
-    /// Categories by identifier: offers get one per set of language actions.
+    /// Categories by identifier: switch offers get one per provider.
     private var categories: [String: UNNotificationCategory] = [:]
 
     private enum ID {
@@ -32,7 +32,7 @@ final class Notifier: NSObject {
         static let stop = "stop"
         static let show = "show"
         static let never = "never"
-        static let transcribePrefix = "transcribe."
+        static let transcribe = "transcribe"
         static let switchTo = "switch"
     }
 
@@ -52,6 +52,13 @@ final class Notifier: NSObject {
             identifier: "ready",
             actions: [UNNotificationAction(identifier: Action.show, title: "Show", options: [.foreground])],
             intentIdentifiers: []))
+        register(UNNotificationCategory(
+            identifier: "offer",
+            actions: [
+                UNNotificationAction(identifier: Action.transcribe, title: "Transcribe", options: []),
+                UNNotificationAction(identifier: Action.never, title: "Never", options: []),
+            ],
+            intentIdentifiers: [], options: [.customDismissAction]))
     }
 
     /// The onboarding's prompt. Later calls return the stored answer without asking.
@@ -59,8 +66,7 @@ final class Notifier: NSObject {
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
     }
 
-    /// "Transcribing", "<title> · <Provider>", with Stop. The menu bar shows the Meeting Language, which
-    /// identification may still change.
+    /// "Transcribing", "<title> · <Provider>", with Stop.
     func postStarted(_ meeting: LiveMeeting) {
         let content = UNMutableNotificationContent()
         content.title = "Transcribing"
@@ -70,21 +76,12 @@ final class Notifier: NSObject {
         add(ID.start(meeting.id), content)
     }
 
-    /// "<title>", "<Provider> is using the microphone.", with Transcribe, Transcribe in <language> and Never.
-    /// Dismissing it declines.
-    func postOffer(_ offer: Recorder.Offer, languages: MeetingLanguages?) {
-        let otherLanguages = languages?.others(than: offer.language) ?? []
-        let actions =
-            [Self.transcribe(offer.language, title: "Transcribe")]
-            + otherLanguages.map { Self.transcribe($0, title: "Transcribe in \(Self.name(of: $0, in: languages))") }
-            + [UNNotificationAction(identifier: Action.never, title: "Never", options: [])]
-        let category = "offer." + ([offer.language] + otherLanguages).map { $0.identifier(.bcp47) }.joined(separator: ",")
-        register(UNNotificationCategory(
-            identifier: category, actions: actions, intentIdentifiers: [], options: [.customDismissAction]))
+    /// "<title>", "<Provider> is using the microphone.", with Transcribe and Never. Dismissing it declines.
+    func postOffer(_ offer: Recorder.Offer) {
         let content = UNMutableNotificationContent()
         content.title = offer.title
         content.body = "\(offer.provider) is using the microphone."
-        content.categoryIdentifier = category
+        content.categoryIdentifier = "offer"
         content.userInfo = [Key.app: offer.app.bundleID]
         add(ID.offer, content)
     }
@@ -153,21 +150,9 @@ final class Notifier: NSObject {
         center.setNotificationCategories(Set(categories.values))
     }
 
-    private static func transcribe(_ language: Locale, title: String) -> UNNotificationAction {
-        UNNotificationAction(identifier: Action.transcribePrefix + language.identifier(.bcp47), title: title, options: [])
-    }
-
     static func languageName(_ language: Locale) -> String {
         let code = language.language.languageCode?.identifier ?? language.identifier
         return Locale.current.localizedString(forLanguageCode: code) ?? code
-    }
-
-    private static func name(of language: Locale, in languages: MeetingLanguages?) -> String {
-        languages?.name(of: language) ?? languageName(language)
-    }
-
-    private static func language(_ action: String, after prefix: String) -> Locale {
-        Locale(identifier: Locale.identifier(.icu, from: String(action.dropFirst(prefix.count))))
     }
 
     fileprivate func handle(action: String, meetingID: String?, app: String?) {
@@ -176,11 +161,10 @@ final class Notifier: NSObject {
             switch action {
             case Action.stop: meetingID.map { .stop(meetingID: $0) }
             case Action.show, UNNotificationDefaultActionIdentifier: meetingID.map { .show(meetingID: $0) }
+            case Action.transcribe: app.map { .transcribe(app: $0) }
             case Action.never: app.map { .never(app: $0) }
             case Action.switchTo: app.flatMap { app in meetingID.map { .switchTo(app: app, meetingID: $0) } }
             case UNNotificationDismissActionIdentifier: app.map { .decline(app: $0) }
-            case let action where action.hasPrefix(Action.transcribePrefix):
-                app.map { .transcribe(app: $0, language: Self.language(action, after: Action.transcribePrefix)) }
             default: nil
             }
         if let response { onResponse?(response) }

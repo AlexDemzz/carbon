@@ -9,7 +9,6 @@ import SwiftUI
 final class StatusItem {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let meter = MicMeterView()
-    private let meterOffset: NSLayoutConstraint
     private let model: AppModel
 
     init(model: AppModel, updater: Updater) {
@@ -23,9 +22,8 @@ final class StatusItem {
         button.addSubview(handover)
         meter.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(meter)
-        meterOffset = meter.centerXAnchor.constraint(equalTo: button.centerXAnchor)
         NSLayoutConstraint.activate([
-            meterOffset,
+            meter.centerXAnchor.constraint(equalTo: button.centerXAnchor),
             meter.centerYAnchor.constraint(equalTo: button.centerYAnchor),
             meter.widthAnchor.constraint(equalToConstant: MicMeterView.side),
             meter.heightAnchor.constraint(equalToConstant: MicMeterView.side),
@@ -39,39 +37,21 @@ final class StatusItem {
         set { item.isVisible = newValue }
     }
 
-    /// Redraws the item when a Meeting goes live or ends, or its language changes. The meter never redraws it.
+    /// Redraws the item when a Meeting goes live or ends. The meter never redraws it.
     private func update() {
-        let (isLive, language) = withObservationTracking {
-            (model.isLive, model.liveMeetingLanguage)
+        let isLive = withObservationTracking {
+            model.isLive
         } onChange: {
             Task { @MainActor [weak self] in self?.update() }
         }
         guard let button = item.button else { return }
-        let image = isLive ? Self.liveImage(badge: language?.badge) : NSImage(named: "MenuBarIdle")!
-        button.image = image
-        button.setAccessibilityLabel(
-            isLive ? language.map { "Carbon, transcribing in \($0.name)" } ?? "Carbon, transcribing" : "Carbon")
-        // The meter sits on the image's first 18 pt, which the button centers.
-        meterOffset.constant = (MicMeterView.side - image.size.width) / 2
+        // Live, the image only makes room for the meter.
+        button.image =
+            isLive
+            ? NSImage(size: NSSize(width: MicMeterView.side, height: MicMeterView.side)) : NSImage(named: "MenuBarIdle")!
+        button.setAccessibilityLabel(isLive ? "Carbon, transcribing" : "Carbon")
         if meter.isHidden == isLive { meter.reset() }
         meter.isHidden = !isLive
-    }
-
-    /// Room for the meter, then the Meeting Language's badge cut out of a filled capsule, as a template image.
-    private static func liveImage(badge: String?) -> NSImage {
-        let side = MicMeterView.side
-        guard let badge else { return NSImage(size: NSSize(width: side, height: side)) }
-        let text = NSAttributedString(string: badge, attributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold)])
-        let textSize = text.size()
-        let capsule = NSRect(x: side, y: 3, width: ceil(textSize.width) + 8, height: 12)
-        let image = NSImage(size: NSSize(width: capsule.maxX, height: side), flipped: false) { _ in
-            NSBezierPath(roundedRect: capsule, xRadius: 6, yRadius: 6).fill()
-            NSGraphicsContext.current?.compositingOperation = .destinationOut
-            text.draw(at: NSPoint(x: capsule.midX - textSize.width / 2, y: capsule.midY - textSize.height / 2))
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 }
 

@@ -72,7 +72,7 @@ final class AppModel {
         reconcileLibrary()
         watchLibrary()
         UserDefaults.standard.register(defaults: [
-            SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true, SettingsKey.identifyMeetingLanguage: true,
+            SettingsKey.autoTranscribe: true, SettingsKey.recognizeVoices: true,
         ])
         library.recognizesVoices = UserDefaults.standard.bool(forKey: SettingsKey.recognizeVoices)
         recorder.onDiagnostic = { DiagnosticLog.shared.write($0) }
@@ -126,7 +126,7 @@ final class AppModel {
         case .started(let meeting):
             notifier.postStarted(meeting)
         case .offered(let offer):
-            notifier.postOffer(offer, languages: meetingLanguages)
+            notifier.postOffer(offer)
         case .offerWithdrawn:
             notifier.withdrawOffer()
         case .transcriptReady(let id, let title, _):
@@ -152,11 +152,11 @@ final class AppModel {
             // A banner left over from an earlier Meeting never discards the current one.
             guard isLive(meetingID) else { return }
             discard()
-        case .transcribe(let app, let language):
+        case .transcribe(let app):
             guard recorder.pendingOffer?.bundleID == app else { return }
             Task {
                 do {
-                    try await recorder.acceptOffer(language: language)
+                    try await recorder.acceptOffer()
                 } catch Recorder.Failure.systemAudioRecordingDenied {
                     present(AppError.systemAudioRecordingDenied, title: "Carbon couldn't start transcribing")
                 } catch {
@@ -425,10 +425,8 @@ enum SettingsKey {
     static let ignoredApps = "ignoredApps"
     /// The Library folder's path, saved on the first launch and changed by Settings' Change….
     static let libraryFolder = "libraryFolder"
-    /// Settings › Languages, a JSON `MeetingLanguages`.
+    /// Settings › Languages, a JSON `MeetingLanguages`, with the language the last Meeting was transcribed in.
     static let meetingLanguages = "meetingLanguages"
-    /// "Identify the Meeting Language automatically", on by default. Read as each Meeting starts.
-    static let identifyMeetingLanguage = "identifyMeetingLanguage"
     /// "Recognize voices", on by default.
     static let recognizeVoices = "recognizeVoices"
     /// "Show app icon in", an `AppIconPlacement`, Dock and Menu Bar by default.

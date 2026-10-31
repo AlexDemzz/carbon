@@ -111,39 +111,6 @@ struct LanguageIdentificationTests {
         #expect(classifier.windows.isEmpty)
     }
 
-    @Test func anOfferTranscribedInAnotherLanguageIsNeverIdentified() async throws {
-        let classifier = ReplayLanguageClassifier(["en": log(0.9), "fr": log(0.01)])
-        let recorder = makeRecorder(classifier: classifier, candidates: [english, french])
-        recorder.detectionLanguage = english
-        recorder.autoTranscribe = false
-        let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
-
-        await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, [(0...20, [zoom])]))
-        try await recorder.acceptOffer(language: french)
-        speak()
-        let file = try await recorder.stop()
-
-        #expect(try String(contentsOf: file, encoding: .utf8).contains("language: fr-FR"))
-        #expect(classifier.windows.isEmpty)
-    }
-
-    @Test func anOfferTranscribedInAnotherLanguageStaysChosenWhenTheDefaultChangesMeanwhile() async throws {
-        let classifier = ReplayLanguageClassifier(["en": log(0.9), "fr": log(0.01)])
-        let recorder = makeRecorder(classifier: classifier, candidates: [english, french])
-        recorder.detectionLanguage = english
-        recorder.autoTranscribe = false
-        let zoom = MeetingApp(bundleID: "us.zoom.xos", name: "zoom.us")
-
-        await recorder.runDetection(ScriptedSignalSource(clock, from: clock.now, [(0...20, [zoom])]))
-        recorder.detectionLanguage = french
-        try await recorder.acceptOffer(language: french)
-        speak()
-        let file = try await recorder.stop()
-
-        #expect(try String(contentsOf: file, encoding: .utf8).contains("language: fr-FR"))
-        #expect(classifier.windows.isEmpty)
-    }
-
     @Test func withOneCheckedLanguageTheModelIsNeverUsed() async throws {
         let classifier = ReplayLanguageClassifier(["fr": log(0.9), "en": log(0.01)])
         let speechGate = ScriptedSpeechGate()

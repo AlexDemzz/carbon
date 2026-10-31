@@ -90,31 +90,13 @@ private struct GeneralSettings: View {
 }
 
 /// The Meeting Languages: a checkbox per language SpeechTranscriber supports, each checked one with its download
-/// state, and, with several checked, the one Meetings start in and whether Carbon identifies the one spoken.
+/// state. With several checked, Carbon identifies which one each Meeting is spoken in.
 private struct LanguagesSettings: View {
     let model: AppModel
-    @AppStorage(SettingsKey.identifyMeetingLanguage) private var identifiesMeetingLanguage = true
 
     var body: some View {
         Form {
             if let languages = model.meetingLanguages {
-                if languages.chosen.count > 1 {
-                    Section {
-                        Picker("Start Meetings in", selection: defaultLanguage) {
-                            ForEach(languages.chosen, id: \.self) { language in
-                                Text(languages.name(of: language)).tag(language.identifier(.bcp47))
-                            }
-                        }
-                        Toggle("Identify the Meeting Language automatically", isOn: $identifiesMeetingLanguage)
-                    } footer: {
-                        Text(
-                            identifiesMeetingLanguage
-                                ? "From the first seconds of speech, Carbon identifies which checked language is spoken and transcribes the Meeting in it. If it can\u{2019}t tell, the Meeting stays in the language above. To change it during a Meeting, use the menu bar or the notification."
-                                : "Meetings are transcribed in the language above. To change it during a Meeting, use the menu bar or the notification."
-                        )
-                        .foregroundStyle(.secondary)
-                    }
-                }
                 Section {
                     ForEach(model.languageAssets.supported, id: \.self) { language in
                         LanguageRow(model: model, language: language, languages: languages)
@@ -122,10 +104,12 @@ private struct LanguagesSettings: View {
                 } header: {
                     Text("Languages You Speak in Meetings")
                 } footer: {
-                    if languages.chosen.count == 1 {
-                        Text("Check another language, and Carbon identifies which one each Meeting is spoken in.")
-                            .foregroundStyle(.secondary)
-                    }
+                    Text(
+                        languages.chosen.count == 1
+                            ? "Check another language, and Carbon identifies which one each Meeting is spoken in."
+                            : "Carbon identifies which of these languages each Meeting is spoken in. To correct it during a Meeting, choose Meeting Language in the menu bar."
+                    )
+                    .foregroundStyle(.secondary)
                 }
             } else {
                 ProgressView()
@@ -135,12 +119,6 @@ private struct LanguagesSettings: View {
         .task {
             if model.languageAssets.supported.isEmpty { await model.languageAssets.loadSupported() }
         }
-    }
-
-    private var defaultLanguage: Binding<String> {
-        Binding(
-            get: { model.meetingLanguages?.defaultLanguage.identifier(.bcp47) ?? "" },
-            set: { model.meetingLanguages?.defaultLanguage = Locale(identifier: Locale.identifier(.icu, from: $0)) })
     }
 }
 
