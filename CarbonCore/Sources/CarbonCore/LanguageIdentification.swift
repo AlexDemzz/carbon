@@ -33,6 +33,9 @@ final class LanguageIdentification: Sendable {
     static let voteBackOff: TimeInterval = 20
     /// The audio around the vote's words its stretch also takes, so a model transcribing it again can finish them.
     static let voteMargin: TimeInterval = 1
+    /// The most audio a challenge's stretch spans, however little speech it holds: a stream quiet for an hour isn't
+    /// transcribed again for an hour.
+    static let maximumStretch: TimeInterval = 120
     /// How far SpeechTranscriber's final words may lag behind the audio: the guard doesn't count the latest speech
     /// as speech without words until then.
     static let finalizationLag: TimeInterval = 5
@@ -324,8 +327,7 @@ struct StreamEvidence {
     mutating func add(_ words: [TranscribedWord]) {
         for word in words where word.end > since {
             pending.append(word)
-            let position = wordEnds.lastIndex { $0 <= word.end }.map { $0 + 1 } ?? 0
-            wordEnds.insert(word.end, at: position)
+            wordEnds.insert(word.end, at: wordsEnding(atOrBefore: word.end))
         }
     }
 
@@ -373,7 +375,8 @@ struct StreamEvidence {
         _ kind: LanguageEvidence.Challenge.Kind, for candidates: [Locale], over range: ClosedRange<TimeInterval>,
         reason: String
     ) -> LanguageEvidence.Challenge {
-        LanguageEvidence.Challenge(
+        let range = max(range.lowerBound, range.upperBound - LanguageIdentification.maximumStretch)...range.upperBound
+        return LanguageEvidence.Challenge(
             kind: kind, stream: stream, candidates: candidates, range: range,
             speech: speech.speech(from: range.lowerBound, to: range.upperBound), currentWords: count(in: range),
             reason: reason)
@@ -381,7 +384,17 @@ struct StreamEvidence {
 
     /// The words that end within `range`, start excluded.
     private func count(in range: ClosedRange<TimeInterval>) -> Int {
-        wordEnds.filter { $0 > range.lowerBound && $0 <= range.upperBound }.count
+        wordsEnding(atOrBefore: range.upperBound) - wordsEnding(atOrBefore: range.lowerBound)
+    }
+
+    /// The words that end at or before `time`, found in the sorted `wordEnds`.
+    private func wordsEnding(atOrBefore time: TimeInterval) -> Int {
+        var (low, high) = (0, wordEnds.count)
+        while low < high {
+            let middle = (low + high) / 2
+            if wordEnds[middle] <= time { low = middle + 1 } else { high = middle }
+        }
+        return low
     }
 
     /// Backs the guard, or the vote, off. Returns the speech it waits for.

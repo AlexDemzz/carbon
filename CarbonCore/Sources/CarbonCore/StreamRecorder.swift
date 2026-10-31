@@ -115,11 +115,15 @@ final class StreamRecorder: Sendable {
         let start = AVAudioFramePosition(range.lowerBound * fileFormat.sampleRate)
         guard start < recorded else { return }
         if start > 0 { session.skip(Double(start) / fileFormat.sampleRate) }
-        try replay(min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate)), from: start, to: session)
+        try replay(
+            min(recorded, AVAudioFramePosition(range.upperBound * fileFormat.sampleRate)), from: start, to: session,
+            skippingSilence: true)
     }
 
+    /// `skippingSilence` skips each second of digital silence instead of having the session hear it.
     private func replay(
-        _ frames: AVAudioFramePosition, from start: AVAudioFramePosition = 0, to session: any TranscriptionSession
+        _ frames: AVAudioFramePosition, from start: AVAudioFramePosition = 0, to session: any TranscriptionSession,
+        skippingSilence: Bool = false
     ) throws {
         let file = try AVAudioFile(
             forReading: url, commonFormat: fileFormat.commonFormat, interleaved: fileFormat.isInterleaved)
@@ -133,6 +137,10 @@ final class StreamRecorder: Sendable {
             }
             try file.read(into: buffer, frameCount: count)
             if buffer.frameLength == 0 { break }
+            if skippingSilence, SoundLevel.isDigitalSilence(buffer) {
+                session.skip(Double(buffer.frameLength) / fileFormat.sampleRate)
+                continue
+            }
             session.append(try Self.convert(buffer, to: session.audioFormat, with: &converter))
         }
     }
