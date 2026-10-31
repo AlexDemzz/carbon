@@ -107,7 +107,7 @@ private struct LanguagesSettings: View {
                     Text(
                         languages.chosen.count == 1
                             ? "Check another language, and Carbon identifies which one each Meeting is spoken in."
-                            : "Carbon identifies which of these languages each Meeting is spoken in. To correct it during a Meeting, choose Meeting Language in the menu bar."
+                            : "Carbon identifies which of these languages each Meeting is spoken in. To correct it during a Meeting, choose Meeting Language in Carbon\u{2019}s menu bar or Dock menu."
                     )
                     .foregroundStyle(.secondary)
                 }

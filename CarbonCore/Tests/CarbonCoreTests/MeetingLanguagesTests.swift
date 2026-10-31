@@ -53,7 +53,7 @@ struct MeetingLanguagesTests {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-FR"), chosen: true)
 
-        languages.meetingWasIn(Locale(identifier: "fr_FR"))
+        languages.rememberLastMeeting(in: Locale(identifier: "fr_FR"))
 
         #expect(languages.defaultLanguage.identifier(.bcp47) == "fr-FR")
     }
@@ -62,7 +62,7 @@ struct MeetingLanguagesTests {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-FR"), chosen: true)
 
-        languages.meetingWasIn(Locale(identifier: "de-DE"))
+        languages.rememberLastMeeting(in: Locale(identifier: "de-DE"))
 
         #expect(bcp47(languages.chosen) == ["en-US", "fr-FR"])
         #expect(languages.defaultLanguage.identifier(.bcp47) == "en-US")
@@ -145,7 +145,7 @@ struct MeetingLanguagesTests {
     @Test func theSettingSurvivesARoundTripThroughItsStoredForm() throws {
         var languages = MeetingLanguages(default: Locale(identifier: "en-US"))
         languages.set(Locale(identifier: "fr-CA"), chosen: true)
-        languages.meetingWasIn(Locale(identifier: "fr-CA"))
+        languages.rememberLastMeeting(in: Locale(identifier: "fr-CA"))
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys

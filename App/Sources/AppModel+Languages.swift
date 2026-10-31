@@ -76,7 +76,7 @@ extension AppModel {
     /// The live Meeting is now transcribed in another language, picked by the person or identified. The next Meeting
     /// starts in it.
     func meetingLanguageChanged(_ meeting: LiveMeeting) {
-        meetingLanguages?.meetingWasIn(meeting.language)
+        meetingLanguages?.rememberLastMeeting(in: meeting.language)
         AccessibilityNotification.Announcement("Transcribing in \(languageName(meeting.language))").post()
     }
 }

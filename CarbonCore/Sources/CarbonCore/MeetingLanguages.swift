@@ -61,7 +61,7 @@ public struct MeetingLanguages: Equatable, Sendable, Codable {
     public var defaultLanguage: Locale { Self.locale(defaultID) }
 
     /// The Meeting just transcribed in `language`: the next one starts in it, unless it is unchecked.
-    public mutating func meetingWasIn(_ language: Locale) {
+    public mutating func rememberLastMeeting(in language: Locale) {
         if isChosen(language) { defaultID = Self.id(language) }
     }
 
