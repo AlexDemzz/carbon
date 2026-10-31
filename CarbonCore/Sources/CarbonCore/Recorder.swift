@@ -358,7 +358,7 @@ public final class Recorder {
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
             opened.append(them)
             let identification = identifyLanguage(of: meeting.id, startingIn: language)
-            identification?.listen(me: me.session, them: them.session)
+            readFinalWords(of: me.session, them.session, into: identification)
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, as: .me, tracksSound: app == nil, identification: identification)
             try capture(them, as: .them, tracksSound: app != nil, identification: identification)
@@ -431,6 +431,17 @@ public final class Recorder {
         languageSwitch = task
         defer { if languageSwitch == task { languageSwitch = nil } }
         try await task.value
+    }
+
+    /// Hands `me` and `them`'s final words to the Meeting's language identification, else reads them away: left unread,
+    /// they would pile up all Meeting long.
+    private func readFinalWords(
+        of me: any TranscriptionSession, _ them: any TranscriptionSession, into identification: LanguageIdentification?
+    ) {
+        if let identification { return identification.listen(me: me, them: them) }
+        for words in [me.finalWords, them.finalWords] {
+            Task.detached { for await _ in words {} }
+        }
     }
 
     /// Starts identifying the language of the Meeting starting in `language`, when there are at least two checked
@@ -536,9 +547,8 @@ public final class Recorder {
             _ = try? await them.finish()
             throw error
         }
-        if let languageIdentification, languageIdentification.meeting == id {
-            languageIdentification.identification.listen(me: me, them: them)
-        }
+        readFinalWords(
+            of: me, them, into: languageIdentification.flatMap { $0.meeting == id ? $0.identification : nil })
         // An Event or an output route may have come in meanwhile.
         if let current = liveCapture, current.meeting.id == id { capture = current }
         capture.me.session = me

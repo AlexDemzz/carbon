@@ -57,6 +57,40 @@ struct TextLanguage: Sendable {
         }
     }
 
+    /// `words` with each run of a script written without spaces, such as Chinese, Japanese or Thai, split into its
+    /// words, each timed by its share of the run's characters: SpeechTranscriber finalizes those a phrase at a time.
+    static func words(_ words: [TranscribedWord]) -> [TranscribedWord] {
+        words.flatMap { word -> [TranscribedWord] in
+            let text = word.text
+            guard text.unicodeScalars.contains(where: isWrittenWithoutSpaces) else { return [word] }
+            let tokenizer = NLTokenizer(unit: .word)
+            tokenizer.string = text
+            let tokens = tokenizer.tokens(for: text.startIndex..<text.endIndex)
+            guard tokens.count > 1 else { return [word] }
+            let characters = Double(text.count)
+            let duration = word.end - word.start
+            func time(at index: String.Index) -> TimeInterval {
+                word.start + duration * Double(text.distance(from: text.startIndex, to: index)) / characters
+            }
+            return tokens.map {
+                TranscribedWord(text: String(text[$0]), start: time(at: $0.lowerBound), end: time(at: $0.upperBound))
+            }
+        }
+    }
+
+    private static func isWrittenWithoutSpaces(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0E00...0x0EFF,  // Thai, Lao
+             0x1000...0x109F,  // Myanmar
+             0x1780...0x17FF,  // Khmer
+             0x3040...0x30FF, 0x31F0...0x31FF,  // Hiragana, Katakana
+             0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FFFF:  // Han
+            true
+        default:
+            false
+        }
+    }
+
     private static func language(of locale: Locale) -> NLLanguage? {
         guard let code = locale.language.languageCode?.identifier else { return nil }
         guard code == "zh" else { return NLLanguage(rawValue: code) }

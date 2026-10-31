@@ -154,7 +154,7 @@ final class LanguageIdentification: Sendable {
         for candidate in challenge.candidates {
             guard !stopped.load(ordering: .acquiring) else { return nil }
             do {
-                let words = try await probe(candidate, challenge.stream, challenge.range)
+                let words = TextLanguage.words(try await probe(candidate, challenge.stream, challenge.range))
                 let result = LanguageProbe(
                     candidate, wrote: words, against: challenge.currentWords, speech: challenge.speech, reader: reader)
                 await onDiagnostic(
@@ -190,7 +190,7 @@ final class LanguageIdentification: Sendable {
                 let number = (listeners[stream]?.session ?? 0) + 1
                 let words = session.finalWords
                 listeners[stream] = (number, Task {
-                    for await run in words { events.yield(.words(stream, session: number, run)) }
+                    for await run in words { events.yield(.words(stream, session: number, TextLanguage.words(run))) }
                 })
             }
         }

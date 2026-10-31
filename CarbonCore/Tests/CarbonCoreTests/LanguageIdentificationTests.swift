@@ -34,6 +34,13 @@ struct LanguageIdentificationTests {
         Woche gearbeitet hat und welche Probleme es mit dem technischen Team gab.
         """
 
+    /// Sentences, as SpeechTranscriber finalizes Chinese: each a run with no space in it.
+    static let chineseSpeech = """
+        大家早上好，谢谢大家今天来参加会议。 我们先看一下明年的预算情况。 然后我们一起讨论项目的时间安排。 \
+        我希望每个人简单介绍一下这周的工作。 也请说说和技术团队合作时遇到的问题。 最后我们谈谈春天的招聘计划。 \
+        还有办公室新的布局安排。 大家有什么问题可以随时提出来。
+        """
+
     /// `text`'s words, one every `1 / perSecond` seconds from `start`, as a transcriber finalizes them.
     static func spoken(_ text: String, from start: TimeInterval = 0.5, perSecond rate: Double) -> [TranscribedWord] {
         text.split(separator: " ").enumerated().map { index, word in
@@ -120,6 +127,39 @@ struct LanguageIdentificationTests {
 
         #expect(languageIdentified(notices) == [english])
         #expect(try String(contentsOf: file, encoding: .utf8).contains("**Me** [0:00] Hello everyone,"))
+    }
+
+    @Test func aChineseMeetingStartedInEnglishIsSwitchedToChineseByTheRateGuard() async throws {
+        let chinese = Locale(identifier: "zh_CN")
+        let transcriber = LanguageReplayTranscriber([
+            "en-US": [.me: Self.spoken("Ok the way", from: 2, perSecond: 0.2)],
+            "zh-CN": [.me: Self.spoken(Self.chineseSpeech, from: 1, perSecond: 0.2)],
+        ], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [english, chinese])
+        var notices: [Recorder.Notice] = []
+        recorder.onNotice = { notices.append($0) }
+
+        try await recorder.start(language: english)
+        microphone.play(seconds: 30)
+        try await eventually { !notices.isEmpty }
+        await recorder.discard()
+
+        #expect(languageIdentified(notices) == [chinese])
+    }
+
+    @Test func aChineseMeetingInChineseIsNeverTranscribedAgain() async throws {
+        let chinese = Locale(identifier: "zh_CN")
+        let transcriber = LanguageReplayTranscriber([
+            "zh-CN": [.me: Self.spoken(Self.chineseSpeech, from: 1, perSecond: 0.3)],
+        ], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [chinese, english])
+
+        try await recorder.start(language: chinese)
+        microphone.play(seconds: 25)
+        try await settled()
+        await recorder.discard()
+
+        #expect(sessions(transcriber, "en-US", .me) == 0)
     }
 
     @Test func ofTheLanguagesTheRateGuardConfirmsItKeepsTheOneWritingMostOfItsOwnWords() async throws {
