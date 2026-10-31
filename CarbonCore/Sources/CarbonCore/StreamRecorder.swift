@@ -220,6 +220,16 @@ final class StreamRecorder: Sendable {
     static func convert(
         _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?
     ) throws -> AVAudioPCMBuffer {
+        var output: AVAudioPCMBuffer?
+        return try convert(buffer, to: format, with: &converter, reusing: &output)
+    }
+
+    /// Converts into `output` when it is big enough, else into a new buffer left in `output`: the result is only
+    /// valid until the next conversion.
+    static func convert(
+        _ buffer: AVAudioPCMBuffer, to format: AVAudioFormat, with converter: inout AVAudioConverter?,
+        reusing output: inout AVAudioPCMBuffer?
+    ) throws -> AVAudioPCMBuffer {
         if buffer.format == format { return buffer }
         if converter?.inputFormat != buffer.format {
             converter = AVAudioConverter(from: buffer.format, to: format)
@@ -227,9 +237,10 @@ final class StreamRecorder: Sendable {
         guard let converter else { throw CocoaError(.featureUnsupported) }
         let ratio = format.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
-        guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-            throw CocoaError(.featureUnsupported)
+        if output?.format != format || (output?.frameCapacity ?? 0) < capacity {
+            output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
         }
+        guard let output else { throw CocoaError(.featureUnsupported) }
         nonisolated(unsafe) var consumed = false
         var error: NSError?
         converter.convert(to: output, error: &error) { _, status in

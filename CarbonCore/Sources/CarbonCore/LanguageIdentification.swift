@@ -52,6 +52,9 @@ final class LanguageIdentification: Sendable {
     /// One stream's audio on its way to the speech gate.
     private struct StreamAudio {
         var converter: AVAudioConverter?
+        /// The converter's output, reused from buffer to buffer: allocating and freeing one per capture buffer costs as
+        /// much as resampling it.
+        var converted: AVAudioPCMBuffer?
         /// Audio not yet gated: less than one chunk.
         var pending: [Float] = []
     }
@@ -176,9 +179,10 @@ final class LanguageIdentification: Sendable {
 
     /// Adds `buffer`, resampled, to `audio`. Returns the chunks it completes.
     private static func chunk(_ buffer: AVAudioPCMBuffer, into audio: inout StreamAudio, size: Int) -> [[Float]] {
-        guard let converted = try? StreamRecorder.convert(buffer, to: format, with: &audio.converter) else {
-            return []
-        }
+        guard
+            let converted = try? StreamRecorder.convert(
+                buffer, to: format, with: &audio.converter, reusing: &audio.converted)
+        else { return [] }
         audio.pending += UnsafeBufferPointer(start: converted.floatChannelData![0], count: Int(converted.frameLength))
         var ready: [[Float]] = []
         while audio.pending.count >= size {
