@@ -28,6 +28,12 @@ struct LanguageIdentificationTests {
         talk about the hires planned for the spring and the new layout of the offices.
         """
 
+    static let germanSpeech = """
+        Guten Morgen zusammen, danke dass ihr heute dabei seid. Wir beginnen mit dem Haushalt für das nächste Jahr \
+        und schauen uns danach gemeinsam den Zeitplan des Projekts an. Jeder sollte kurz erzählen, woran er diese \
+        Woche gearbeitet hat und welche Probleme es mit dem technischen Team gab.
+        """
+
     /// `text`'s words, one every `1 / perSecond` seconds from `start`, as a transcriber finalizes them.
     static func spoken(_ text: String, from start: TimeInterval = 0.5, perSecond rate: Double) -> [TranscribedWord] {
         text.split(separator: " ").enumerated().map { index, word in
@@ -117,6 +123,46 @@ struct LanguageIdentificationTests {
         #expect(try String(contentsOf: file, encoding: .utf8).contains("**Me** [0:00] Hello everyone,"))
     }
 
+    @Test func ofTheLanguagesTheRateGuardConfirmsItKeepsTheOneWritingMostOfItsOwnWords() async throws {
+        let german = Locale(identifier: "de_DE")
+        let transcriber = LanguageReplayTranscriber([
+            "fr-FR": [.me: Self.spoken("Ok alors le prix euh", from: 2, perSecond: 0.2)],
+            "de-DE": [.me: Self.spoken(Self.germanSpeech, perSecond: 1.5)],
+            "en-US": [.me: Self.spoken(Self.englishSpeech, perSecond: 2.5)],
+        ], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [french, german, english])
+        var notices: [Recorder.Notice] = []
+        recorder.onNotice = { notices.append($0) }
+        var diagnostics: [String] = []
+        recorder.onDiagnostic = { diagnostics.append($0) }
+
+        try await recorder.start(language: french)
+        microphone.play(seconds: 30)
+        try await eventually { !notices.isEmpty }
+        await recorder.discard()
+
+        #expect(languageIdentified(notices) == [english])
+        #expect(diagnostics.contains { $0.hasPrefix("Me: de-DE writes") && $0.hasSuffix("confirmed") })
+    }
+
+    @Test func aMeetingThatChangesLanguageHalfwayIsFollowedBothWays() async throws {
+        // Each model, given native speech in the other language, writes that language.
+        let them = Self.spoken(Self.englishSpeech, perSecond: 3) + Self.spoken(Self.frenchSpeech, from: 30, perSecond: 3)
+        let transcriber = LanguageReplayTranscriber(
+            ["fr-FR": [.them: them], "en-US": [.them: them]], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [french, english])
+        var notices: [Recorder.Notice] = []
+        recorder.onNotice = { notices.append($0) }
+
+        try await recorder.start(language: french)
+        microphone.play(seconds: 60, amplitude: 0)
+        systemAudio.play(seconds: 60)
+        try await eventually { languageIdentified(notices).count == 2 }
+        await recorder.discard()
+
+        #expect(languageIdentified(notices) == [english, french])
+    }
+
     @Test func noLanguageThatWritesMoreWordsMeansNoSwitchAndAMinuteOfSpeechBeforeTheNextTry() async throws {
         // A language nobody checked: neither model makes words of it.
         let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
@@ -129,7 +175,7 @@ struct LanguageIdentificationTests {
         microphone.play(seconds: 75)
         try await judged(speechGate, seconds: 75)
         #expect(sessions(transcriber, "fr-FR", .me) == 1, "tried once after 20 s of speech, then backs off for 60 s")
-        microphone.play(seconds: 10)
+        microphone.play(seconds: 15)
         try await eventually { sessions(transcriber, "fr-FR", .me) == 2 }
         let file = try await recorder.stop()
 

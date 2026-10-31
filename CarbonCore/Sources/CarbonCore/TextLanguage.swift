@@ -80,16 +80,16 @@ struct LanguageProbe: Equatable, Sendable {
 
     init(
         _ candidate: Locale, wrote words: [TranscribedWord], against currentWords: Int, speech: TimeInterval,
-        text: TextLanguage
+        reader: TextLanguage
     ) {
         self.candidate = candidate
         self.words = words.count
         rate = Double(words.count) / max(speech, 1)
         currentRate = Double(currentWords) / max(speech, 1)
-        let shares = text.chunkShares(of: words, for: candidate)
+        let shares = reader.chunkShares(of: words, for: candidate)
         confirmedChunks = shares.filter { $0 >= LexicalVote.minimumShare }.count
         chunks = shares.count
-        share = words.isEmpty ? 0 : text.shares(of: words).first { text.same($0.key, candidate) }?.value ?? 0
+        share = words.isEmpty ? 0 : reader.shares(of: words).first { reader.same($0.key, candidate) }?.value ?? 0
     }
 
     var confirms: Bool {

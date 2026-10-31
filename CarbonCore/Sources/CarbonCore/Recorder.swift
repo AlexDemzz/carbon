@@ -368,8 +368,7 @@ public final class Recorder {
             let them = try await open(.them, from: systemAudio(app), into: folder.themAudio, language: language)
             opened.append(them)
             let identification = identifies ? identifyLanguage(of: meeting.id, startingIn: language) : nil
-            identification?.listen(to: me.session.finalWords, on: .me)
-            identification?.listen(to: them.session.finalWords, on: .them)
+            identification?.listen(me: me.session, them: them.session)
             // With a Meeting App, its audio tells whether the call goes on; without one, only the mic can.
             try capture(me, as: .me, tracksSound: app == nil, identification: identification)
             try capture(them, as: .them, tracksSound: app != nil, identification: identification)
@@ -449,15 +448,15 @@ public final class Recorder {
     private func identifyLanguage(of id: UUID, startingIn language: Locale) -> LanguageIdentification? {
         guard let speechGate else { return nil }
         let candidates = [language] + meetingLanguageCandidates()
-        guard let text = TextLanguage(candidates: candidates) else {
+        guard let reader = TextLanguage(candidates: candidates) else {
             let listed = candidates.map(MeetingFormat.bcp47).joined(separator: ", ")
             onDiagnostic?("Meeting Language not identified: nothing to tell apart among \(listed)")
             return nil
         }
         onDiagnostic?(
-            "Identifying the Meeting Language among \(text.candidates.map(MeetingFormat.bcp47).joined(separator: ", "))")
+            "Identifying the Meeting Language among \(reader.candidates.map(MeetingFormat.bcp47).joined(separator: ", "))")
         let identification = LanguageIdentification(
-            current: language, text: text, speechGate: speechGate, after: lastLanguageIdentification,
+            current: language, reader: reader, speechGate: speechGate, after: lastLanguageIdentification,
             probe: { [weak self] language, stream, range in
                 guard let self else { throw Failure.notLive }
                 return try await transcribe(stream, of: id, in: language, over: range)
@@ -543,8 +542,7 @@ public final class Recorder {
             throw error
         }
         if let languageIdentification, languageIdentification.meeting == id {
-            languageIdentification.identification.listen(to: me.finalWords, on: .me)
-            languageIdentification.identification.listen(to: them.finalWords, on: .them)
+            languageIdentification.identification.listen(me: me, them: them)
         }
         // An Event or an output route may have come in meanwhile.
         if let current = liveCapture, current.meeting.id == id { capture = current }
