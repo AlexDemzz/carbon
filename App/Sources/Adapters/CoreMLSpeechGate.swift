@@ -1,3 +1,4 @@
+import Accelerate
 import CarbonCore
 import CoreML
 import Foundation
@@ -22,6 +23,8 @@ actor CoreMLSpeechGate: SpeechGate {
     nonisolated let chunkSize = 4096
     private static let contextSize = 64
     private static let stateSize = 128
+    /// −80 dBFS, as `SoundLevel.isDigitalSilence`.
+    private static let digitalSilence: Float = 0.000_1
 
     /// What one stream's chunks so far leave for its next one.
     private struct StreamState {
@@ -38,7 +41,14 @@ actor CoreMLSpeechGate: SpeechGate {
         self.folder = folder
     }
 
+    /// Digital silence, such as a tap's zeros while the call plays nothing, skips the model: it never scores above 0.55
+    /// there. Its state starts again, as after the silence the model would have heard (measured on a Meeting with
+    /// silences cut in: the same speech, 6 of 234 chunks after a silence judged otherwise).
     func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double {
+        if vDSP.maximumMagnitude(chunk) < Self.digitalSilence {
+            streams[stream] = nil
+            return 0
+        }
         let model = try await loaded()
         let state = streams[stream] ?? StreamState()
         let audio = try Self.array(state.context + chunk)
