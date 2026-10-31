@@ -107,6 +107,8 @@ public protocol SpeechGate: Sendable {
     /// The probability that `chunk` is speech, given the chunks of `stream` before it: each stream is judged on its
     /// own. Loads the model on first use.
     func speechProbability(of chunk: [Float], on stream: AudioStream) async throws -> Double
+    /// Judges `stream`'s next chunk as if it followed silence: the chunks before it weren't all heard.
+    func forget(_ stream: AudioStream) async
     /// Lets the model go and forgets every stream, until the next `speechProbability`.
     func release() async
 }

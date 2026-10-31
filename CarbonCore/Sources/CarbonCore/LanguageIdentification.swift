@@ -93,6 +93,8 @@ final class LanguageIdentification: Sendable {
         let task = Task.detached { [self] in
             await previous?.finished()
             var evidence = LanguageEvidence(current: current, reader: reader, chunkSeconds: chunkSeconds)
+            var gate = RecordedGate(
+                speechGate: speechGate, recorded: recorded, stopped: { self.stopped.load(ordering: .acquiring) })
             // The events from before `stop()` are still in the stream: they are dropped unjudged.
             for await event in stream where !self.stopped.load(ordering: .acquiring) {
                 let heardOn: AudioStream
@@ -108,12 +110,12 @@ final class LanguageIdentification: Sendable {
                 let challenge: LanguageEvidence.Challenge
                 do {
                     while let stretch = evidence.unjudgedGuardStretch(on: heardOn),
-                        try await self.judge(stretch, on: heardOn, into: &evidence, with: speechGate, from: recorded)
+                        try await gate.judge(stretch, on: heardOn, into: &evidence)
                     {}
-                    guard let found = evidence.challenge(on: heardOn) else { continue }
+                    guard !self.stopped.load(ordering: .acquiring), let found = evidence.challenge(on: heardOn)
+                    else { continue }
                     // A vote's stretch may hold sound the gate hasn't judged: its rates need its speech.
-                    try await self.judge(
-                        found.range, on: found.stream, into: &evidence, with: speechGate, from: recorded)
+                    _ = try await gate.judge(found.range, on: found.stream, into: &evidence)
                     challenge = evidence.measured(found)
                 } catch {
                     if !self.stopped.load(ordering: .acquiring) {
@@ -139,30 +141,6 @@ final class LanguageIdentification: Sendable {
             await speechGate.release()
         }
         self.task.withLock { $0 = task }
-    }
-
-    /// Has the gate judge the sound of `stream` within `range` it hasn't judged, read back from the recording at once.
-    /// Returns whether it judged any: audio the recording doesn't hold yet stays unjudged.
-    private func judge(
-        _ range: ClosedRange<TimeInterval>, on stream: AudioStream, into evidence: inout LanguageEvidence,
-        with speechGate: any SpeechGate,
-        from recorded: @MainActor @Sendable (AudioStream, ClosedRange<TimeInterval>) async throws -> [Float]
-    ) async throws -> Bool {
-        let chunks = evidence.unjudged(in: range, on: stream)
-        guard let first = chunks.first, let last = chunks.last else { return false }
-        let size = speechGate.chunkSize
-        let chunkSeconds = Double(size) / Self.sampleRate
-        let samples = try await recorded(stream, Double(first) * chunkSeconds...Double(last + 1) * chunkSeconds)
-        var speech: [Int: Bool] = [:]
-        for chunk in chunks where !stopped.load(ordering: .acquiring) {
-            let offset = (chunk - first) * size
-            guard offset + size <= samples.count else { break }
-            let probability = try await speechGate.speechProbability(
-                of: Array(samples[offset..<offset + size]), on: stream)
-            speech[chunk] = probability >= Self.speechProbability
-        }
-        evidence.judge(speech, on: stream)
-        return !speech.isEmpty
     }
 
     /// The candidate the challenge's stretch confirms once transcribed again, if any: the vote's language, or the
@@ -244,6 +222,50 @@ final class LanguageIdentification: Sendable {
         stopped.store(true, ordering: .releasing)
         events.finish()
         for listener in listeners.withLock({ $0.values }) { listener.task.cancel() }
+    }
+}
+
+/// The speech gate, judging stretches of the streams read back from their recordings.
+private struct RecordedGate {
+    let speechGate: any SpeechGate
+    let recorded: @MainActor @Sendable (AudioStream, ClosedRange<TimeInterval>) async throws -> [Float]
+    let stopped: @Sendable () -> Bool
+    /// The last chunk of each stream the gate judged, by number: the state it keeps holds only for the next one.
+    private var lastJudged: [AudioStream: Int] = [:]
+
+    init(
+        speechGate: any SpeechGate,
+        recorded: @escaping @MainActor @Sendable (AudioStream, ClosedRange<TimeInterval>) async throws -> [Float],
+        stopped: @escaping @Sendable () -> Bool
+    ) {
+        self.speechGate = speechGate
+        self.recorded = recorded
+        self.stopped = stopped
+    }
+
+    /// Judges the sound of `stream` within `range` not judged yet, read back from the recording at once. A chunk that
+    /// doesn't follow the one judged last is judged as after silence. Returns whether it judged any: audio the
+    /// recording doesn't hold yet stays unjudged.
+    mutating func judge(
+        _ range: ClosedRange<TimeInterval>, on stream: AudioStream, into evidence: inout LanguageEvidence
+    ) async throws -> Bool {
+        let chunks = evidence.unjudged(in: range, on: stream)
+        guard let first = chunks.first, let last = chunks.last else { return false }
+        let size = speechGate.chunkSize
+        let chunkSeconds = Double(size) / LanguageIdentification.sampleRate
+        let samples = try await recorded(stream, Double(first) * chunkSeconds...Double(last + 1) * chunkSeconds)
+        var speech: [Int: Bool] = [:]
+        for chunk in chunks where !stopped() {
+            let offset = (chunk - first) * size
+            guard offset + size <= samples.count else { break }
+            if lastJudged[stream] != chunk - 1 { await speechGate.forget(stream) }
+            let probability = try await speechGate.speechProbability(
+                of: Array(samples[offset..<offset + size]), on: stream)
+            lastJudged[stream] = chunk
+            speech[chunk] = probability >= LanguageIdentification.speechProbability
+        }
+        evidence.judge(speech, on: stream)
+        return !speech.isEmpty
     }
 }
 

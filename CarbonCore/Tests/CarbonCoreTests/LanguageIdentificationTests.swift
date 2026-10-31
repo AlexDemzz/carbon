@@ -162,6 +162,27 @@ struct LanguageIdentificationTests {
         #expect(languageIdentified(notices) == [english, french])
     }
 
+    @Test func aMeetingGoingBackToFrenchIsFollowedBackWhenTheFrenchModelWritesFewerWordsThanTheEnglish() async throws {
+        // Measured on a clip going from English to French: on the French, the English model wrote 2.7 words per second
+        // of speech, the French one 2.3.
+        let english = Self.spoken(Self.englishSpeech, perSecond: 3)
+        let transcriber = LanguageReplayTranscriber([
+            "fr-FR": [.them: english + Self.spoken(Self.frenchSpeech, from: 30, perSecond: 2)],
+            "en-US": [.them: english + Self.spoken(Self.frenchSpeech, from: 30, perSecond: 3)],
+        ], heardOnly: true)
+        let recorder = makeRecorder(transcriber: transcriber, candidates: [french, self.english])
+        var notices: [Recorder.Notice] = []
+        recorder.onNotice = { notices.append($0) }
+
+        try await recorder.start(language: french)
+        microphone.play(seconds: 60, amplitude: 0)
+        systemAudio.play(seconds: 60)
+        try await eventually { languageIdentified(notices).count == 2 }
+        await recorder.discard()
+
+        #expect(languageIdentified(notices) == [self.english, french])
+    }
+
     @Test func noLanguageThatWritesMoreWordsMeansNoSwitchAndAMinuteOfSpeechBeforeTheNextTry() async throws {
         // A language nobody checked: neither model makes words of it.
         let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
@@ -183,7 +204,7 @@ struct LanguageIdentificationTests {
         #expect(languageIdentified(notices).isEmpty)
     }
 
-    @Test func aTranscriptThatReadsAsFrenchIsSwitchedEvenWhenTheFrenchModelWritesFewerWordsThanTheEnglishOne() async throws {
+    @Test func aTranscriptReadingAsFrenchIsSwitchedEvenWhenTheFrenchModelWritesFewerWordsThanTheEnglish() async throws {
         // Measured on a Meeting going from English to French: on the French stretch, the English model wrote 2.7 words
         // per second of speech, the French one 2.3.
         let transcriber = LanguageReplayTranscriber([
@@ -418,7 +439,7 @@ struct LanguageIdentificationTests {
         #expect(speechGate.chunks.filter { $0.stream == .them }.allSatisfy { abs($0.peak - 0.05) < 0.01 })
     }
 
-    @Test func noChunkIsJudgedTwice() async throws {
+    @Test func theGateJudgesNoMoreThanTheSoundHeard() async throws {
         let transcriber = LanguageReplayTranscriber([:], heardOnly: true)
         let speechGate = ScriptedSpeechGate()
         let recorder = makeRecorder(transcriber: transcriber, speechGate: speechGate, candidates: [english, french])
@@ -483,6 +504,8 @@ final class ScriptedSpeechGate: SpeechGate {
         try await Task.sleep(for: delay)
         return peak > 0.1 ? speech : 0.01
     }
+
+    func forget(_ stream: AudioStream) async {}
 
     func release() async {
         state.withLock { $0.releases.append($0.chunks.count) }
