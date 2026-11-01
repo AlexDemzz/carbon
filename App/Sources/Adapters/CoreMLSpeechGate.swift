@@ -35,6 +35,10 @@ actor CoreMLSpeechGate: SpeechGate {
 
     private let folder: URL?
     private var model: MLModel?
+    /// The load under way, which concurrent first chunks share.
+    private var loading: Task<Void, any Error>?
+    /// Bumped by `release()`, so a load it interrupted doesn't keep the model.
+    private var generation = 0
     private var streams: [AudioStream: StreamState] = [:]
 
     init(folder: URL? = Bundle.main.url(forResource: "SpeechGateModel", withExtension: nil)) {
@@ -71,6 +75,8 @@ actor CoreMLSpeechGate: SpeechGate {
     }
 
     func release() {
+        generation += 1
+        loading = nil
         model = nil
         streams = [:]
     }
@@ -97,15 +103,29 @@ actor CoreMLSpeechGate: SpeechGate {
         return array.withUnsafeBufferPointer(ofType: Float.self) { Array($0.prefix(array.count)) }
     }
 
+    /// Throws `CancellationError` when `release()` came during the load.
     private func loaded() async throws -> MLModel {
         if let model { return model }
-        guard let url = folder?.appending(path: "silero-vad-unified-256ms-v6.2.1.mlmodelc") else {
-            throw Failure.missingModel
-        }
-        let configuration = MLModelConfiguration()
-        configuration.computeUnits = .cpuOnly
-        let model = try await MLModel.load(contentsOf: url, configuration: configuration)
-        self.model = model
+        let loading = self.loading ?? startLoading()
+        try await loading.value
+        guard let model else { throw CancellationError() }
         return model
+    }
+
+    private func startLoading() -> Task<Void, any Error> {
+        let generation = generation
+        let folder = folder
+        let task = Task {
+            defer { if self.generation == generation { self.loading = nil } }
+            guard let url = folder?.appending(path: "silero-vad-unified-256ms-v6.2.1.mlmodelc") else {
+                throw Failure.missingModel
+            }
+            let configuration = MLModelConfiguration()
+            configuration.computeUnits = .cpuOnly
+            let model = try await MLModel.load(contentsOf: url, configuration: configuration)
+            if self.generation == generation { self.model = model }
+        }
+        loading = task
+        return task
     }
 }

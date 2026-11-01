@@ -5,7 +5,7 @@ import Synchronization
 /// The Me stream: the default input device, through AVAudioEngine. When the device list changes (AirPods on),
 /// AVAudioEngine reports a configuration change and the capture is rebuilt on the new input.
 final class MicrophoneSource: AudioSource {
-    private struct Running: @unchecked Sendable {
+    private struct Running {
         var engine: AVAudioEngine?
         var observer: (any NSObjectProtocol)?
         var onBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
@@ -25,16 +25,22 @@ final class MicrophoneSource: AudioSource {
     static var isAllowed: Bool { AVAudioApplication.shared.recordPermission == .granted }
 
     func start(_ onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
+        // One critical section, so a concurrent `stop()` sees either nothing or the engine with its observer. The
+        // observer comes once the engine runs: a change posted on this thread while it starts would take the lock again.
         try running.withLock { running in
             running.onBuffer = onBuffer
-            try Self.startEngine(&running)
+            do {
+                try Self.startEngine(&running)
+            } catch {
+                running = Running()
+                throw error
+            }
+            running.observer = NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil
+            ) { [weak self] notification in
+                self?.rebuild(after: notification)
+            }
         }
-        let observer = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil
-        ) { [weak self] notification in
-            self?.rebuild(after: notification)
-        }
-        running.withLock { $0.observer = observer }
     }
 
     func stop() {

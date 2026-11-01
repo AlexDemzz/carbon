@@ -82,10 +82,11 @@ final class AppModel {
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
         Task {
             if FirstLaunch.run() { showOnboarding() }
-            Task { [weak self] in await self?.watchPermissions() }
+            async let permissions: Void = watchPermissions()
             async let recovered: Void = recoverInterruptedMeetings()
             await startDetection()
             await recovered
+            await permissions
         }
     }
 
@@ -99,15 +100,17 @@ final class AppModel {
 
     /// Permissions change in System Settings, outside Carbon: reread them when Carbon comes forward, and every minute.
     private func watchPermissions() async {
-        let activations = Task { [weak self] in
-            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
-                await self?.refreshPermissions()
-            }
-        }
-        defer { activations.cancel() }
+        async let activations: Void = refreshPermissionsOnActivation()
         while !Task.isCancelled {
             await refreshPermissions()
             try? await Task.sleep(for: .seconds(60))
+        }
+        await activations
+    }
+
+    private func refreshPermissionsOnActivation() async {
+        for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+            await refreshPermissions()
         }
     }
 

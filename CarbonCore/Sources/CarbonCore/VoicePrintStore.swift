@@ -25,12 +25,15 @@ public final class VoicePrintStore {
         var contents = try read()
         let before = contents.prints
         try change(&contents.prints)
+        if contents.prints != before {
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            try encoder.encode(contents).write(to: file, options: .atomic)
+        }
+        // Only once written: a failed write leaves `prints` as the file has them.
         prints = Self.sorted(contents.prints)
-        guard contents.prints != before else { return }
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(contents).write(to: file, options: .atomic)
     }
 
     private func read() throws -> File {

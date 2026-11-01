@@ -23,7 +23,7 @@ struct RecorderTests {
     }
 
     func makeRecorder(
-        transcriber: ReplayTranscriber, seconds: Double = 3,
+        transcriber: any Transcriber, seconds: Double = 3,
         microphone: (any AudioSource)? = nil, systemAudio: (any AudioSource)? = nil,
         systemAudioPermission: SystemAudioPermission = .granted,
         diarizer: ScriptedDiarizer = ScriptedDiarizer([.fail, .fail]),
@@ -191,6 +191,50 @@ struct RecorderTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: library.url.path).isEmpty)
         #expect(try FileManager.default.contentsOfDirectory(atPath: support.url.appending(path: "InProgress").path).isEmpty)
         #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "meetings.json").path))
+    }
+
+    @Test func ofTwoMeetingsStartedAtOnceOnlyOneOpens() async throws {
+        let transcriber = try ReplayTranscriber(me: "me-words")
+        let recorder = makeRecorder(transcriber: transcriber)
+        let english = Locale(identifier: "en_US")
+
+        async let first = Self.failure { try await recorder.start(language: english) }
+        async let second = Self.failure { try await recorder.start(language: english) }
+
+        #expect(await [first, second].compactMap(\.self) == [.notIdle])
+        #expect(transcriber.localesHeard.count == 2, "one Me and one Them session")
+        await recorder.discard()
+    }
+
+    @Test func languageSwitchesAskedForAtOnceRunOneAfterAnother() async throws {
+        let (microphone, systemAudio) = (PushAudioSource(), PushAudioSource())
+        let transcriber = LanguageReplayTranscriber([:])
+        let recorder = makeRecorder(transcriber: transcriber, microphone: microphone, systemAudio: systemAudio)
+        let (english, french, german) = (Locale(identifier: "en_US"), Locale(identifier: "fr_FR"), Locale(identifier: "de_DE"))
+        try await recorder.start(language: english)
+        microphone.play(seconds: 2)
+        systemAudio.play(seconds: 2)
+
+        let switches = [french, german, english].map { language in
+            Task { try await recorder.switchLanguage(to: language) }
+        }
+        for task in switches { try await task.value }
+
+        #expect(transcriber.sessions.map { $0.split(separator: " ").prefix(2).joined(separator: " ") } == [
+            "en-US me", "en-US them", "fr-FR me", "fr-FR them", "de-DE me", "de-DE them", "en-US me", "en-US them",
+        ])
+        guard case .live(let meeting) = recorder.state else { Issue.record("the Meeting ended"); return }
+        #expect(meeting.language == english)
+        await recorder.discard()
+    }
+
+    private static func failure(of start: @Sendable () async throws -> Void) async -> Recorder.Failure? {
+        do {
+            try await start()
+            return nil
+        } catch {
+            return error as? Recorder.Failure
+        }
     }
 
     @Test func theMeetingIsTranscribedInTheChosenLanguage() async throws {

@@ -62,7 +62,7 @@ final class CoreAudioOutputRoute: OutputRouteSource {
         private let lifecycle = Mutex(Lifecycle())
         private let state = Mutex(State())
 
-        private struct Lifecycle: @unchecked Sendable {
+        private struct Lifecycle {
             var timer: DispatchSourceTimer?
             var listener: AudioObjectPropertyListenerBlock?
             var stopped = false

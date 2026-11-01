@@ -202,12 +202,12 @@ public enum TranscriptBuilder {
             return [.me: snapped(attributed(.me, me, split.me?.segments)), .them: heardThem]
         }
         let themSpeech = MicEcho.themSpeech(them: split.them, themWords: them)
-        let room = mic.segments.filter { !split.echo.contains($0.cluster) }
+        let room = SegmentIndex(mic.segments.filter { !split.echo.contains($0.cluster) })
         let heardMe = attributed(.me, me, mic.segments).map { heard in
             guard let cluster = heard.cluster, split.echo.contains(cluster) else { return heard }
             guard let heardOver = MicEcho.themSpeech(over: heard.word, in: themSpeech) else {
                 var inTheRoom = heard
-                inTheRoom.cluster = Self.cluster(of: heard.word, in: room, within: .infinity)
+                inTheRoom.cluster = room.cluster(of: heard.word, within: .infinity)
                 return inTheRoom
             }
             var dropped = heard
@@ -248,7 +248,8 @@ public enum TranscriptBuilder {
     /// Each word's cluster: the most-overlapping segment, else the nearest one within 1 s of the word's middle,
     /// else the previous word's (the next one's before the first attributed word). Nil when no word is reached.
     private static func clusters(of words: [TranscribedWord], in segments: [Diarization.Segment]) -> [String]? {
-        var found = words.map { cluster(of: $0, in: segments) }
+        let segments = SegmentIndex(segments)
+        var found = words.map { segments.cluster(of: $0) }
         guard let first = found.firstIndex(where: { $0 != nil }) else { return nil }
         var previous = found[first]
         for index in found.indices {
@@ -284,22 +285,61 @@ public enum TranscriptBuilder {
         return clusters
     }
 
-    private static func cluster(
-        of word: TranscribedWord, in segments: [Diarization.Segment], within reach: TimeInterval = nearestSegment
-    ) -> String? {
-        var best: (cluster: String, overlap: TimeInterval)?
-        for segment in segments {
-            let overlap = min(word.end, segment.end) - max(word.start, segment.start)
-            if overlap > (best?.overlap ?? 0) { best = (segment.cluster, overlap) }
+    /// A diarization's segments sorted by start, so each word looks only at the few segments around it: a Meeting has
+    /// thousands of both.
+    private struct SegmentIndex {
+        private let segments: [Diarization.Segment]
+        /// The positions of `segments`, by start.
+        private let byStart: [Int]
+        /// The latest end among the segments up to each position of `byStart`.
+        private let latestEnd: [TimeInterval]
+
+        init(_ segments: [Diarization.Segment]) {
+            self.segments = segments
+            byStart = segments.indices.sorted { segments[$0].start < segments[$1].start }
+            var latest = -TimeInterval.infinity
+            latestEnd = byStart.map { position in
+                latest = max(latest, segments[position].end)
+                return latest
+            }
         }
-        if let best { return best.cluster }
-        let middle = (word.start + word.end) / 2
-        func distance(_ segment: Diarization.Segment) -> TimeInterval {
-            max(segment.start - middle, middle - segment.end, 0)
+
+        /// The word's cluster: the most-overlapping segment's, else the nearest one's within `reach` of its middle.
+        /// On a tie, the segment listed first.
+        func cluster(of word: TranscribedWord, within reach: TimeInterval = nearestSegment) -> String? {
+            let overlapping = positions(startingWhere: { $0 < word.end }, endingWhere: { $0 > word.start })
+                .map { (position: $0, overlap: min(word.end, segments[$0].end) - max(word.start, segments[$0].start)) }
+                .filter { $0.overlap > 0 }
+            // The most overlap, then the lowest position.
+            if let best = overlapping.max(by: { ($0.overlap, $1.position) < ($1.overlap, $0.position) }) {
+                return segments[best.position].cluster
+            }
+            let middle = (word.start + word.end) / 2
+            let nearest = positions(startingWhere: { $0 - middle <= reach }, endingWhere: { middle - $0 <= reach })
+                .map { (position: $0, distance: max(segments[$0].start - middle, middle - segments[$0].end, 0)) }
+                .filter { $0.distance <= reach }
+                .min { ($0.distance, $0.position) < ($1.distance, $1.position) }
+            return nearest.map { segments[$0.position].cluster }
         }
-        guard let nearest = segments.min(by: { distance($0) < distance($1) }), distance(nearest) <= reach
-        else { return nil }
-        return nearest.cluster
+
+        /// The positions of the segments whose start and end pass. `starts` must pass every start up to some
+        /// time and none after it, `ends` every end from some time on.
+        private func positions(
+            startingWhere starts: (TimeInterval) -> Bool, endingWhere ends: (TimeInterval) -> Bool
+        ) -> [Int] {
+            var (low, high) = (0, byStart.count)
+            while low < high {
+                let middle = (low + high) / 2
+                if starts(segments[byStart[middle]].start) { low = middle + 1 } else { high = middle }
+            }
+            var found: [Int] = []
+            var index = low - 1
+            while index >= 0, ends(latestEnd[index]) {
+                if ends(segments[byStart[index]].end) { found.append(byStart[index]) }
+                index -= 1
+            }
+            return found
+        }
     }
 
     /// `A`…`Z`, then `AA`, `AB`…

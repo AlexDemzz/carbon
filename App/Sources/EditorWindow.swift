@@ -131,7 +131,7 @@ private struct CloseGuard: NSViewRepresentable {
         weak var original: (any NSWindowDelegate)?
         weak var guardView: GuardView?
 
-        init(window: NSWindow, guardView: GuardView) {
+        @MainActor init(window: NSWindow, guardView: GuardView) {
             self.window = window
             original = window.delegate
             self.guardView = guardView

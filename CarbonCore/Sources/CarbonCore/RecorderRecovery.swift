@@ -71,6 +71,7 @@ extension Recorder {
     }
 
     /// Batch-transcribes a recorded stream by feeding the file to a fresh session. No file, no words.
+    @concurrent
     private nonisolated static func transcribe(
         _ url: URL?, as stream: AudioStream, in language: Locale, with transcriber: any Transcriber
     ) async throws -> [TranscribedWord] {

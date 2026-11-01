@@ -23,6 +23,7 @@ struct LibraryEditTests {
     }
 
     /// A Meeting Carbon just wrote, as `create` leaves it.
+    @discardableResult
     func created(_ library: Library) throws -> URL {
         let meeting = FinishedMeeting(
             id: id, title: "Remote control kickoff", start: date("2026-10-27T14:00:00Z"),
@@ -96,6 +97,18 @@ struct LibraryEditTests {
 
         #expect(try read(url) == edited)
         #expect(try entry(library).title == "Kickoff")
+    }
+
+    @Test func renamingAFileThatIsNotUTF8IsRefusedSoTheIndexAndTheFileStillAgree() throws {
+        let library = makeLibrary()
+        let url = try created(library)
+        let notUTF8 = Data([0x74, 0x69, 0x74, 0x6C, 0x65, 0x3A, 0x20, 0xC3, 0x28])
+        try notUTF8.write(to: url)
+
+        #expect(throws: CocoaError.self) { try library.rename(id, title: "Remote: v2 kickoff") }
+
+        #expect(try entry(library).title == "Remote control kickoff")
+        #expect(try Data(contentsOf: url) == notUTF8)
     }
 
     @Test func aRenamedMeetingKeepsItsFileNameSoANewMeetingWithTheOldTitleGetsANumber() throws {

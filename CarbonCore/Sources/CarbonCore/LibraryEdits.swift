@@ -34,7 +34,7 @@ extension Library {
 
     /// Sets or clears the Meeting's color dot, e.g. `"red"`. Only `meetings.json` changes.
     public func setColor(_ id: UUID, color: String?) throws {
-        try writeSurgically(id, updating: { $0.color = color }) { _ in nil }
+        try writeSurgically(id, updating: { $0.color = color })
     }
 
     /// Writes what the person typed in the editor. It is theirs: a Local Edit that Carbon never overwrites.
@@ -79,10 +79,11 @@ extension Library {
 
     /// Every Carbon write after `create` goes through here.
     ///
-    /// `transform` returns the new file, changing only Carbon's own lines, or nil to leave the file alone.
-    /// `writtenHash` follows the write only when the file was as Carbon last wrote it; a Local Edit stays one.
+    /// `transform` returns the new file, changing only Carbon's own lines, or nil to leave the file alone; without
+    /// one, only `meetings.json` changes. `writtenHash` follows the write only when the file was as Carbon last wrote
+    /// it; a Local Edit stays one. A file that is there but can't be read throws before anything is written.
     func writeSurgically(
-        _ id: UUID, updating change: (inout MeetingIndex.Entry) -> Void, file transform: (String) -> String?
+        _ id: UUID, updating change: (inout MeetingIndex.Entry) -> Void, file transform: ((String) -> String?)? = nil
     ) throws {
         var index = try loadIndex()
         guard let position = index.meetings.firstIndex(where: { $0.id == id }) else {
@@ -90,10 +91,9 @@ extension Library {
         }
         change(&index.meetings[position])
         let url = folder.appending(path: index.meetings[position].file)
-        if let data = try? Data(contentsOf: url),
-           let markdown = String(data: data, encoding: .utf8),
-           let rewritten = transform(markdown), rewritten != markdown {
-            let wasUntouched = Self.sha256(data) == index.meetings[position].writtenHash
+        if let transform, let file = try readMarkdown(at: url),
+           let rewritten = transform(file.markdown), rewritten != file.markdown {
+            let wasUntouched = Self.sha256(file.data) == index.meetings[position].writtenHash
             let newData = Data(rewritten.utf8)
             try newData.write(to: url, options: .atomic)
             if wasUntouched { index.meetings[position].writtenHash = Self.sha256(newData) }
@@ -102,14 +102,32 @@ extension Library {
         refreshListed(index.meetings[position])
     }
 
+    /// A Meeting's file and its text, or nil when it is gone: reconcile follows it from there. Throws when the file is
+    /// there but can't be read as UTF-8, so Carbon never writes `meetings.json` changes the file wouldn't get.
+    func readMarkdown(at url: URL) throws -> (data: Data, markdown: String)? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        guard let markdown = String(data: data, encoding: .utf8) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding, userInfo: [NSURLErrorKey: url])
+        }
+        return (data, markdown)
+    }
+
     func entry(_ id: UUID, in index: MeetingIndex) throws -> MeetingIndex.Entry {
         guard let entry = index.meetings.first(where: { $0.id == id }) else { throw LibraryError.unknownMeeting(id) }
         return entry
     }
 
     func refreshListed(_ entry: MeetingIndex.Entry) {
-        meetings.removeAll { $0.id == entry.id }
-        if let listed = ListedMeeting(entry, folder: folder) { meetings.append(listed) }
-        meetings.sort(by: Self.newestFirst)
+        refreshListed([entry])
+    }
+
+    /// One pass over `meetings` however many entries changed, so the list sees a single change.
+    func refreshListed(_ entries: [MeetingIndex.Entry]) {
+        guard !entries.isEmpty else { return }
+        let ids = Set(entries.map(\.id))
+        var refreshed = meetings.filter { !ids.contains($0.id) }
+        refreshed += entries.compactMap { ListedMeeting($0, folder: folder) }
+        meetings = refreshed.sorted(by: Self.newestFirst)
     }
 }

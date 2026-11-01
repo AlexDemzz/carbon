@@ -43,7 +43,14 @@ final class SpeechTranscriberAdapter: Transcriber {
             }
             return words.finish()
         }
-        try await analyzer.start(inputSequence: input)
+        do {
+            try await analyzer.start(inputSequence: input)
+        } catch {
+            continuation.finish()
+            await analyzer.cancelAndFinishNow()
+            collecting.cancel()
+            throw error
+        }
         return Session(
             audioFormat: format, analyzer: analyzer, input: continuation, finalWords: finalWords, collecting: collecting)
     }

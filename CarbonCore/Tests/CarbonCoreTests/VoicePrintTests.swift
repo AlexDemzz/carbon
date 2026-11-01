@@ -40,6 +40,7 @@ struct VoicePrintTests {
 
         """
 
+    @discardableResult
     func createMeeting(_ library: Library, _ id: UUID? = nil, speaker: MeetingIndex.Speaker) throws -> URL {
         try library.create(meeting(id ?? self.id, speakers: [speaker]), transcript: transcript)
     }
@@ -83,6 +84,7 @@ struct VoicePrintTests {
     }
 
     /// A meeting room whose mic Speaker A was written as the owner, or not.
+    @discardableResult
     func createRoom(_ library: Library, speaker: MeetingIndex.Speaker) throws -> URL {
         try library.create(
             meeting(id, speakers: [speaker]), transcript: "## Transcript\n\n**\(speaker.label)** [0:02] Hello all.\n")
@@ -303,6 +305,17 @@ struct VoicePrintTests {
             #expect(try speakers(library, meeting).map(\.name) == ["Sam Rivera"])
         }
         #expect(try String(contentsOf: first, encoding: .utf8) == firstFile)
+    }
+
+    @Test func aVoiceThatCouldNotBeSavedIsNotShownAsRemembered() throws {
+        let library = makeLibrary()
+        try createMeeting(library, speaker: speakerA())
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: support.url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: support.url.path) }
+
+        #expect(throws: (any Error).self) { try library.renameSpeaker(id, label: "Speaker A", name: "Dana Park") }
+
+        #expect(library.voicePrints.prints == [])
     }
 
     @Test func deleteAllForgetsEveryVoice() throws {

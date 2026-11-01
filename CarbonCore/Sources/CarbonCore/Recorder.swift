@@ -269,7 +269,7 @@ public final class Recorder {
     /// Starts a manual Meeting on the microphone (Me) and the call's audio (Them), transcribed in `language`.
     /// The app holding the mic, if any, becomes its Meeting App, and the usual stop rules apply.
     public func start(language: Locale) async throws {
-        guard liveCapture == nil else { throw Failure.notIdle }
+        guard !isLive else { throw Failure.notIdle }
         let (app, event) = detector.meetingStarted(at: now(), ignoredApps: ignoredApps)
         try await begin(language: language, app: app, event: event, mode: .manual)
     }
@@ -279,7 +279,7 @@ public final class Recorder {
 
     /// Transcribe on the offer: starts the Meeting in the Detection language. Does nothing once the offer is withdrawn.
     public func acceptOffer() async throws {
-        guard liveCapture == nil, let language = detectionLanguage, let (app, event) = detector.offerAccepted(at: now())
+        guard !isLive, let language = detectionLanguage, let (app, event) = detector.offerAccepted(at: now())
         else { return }
         try await begin(language: language, app: app, event: event, mode: .auto)
         onDiagnostic?("Detection started a Meeting on \(app.bundleID) from its offer")
@@ -323,16 +323,24 @@ public final class Recorder {
         detector.meetingStopped()
         stopIdentifyingLanguage()
         liveCapture.routeWatch?.cancel()
-        for stream in [liveCapture.me, liveCapture.them] { await stream.tearDown() }
+        // All of it before the sessions are awaited: meanwhile, nothing may file or switch the Meeting being
+        // discarded, and a Meeting that starts keeps its capture running.
+        for stream in [liveCapture.me, liveCapture.them] { try? stream.close() }
         liveCapture.folder.remove()
         self.liveCapture = nil
         state = .idle
+        for stream in [liveCapture.me, liveCapture.them] { _ = try? await stream.session.finish() }
+    }
+
+    /// A Meeting is live, or its capture is opening: no other may start.
+    private var isLive: Bool {
+        if case .live = state { true } else { false }
     }
 
     private func begin(
         language: Locale, app: MeetingApp?, event: CalendarEvent?, mode: InProgressMeeting.State.Mode
     ) async throws {
-        guard liveCapture == nil else { throw Failure.notIdle }
+        guard !isLive else { throw Failure.notIdle }
         do {
             try await open(language: language, app: app, event: event, mode: mode)
         } catch {
@@ -424,10 +432,14 @@ public final class Recorder {
     /// from the start, then goes on live, and the old pair's words are dropped. The file is written entirely in
     /// `language`. If the new sessions can't start, the Meeting goes on in its old language and this throws.
     private func changeLanguage(to language: Locale) async throws {
-        try? await languageSwitch?.value
-        guard liveCapture != nil, case .live(let meeting) = state else { throw Failure.notLive }
-        guard language != meeting.language else { return }
-        let task = Task { try await handStreams(of: meeting.id, to: language) }
+        // Each switch waits for the one before it, so two never hand the same streams to new sessions at once.
+        let previous = languageSwitch
+        let task = Task {
+            try? await previous?.value
+            guard liveCapture != nil, case .live(let meeting) = state else { throw Failure.notLive }
+            guard language != meeting.language else { return }
+            try await handStreams(of: meeting.id, to: language)
+        }
         languageSwitch = task
         defer { if languageSwitch == task { languageSwitch = nil } }
         try await task.value
@@ -440,7 +452,7 @@ public final class Recorder {
     ) {
         if let identification { return identification.listen(me: me, them: them) }
         for words in [me.finalWords, them.finalWords] {
-            Task.detached { for await _ in words {} }
+            Task { @concurrent in for await _ in words {} }
         }
     }
 
@@ -465,7 +477,7 @@ public final class Recorder {
             recorded: { [weak self] stream, range in
                 guard let self, let capture = liveCapture, capture.meeting.id == id else { throw Failure.notLive }
                 let recorder = stream == .me ? capture.me.recorder : capture.them.recorder
-                return try await Task.detached { try recorder.samples(range, in: LanguageIdentification.format) }.value
+                return try await Self.samples(of: recorder, over: range)
             },
             switchTo: { [weak self] language in
                 await self?.identified(language, meeting: id) ?? false
@@ -484,7 +496,7 @@ public final class Recorder {
         let recorder = stream == .me ? capture.me.recorder : capture.them.recorder
         let session = try await transcriber.start(locale: language, stream: stream)
         do {
-            try await Task.detached { try recorder.replay(range, to: session) }.value
+            try await Self.replay(range, of: recorder, to: session)
         } catch {
             _ = try? await session.finish()
             throw error
@@ -514,6 +526,39 @@ public final class Recorder {
         languageIdentification = nil
     }
 
+    /// The stretch `range` of a stream, read back from its recording in the format language identification judges.
+    @concurrent
+    private nonisolated static func samples(
+        of recorder: StreamRecorder, over range: ClosedRange<TimeInterval>
+    ) async throws -> [Float] {
+        try recorder.samples(range, in: LanguageIdentification.format)
+    }
+
+    /// Has `session` hear the stretch `range` of a stream, read back from its recording.
+    @concurrent
+    private nonisolated static func replay(
+        _ range: ClosedRange<TimeInterval>, of recorder: StreamRecorder, to session: any TranscriptionSession
+    ) async throws {
+        try recorder.replay(range, to: session)
+    }
+
+    /// Hands both streams to new sessions, which first hear everything recorded so far. Returns the sessions replaced.
+    @concurrent
+    private nonisolated static func hand(
+        _ me: StreamRecorder, to newMe: any TranscriptionSession,
+        _ them: StreamRecorder, to newThem: any TranscriptionSession
+    ) async throws -> [any TranscriptionSession] {
+        let oldMe = try me.hand(to: newMe)
+        do {
+            return [oldMe, try them.hand(to: newThem)]
+        } catch {
+            // Me already moved on: give it back, so both streams stay in one language. The old session misses the
+            // audio of the attempt, which beats a file in two languages.
+            me.giveBack(oldMe)
+            throw error
+        }
+    }
+
     private func handStreams(of id: UUID, to language: Locale) async throws {
         let me = try await transcriber.start(locale: language, stream: .me)
         let them: any TranscriptionSession
@@ -523,38 +568,32 @@ public final class Recorder {
             _ = try? await me.finish()
             throw error
         }
-        guard var capture = liveCapture, capture.meeting.id == id else {
+        guard let capture = liveCapture, capture.meeting.id == id else {
             _ = try? await me.finish()
             _ = try? await them.finish()
             throw Failure.notLive
         }
-        let (meRecorder, themRecorder) = (capture.me.recorder, capture.them.recorder)
         let replaced: [any TranscriptionSession]
         do {
-            replaced = try await Task.detached {
-                let oldMe = try meRecorder.hand(to: me)
-                do {
-                    return [oldMe, try themRecorder.hand(to: them)]
-                } catch {
-                    // Me already moved on: give it back, so both streams stay in one language. The old session
-                    // misses the audio of the attempt, which beats a file in two languages.
-                    meRecorder.giveBack(oldMe)
-                    throw error
-                }
-            }.value
+            replaced = try await Self.hand(capture.me.recorder, to: me, capture.them.recorder, to: them)
         } catch {
             _ = try? await me.finish()
             _ = try? await them.finish()
             throw error
         }
+        // The Meeting may have ended meanwhile, its replaced sessions filed with it; or an Event or an output route
+        // may have come in.
+        guard var current = liveCapture, current.meeting.id == id else {
+            _ = try? await me.finish()
+            _ = try? await them.finish()
+            throw Failure.notLive
+        }
         readFinalWords(
             of: me, them, into: languageIdentification.flatMap { $0.meeting == id ? $0.identification : nil })
-        // An Event or an output route may have come in meanwhile.
-        if let current = liveCapture, current.meeting.id == id { capture = current }
-        capture.me.session = me
-        capture.them.session = them
-        capture.meeting.language = language
-        try? goOn(with: capture)
+        current.me.session = me
+        current.them.session = them
+        current.meeting.language = language
+        try? goOn(with: current)
         for session in replaced { _ = try? await session.finish() }
     }
 

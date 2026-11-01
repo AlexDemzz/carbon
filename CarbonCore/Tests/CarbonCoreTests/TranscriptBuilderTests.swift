@@ -113,6 +113,28 @@ struct TranscriptBuilderTests {
             """)
     }
 
+    @Test func aWordTakesTheSegmentOverlappingItMostHoweverLongBeforeItBeganWhateverOrderTheSegmentsComeIn() {
+        let them = spoken([("hello.", 10), ("again.", 20)])
+        let diarization = Diarization(
+            segments: [
+                .init(start: 19, end: 20.1, cluster: "S3"),  // overlaps "again." by 0.1 s
+                .init(start: 0, end: 10.2, cluster: "S1"),  // began 10 s before "hello.", overlaps it by 0.2 s
+                .init(start: 10.25, end: 30, cluster: "S2"),  // overlaps "hello." by 0.05 s, "again." by 0.3 s
+            ],
+            clusters: [])
+
+        let body = TranscriptBuilder.body(TranscriptBuilder.turns(me: [], them: them, diarization: diarization))
+
+        #expect(body == """
+            ## Transcript
+
+            **Speaker A** [0:10] Hello.
+
+            **Speaker B** [0:20] Again.
+
+            """)
+    }
+
     @Test func wordsThatFinishASpeakersSentenceAcrossTheSegmentBoundaryStayWithThatSpeaker() {
         let them = timed([
             ("c'est", 154.9, 155.1), ("une", 155.1, 155.25), ("bonne", 155.25, 155.58),

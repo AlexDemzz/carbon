@@ -90,7 +90,7 @@ final class LanguageIdentification: Sendable {
         self.events = events
         let chunkSeconds = Double(speechGate.chunkSize) / Self.sampleRate
         heardAtOnce = chunkSeconds * Double(Self.chunksHeardAtOnce)
-        let task = Task.detached { [self] in
+        let task = Task { [self] in
             await previous?.finished()
             var evidence = LanguageEvidence(current: current, reader: reader, chunkSeconds: chunkSeconds)
             var gate = RecordedGate(
@@ -180,9 +180,9 @@ final class LanguageIdentification: Sendable {
         for sound in heard { events.yield(.heard(stream, chunks: Self.chunksHeardAtOnce, sound: sound)) }
     }
 
-    /// Takes each stream's final words from `me` and `them` from now on, instead of from their sessions before.
+    /// Takes each stream's final words from `me` and `them` from now on, instead of from their sessions before. Once
+    /// stopped, it still reads them away until their sessions finish: left unread, they would pile up.
     func listen(me: any TranscriptionSession, them: any TranscriptionSession) {
-        guard !stopped.load(ordering: .acquiring) else { return }
         let events = events
         listeners.withLock { listeners in
             for (stream, session) in [(AudioStream.me, me), (.them, them)] {
@@ -190,7 +190,12 @@ final class LanguageIdentification: Sendable {
                 let number = (listeners[stream]?.session ?? 0) + 1
                 let words = session.finalWords
                 listeners[stream] = (number, Task {
-                    for await run in words { events.yield(.words(stream, session: number, TextLanguage.words(run))) }
+                    var open = true
+                    for await run in words where open {
+                        if case .terminated = events.yield(.words(stream, session: number, TextLanguage.words(run))) {
+                            open = false
+                        }
+                    }
                 })
             }
         }
@@ -217,11 +222,10 @@ final class LanguageIdentification: Sendable {
     }
 
     /// Stops hearing, gating and judging. A stretch being judged or transcribed again is dropped, and the gate is let
-    /// go.
+    /// go. The streams' final words are still read away, unjudged, until their sessions finish.
     func stop() {
         stopped.store(true, ordering: .releasing)
         events.finish()
-        for listener in listeners.withLock({ $0.values }) { listener.task.cancel() }
     }
 }
 
@@ -643,8 +647,14 @@ struct SpeechTimeline {
     ) -> TimeInterval {
         let target = cumulative[end] - seconds
         guard target > 0 else { return 0 }
-        let position = cumulative.lastIndex { $0 <= target } ?? 0
-        return Double(position) * chunkSeconds
+        // `cumulative` never decreases, so the last position at or under `target` is found by halving, not by walking
+        // back over every chunk since: the task asks once per second of each stream.
+        var (low, high) = (0, cumulative.count)
+        while low < high {
+            let middle = (low + high) / 2
+            if cumulative[middle] <= target { low = middle + 1 } else { high = middle }
+        }
+        return Double(low - 1) * chunkSeconds
     }
 
     private func index(_ time: TimeInterval) -> Int {
