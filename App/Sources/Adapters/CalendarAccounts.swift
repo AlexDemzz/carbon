@@ -52,8 +52,11 @@ final class CalendarAccounts {
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         return CalendarAccount(
             id: source.sourceIdentifier, title: source.title, kind: kind(of: source, calendars: calendars),
-            calendars: calendars.map {
-                CalendarAccount.Calendar(id: $0.calendarIdentifier, title: $0.title, color: Color(cgColor: $0.cgColor))
+            calendars: calendars.map { calendar in
+                // `cgColor` is `null_unspecified`: reading it straight into `Color` crashes when it is nil.
+                let cgColor: CGColor? = calendar.cgColor
+                let color = cgColor.map { Color(cgColor: $0) } ?? Color.gray
+                return CalendarAccount.Calendar(id: calendar.calendarIdentifier, title: calendar.title, color: color)
             })
     }
 

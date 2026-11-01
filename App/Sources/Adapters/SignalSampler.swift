@@ -33,7 +33,7 @@ final class SignalSampler: SignalSource {
         private let queue = DispatchQueue(label: "me.alexandrejoly.carbon.signal-sampler")
         private let state = Mutex(State())
 
-        private struct State: @unchecked Sendable {
+        private struct State {
             var timer: DispatchSourceTimer?
             var listListener: AudioObjectPropertyListenerBlock?
             /// The listeners installed on each process, to remove them when the process goes. Never read for sampling.
@@ -57,21 +57,21 @@ final class SignalSampler: SignalSource {
         }
 
         func start() {
-            let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-                self?.relisten()
-                self?.sample()
+            state.withLock { state in
+                let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                    self?.relisten()
+                    self?.sample()
+                }
+                var address = AudioProcesses.address(kAudioHardwarePropertyProcessObjectList)
+                AudioObjectAddPropertyListenerBlock(AudioProcesses.system, &address, queue, listener)
+                let timer = DispatchSource.makeTimerSource(queue: queue)
+                timer.schedule(deadline: .now(), repeating: 1)
+                timer.setEventHandler { [weak self] in self?.sample() }
+                state.listListener = listener
+                state.timer = timer
+                queue.async { [weak self] in self?.relisten() }
+                timer.resume()
             }
-            var address = AudioProcesses.address(kAudioHardwarePropertyProcessObjectList)
-            AudioObjectAddPropertyListenerBlock(AudioProcesses.system, &address, queue, listener)
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now(), repeating: 1)
-            timer.setEventHandler { [weak self] in self?.sample() }
-            state.withLock {
-                $0.listListener = listener
-                $0.timer = timer
-            }
-            queue.async { [weak self] in self?.relisten() }
-            timer.resume()
         }
 
         func stop() {

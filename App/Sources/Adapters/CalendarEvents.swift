@@ -27,8 +27,8 @@ final class CalendarEvents: @unchecked Sendable {
         timer.resume()
         let token = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged, object: nil, queue: nil
-        ) { [weak self] _ in
-            self?.queue.async { self?.refresh() }
+        ) { [weak self, queue] _ in
+            queue.async { [weak self] in self?.refresh() }
         }
         observer = token
     }

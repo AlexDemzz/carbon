@@ -31,7 +31,7 @@ final class SystemAudioTap: AudioSource {
         case global
     }
 
-    private struct Running: @unchecked Sendable {
+    private struct Running {
         var description: CATapDescription?
         var target = Target.global
         var tap = AudioObjectID(kAudioObjectUnknown)
@@ -61,7 +61,11 @@ final class SystemAudioTap: AudioSource {
     private let log: DiagnosticLog
     private let running = Mutex(Running())
     private let lastCallback = Heartbeat()
+    /// The listeners and the watchdog.
     private let queue = DispatchQueue(label: "me.alexandrejoly.carbon.system-audio-tap")
+    /// The IOProc alone: Core Audio dispatches it synchronously from its IO thread, so on `queue` it would wait behind
+    /// the listeners' work, and a listener stopping the aggregate there could deadlock with an IO cycle waiting on it.
+    private let ioQueue = DispatchQueue(label: "me.alexandrejoly.carbon.system-audio-tap.io")
 
     init(app: MeetingApp?, log: DiagnosticLog = .shared) {
         self.app = app
@@ -169,7 +173,7 @@ final class SystemAudioTap: AudioSource {
         lastCallback.beat()
         try check(
             "createIOProc",
-            AudioDeviceCreateIOProcIDWithBlock(&running.ioProc, running.aggregate, queue) { _, input, _, _, _ in
+            AudioDeviceCreateIOProcIDWithBlock(&running.ioProc, running.aggregate, ioQueue) { _, input, _, _, _ in
                 lastCallback.beat()
                 // The callback's buffers are only valid during the call: hand on a copy.
                 guard let wrapped = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input, deallocator: nil),
@@ -185,7 +189,7 @@ final class SystemAudioTap: AudioSource {
                 onBuffer(copy)
             })
         try check("startDevice", AudioDeviceStart(running.aggregate, running.ioProc))
-        running.devices = otherDevices(than: running.aggregate)
+        running.devices = otherDevices()
     }
 
     private func stopAggregate(_ running: inout Running) {
@@ -198,9 +202,12 @@ final class SystemAudioTap: AudioSource {
         running.aggregate = AudioObjectID(kAudioObjectUnknown)
     }
 
-    /// The device list, without Carbon's own aggregate, whose creation changes the list too.
-    private func otherDevices(than aggregate: AudioObjectID) -> Set<AudioObjectID> {
-        Set(AudioProcesses.devices()).subtracting([aggregate])
+    /// The device list without Carbon's own aggregates, whose creation and destruction change the list too.
+    private func otherDevices() -> Set<AudioObjectID> {
+        Set(
+            AudioProcesses.devices().filter {
+                AudioProcesses.string(kAudioObjectPropertyName, of: $0) != Self.aggregateName
+            })
     }
 
     // MARK: Listeners
@@ -233,14 +240,15 @@ final class SystemAudioTap: AudioSource {
 
     private func devicesChanged() {
         running.withLock { running in
-            guard running.aggregate != kAudioObjectUnknown,
-                otherDevices(than: running.aggregate) != running.devices
-            else { return }
+            guard running.tap != kAudioObjectUnknown, otherDevices() != running.devices else { return }
             log.write("Device list changed: rebuilding the Them aggregate")
             stopAggregate(&running)
             do {
                 try startAggregate(&running)
             } catch {
+                // Left without an aggregate until the other devices change again, which retries.
+                stopAggregate(&running)
+                running.devices = otherDevices()
                 log.write("Rebuilding the Them aggregate failed: \(error.localizedDescription)")
             }
         }
