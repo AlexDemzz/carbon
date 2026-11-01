@@ -230,9 +230,10 @@ final class ScriptedOutputRoute: OutputRouteSource {
         }
     }
 
-    /// Waits until the Recorder took in every route of the first `meetings` scripts.
+    /// Waits until the Recorder took in every route of the first `meetings` scripts, for at most 30 s, as `eventually`
+    /// does: the Recorder takes them in on the main actor, which the suites' tests share.
     func heard(meetings: Int = 1) async throws {
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + .seconds(30)
         while drained.value.withLock({ $0 }) < meetings, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(1))
         }
