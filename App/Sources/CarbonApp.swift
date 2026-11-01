@@ -45,6 +45,7 @@ struct CarbonApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     var statusItem: StatusItem?
@@ -112,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Meeting Language ▸ with a check on the live Meeting's, as in the menu bar menu.
-    @MainActor private static func meetingLanguageItem(_ meeting: LiveMeeting, model: AppModel) -> NSMenuItem {
+    private static func meetingLanguageItem(_ meeting: LiveMeeting, model: AppModel) -> NSMenuItem {
         let submenu = NSMenu()
         for language in model.liveMeetingLanguages(meeting) {
             let item = ActionMenuItem(model.languageName(language)) { model.switchLanguage(to: language) }
