@@ -62,6 +62,19 @@ struct LibraryMoveTests {
         #expect(library.meetings.count == 3)
     }
 
+    @Test func findersViewSettingsInBothFoldersDoNotStopTheMove() throws {
+        let library = try makeLibrary()
+        let destination = elsewhere.url
+        try "Library's.".write(to: folder.appending(path: ".DS_Store"), atomically: true, encoding: .utf8)
+        try "Destination's.".write(to: destination.appending(path: ".DS_Store"), atomically: true, encoding: .utf8)
+
+        try library.move(to: destination)
+
+        #expect(library.folder == destination)
+        #expect(library.meetings.count == 3)
+        #expect(try String(contentsOf: destination.appending(path: ".DS_Store"), encoding: .utf8) == "Destination's.")
+    }
+
     @Test func aFileAlreadyAtTheSamePathInTheNewFolderStopsTheMoveBeforeAnythingMoves() throws {
         let library = try makeLibrary()
         let destination = elsewhere.url

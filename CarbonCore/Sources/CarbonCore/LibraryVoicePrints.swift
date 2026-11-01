@@ -58,7 +58,7 @@ extension Library {
         }
         guard !changed.isEmpty else { return }
         try save(index)
-        changed.forEach(refreshListed)
+        refreshListed(changed)
     }
 
     /// Enrolls or updates the Voice Print of `name` from each named cluster with enough speech, and returns the

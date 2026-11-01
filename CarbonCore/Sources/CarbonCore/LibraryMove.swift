@@ -30,7 +30,8 @@ extension Library {
         try reconcile()
     }
 
-    /// The Library's regular files, relative to its folder.
+    /// The Library's regular files, relative to its folder. Finder's `.DS_Store` view settings aren't the Library's:
+    /// they stay behind and go with the old folder, so the new folder's own never stop a move.
     private func files(includingHidden: Bool) throws -> [String] {
         guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
         let root = folder.resolvingSymlinksInPath().pathComponents
@@ -40,7 +41,8 @@ extension Library {
         else { return [] }
         var files: [String] = []
         for case let url as URL in enumerator
-        where try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+        where try url.lastPathComponent != ".DS_Store"
+            && url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
             files.append(url.resolvingSymlinksInPath().pathComponents.dropFirst(root.count).joined(separator: "/"))
         }
         return files

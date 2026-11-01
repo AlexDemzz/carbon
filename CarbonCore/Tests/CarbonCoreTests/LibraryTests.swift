@@ -107,6 +107,18 @@ struct LibraryTests {
         #expect(backup.meetings.map(\.title) == ["Monday"])
     }
 
+    @Test func aRelaunchWithinTheSameSecondStillSavesAndBacksUpTheNewerIndex() throws {
+        try makeLibrary().create(meeting("Monday"), transcript: "## Transcript\n")
+        try makeLibrary().create(meeting("Tuesday"), transcript: "## Transcript\n")
+
+        try makeLibrary().create(meeting("Wednesday"), transcript: "## Transcript\n")
+
+        #expect(try makeLibrary().loadIndex().meetings.map(\.title) == ["Monday", "Tuesday", "Wednesday"])
+        let backup = try JSONDecoder().decode(
+            MeetingIndex.self, from: Data(contentsOf: support.url.appending(path: "Backups/meetings-20261027T140000Z.json")))
+        #expect(backup.meetings.map(\.title) == ["Monday", "Tuesday"])
+    }
+
     @Test func laterSavesBackUpAtMostOnceADay() throws {
         try makeLibrary().create(meeting("Setup"), transcript: "## Transcript\n")
         let library = makeLibrary()

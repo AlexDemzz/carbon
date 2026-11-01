@@ -135,8 +135,8 @@ public final class Library {
         guard FileManager.default.fileExists(atPath: indexFile.path) else { return }
         try FileManager.default.createDirectory(at: backupsFolder, withIntermediateDirectories: true)
         let stamp = now.formatted(.iso8601.dateSeparator(.omitted).timeSeparator(.omitted))
-        try FileManager.default.copyItem(
-            at: indexFile, to: backupsFolder.appending(path: "meetings-\(stamp).json"))
+        // Replaces a backup a launch within the same second made: an older index, and never worth failing a save.
+        try Data(contentsOf: indexFile).write(to: backupsFolder.appending(path: "meetings-\(stamp).json"), options: .atomic)
 
         let backups = try FileManager.default.contentsOfDirectory(atPath: backupsFolder.path)
             .filter { $0.hasPrefix("meetings-") && $0.hasSuffix(".json") }

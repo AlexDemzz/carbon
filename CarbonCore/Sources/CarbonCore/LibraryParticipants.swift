@@ -120,8 +120,8 @@ extension Library {
         guard let label = TranscriptBuilder.label(forName: edited.name) else { throw LibraryError.invalidSpeakerName }
         // Only their own labels: a Speaker already called `label` may be someone else.
         let labels = Set(people.map(\.name).compactMap(TranscriptBuilder.label(forName:)))
-        if let markdown = try? String(contentsOf: folder.appending(path: entry.file), encoding: .utf8),
-           MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: markdown) == nil {
+        if let file = try readMarkdown(at: folder.appending(path: entry.file)),
+           MarkdownFile.replacingParticipant(target, with: edited, removing: source, in: file.markdown) == nil {
             throw LibraryError.participantsNotInFile
         }
         let linked = linkedVoicePrints(of: people, labels: labels, in: entry)
@@ -173,7 +173,7 @@ extension Library {
         }
         if !changed.isEmpty {
             try save(index)
-            changed.forEach(refreshListed)
+            refreshListed(changed)
         }
         try voicePrints.update { prints in
             guard let kept = prints.firstIndex(where: { $0.id == survivor.id }) else { return }

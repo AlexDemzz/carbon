@@ -12,11 +12,12 @@ extension Library {
         }
         let path = (entry.file as NSString).deletingPathExtension + ".m4a"
         let destination = folder.appending(path: path)
-        try await Task.detached { try Self.encodeStereo(left: me, right: them, to: destination) }.value
-        try writeSurgically(id, updating: { $0.audio = path }) { _ in nil }
+        try await Self.encodeStereo(left: me, right: them, to: destination)
+        try writeSurgically(id, updating: { $0.audio = path })
     }
 
-    private nonisolated static func encodeStereo(left: URL, right: URL, to destination: URL) throws {
+    @concurrent
+    private nonisolated static func encodeStereo(left: URL, right: URL, to destination: URL) async throws {
         let inputs = [left, right].map { try? AVAudioFile(forReading: $0) }
         guard let sampleRate = inputs.compactMap(\.self).first?.processingFormat.sampleRate,
               let stereo = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2),
@@ -32,12 +33,12 @@ extension Library {
         let chunk = AVAudioFrameCount(sampleRate)
         var converters: [AVAudioConverter?] = [nil, nil]
         while true {
-            guard let frame = AVAudioPCMBuffer(pcmFormat: stereo, frameCapacity: chunk) else {
-                throw CocoaError(.featureUnsupported)
-            }
+            guard let frame = AVAudioPCMBuffer(pcmFormat: stereo, frameCapacity: chunk),
+                  let channels = frame.floatChannelData
+            else { throw CocoaError(.featureUnsupported) }
             // A stream that ended early is silence on its side.
             for channel in 0..<2 {
-                memset(frame.floatChannelData![channel], 0, Int(chunk) * MemoryLayout<Float>.size)
+                memset(channels[channel], 0, Int(chunk) * MemoryLayout<Float>.size)
             }
             for (channel, input) in inputs.enumerated() {
                 guard let input, input.framePosition < input.length,
@@ -45,8 +46,9 @@ extension Library {
                 else { continue }
                 try input.read(into: read)
                 let samples = try StreamRecorder.convert(read, to: mono, with: &converters[channel])
+                guard let source = samples.floatChannelData else { throw CocoaError(.featureUnsupported) }
                 let count = min(samples.frameLength, chunk)
-                memcpy(frame.floatChannelData![channel], samples.floatChannelData![0], Int(count) * MemoryLayout<Float>.size)
+                memcpy(channels[channel], source[0], Int(count) * MemoryLayout<Float>.size)
                 frame.frameLength = max(frame.frameLength, count)
             }
             guard frame.frameLength > 0 else { break }
