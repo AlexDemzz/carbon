@@ -38,8 +38,16 @@ enum MicEcho {
 
     /// The stretch of Them speech a mic word was heard over, up to `echoLag` after it. Nil while Them is silent:
     /// the call can't be heard back then, so the word is someone in the room.
+    /// `speech` is sorted and disjoint, as `themSpeech(them:themWords:)` returns it.
     static func themSpeech(over word: TranscribedWord, in speech: [Span]) -> Span? {
-        speech.first { $0.start < word.end && word.start < $0.end + echoLag }
+        // Ends rise with starts, so the first stretch ending late enough is the only one the word can be heard over.
+        var (low, high) = (0, speech.count)
+        while low < high {
+            let middle = (low + high) / 2
+            if word.start < speech[middle].end + echoLag { high = middle } else { low = middle + 1 }
+        }
+        guard low < speech.count, speech[low].start < word.end else { return nil }
+        return speech[low]
     }
 
     /// Sorted, disjoint intervals covering the same time.
@@ -57,8 +65,11 @@ enum MicEcho {
 
     /// Seconds two sets of merged intervals share.
     private static func overlap(_ a: [Span], _ b: [Span]) -> TimeInterval {
-        a.reduce(0) { total, x in
-            total + b.reduce(0) { $0 + max(0, min(x.end, $1.end) - max(x.start, $1.start)) }
+        var (i, j, total) = (0, 0, 0.0)
+        while i < a.count, j < b.count {
+            total += max(0, min(a[i].end, b[j].end) - max(a[i].start, b[j].start))
+            if a[i].end < b[j].end { i += 1 } else { j += 1 }
         }
+        return total
     }
 }
