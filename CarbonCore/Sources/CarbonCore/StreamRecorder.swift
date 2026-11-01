@@ -135,7 +135,8 @@ final class StreamRecorder: Sendable {
             try file.read(into: buffer, frameCount: count)
             if buffer.frameLength == 0 { break }
             let output = try Self.convert(buffer, to: format, with: &converter, reusing: &converted)
-            samples += UnsafeBufferPointer(start: output.floatChannelData![0], count: Int(output.frameLength))
+            guard let channel = output.floatChannelData?[0] else { throw CocoaError(.featureUnsupported) }
+            samples += UnsafeBufferPointer(start: channel, count: Int(output.frameLength))
         }
         return samples
     }
@@ -271,6 +272,7 @@ final class StreamRecorder: Sendable {
             output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)
         }
         guard let output else { throw CocoaError(.featureUnsupported) }
+        // The input block is `@Sendable`, yet the converter only calls it from within `convert`, on this thread.
         nonisolated(unsafe) var consumed = false
         var error: NSError?
         converter.convert(to: output, error: &error) { _, status in
