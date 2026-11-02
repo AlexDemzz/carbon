@@ -6,4 +6,5 @@ When the call plays on speakers, the mic hears it again and a shared mic's diari
 
 - Dropping per word rather than per cluster keeps a room voice the diarizer lumped in with the echo, as long as it doesn't speak over the call.
 - Someone in the room who replies within 0.25 s of the call going quiet, or talks over the call, can be dropped with the echo.
+- A mic whose every cluster is echo still has its echo left out: with no real Speaker to go to, its words heard while Them is silent are written Me.
 - Sentence-end snapping of Speaker changes runs on the written words only, so it never moves an echo word into the Transcript or a real word out of it.

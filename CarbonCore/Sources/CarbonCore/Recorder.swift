@@ -681,8 +681,7 @@ public final class Recorder {
         var naming = nameSpeakers(of: meeting, in: heard)
         let transcript = transcript(of: heard, naming: &naming)
         let file = try write(
-            meeting, end: end, transcript: transcript, split: heard.split.me != nil || heard.split.them != nil,
-            naming: naming)
+            meeting, end: end, transcript: transcript, split: !heard.clusters.isEmpty, naming: naming)
         // Before anything awaits: a Meeting deleted meanwhile would leave its file behind, out of the index.
         if debugMode() {
             try? library.writeDebug(
@@ -752,9 +751,10 @@ public final class Recorder {
             }
         }
         let letters = TranscriptBuilder.clusterLetters(me: me, them: them, split: split)
-        // A diarization that reaches no word of its stream has nothing to split: the stream stays Me or Them.
+        // A diarization that reaches no word of its stream has nothing to split: the stream stays Me or Them. A mic
+        // whose every cluster is echo keeps its split, so the echo is still left out and the rest is written Me.
         if !letters.keys.contains(where: { $0.stream == .them }) { split.them = nil }
-        if !letters.keys.contains(where: { $0.stream == .me }) { split = .init(them: split.them) }
+        if split.echo.isEmpty, !letters.keys.contains(where: { $0.stream == .me }) { split = .init(them: split.them) }
         let clusters = [(AudioStream.me, split.me), (.them, split.them)].flatMap { stream, diarization in
             (diarization?.clusters ?? []).compactMap { cluster in
                 letters[.init(stream, cluster.id)].map { HeardCluster(letter: $0, stream: stream, cluster: cluster) }

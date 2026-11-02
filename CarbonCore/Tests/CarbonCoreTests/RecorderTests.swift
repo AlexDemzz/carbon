@@ -514,6 +514,67 @@ struct RecorderTests {
                 "a shared mic never enrolls the owner")
     }
 
+    /// A mic the diarizer heard only as the call's echo: one cluster with the call's voice, over the call's words.
+    /// The owner's "Hi." lies within 1 s of it, so it falls in that cluster too.
+    static let micOfOnlyTheCallsEcho = Diarization(
+        segments: [.init(start: 2, end: 3, cluster: "S1"), .init(start: 20.5, end: 21, cluster: "S1")],
+        clusters: [.init(id: "S1", voice: [1, 0, 0], speechSeconds: 30)])
+
+    @Test func aMicWhoseEveryClusterIsEchoLeavesTheEchoOutAndWritesTheRestMe() async throws {
+        var words = Self.groupCall
+        words[.me]?.append(TranscribedWord(text: "Morning.", start: 20.6, end: 21))
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: words),
+            diarizer: ScriptedDiarizer([.replay(Self.callOnSpeakers)], me: [.replay(Self.micOfOnlyTheCallsEcho)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 40)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Speaker A** [0:02] Hello all.
+
+            **Speaker A** [0:20] Morning.
+
+            """))
+        #expect(try speakers() == ["Speaker A A them"])
+        #expect(!FileManager.default.fileExists(atPath: support.url.appending(path: "voiceprints.json").path),
+                "a shared mic never enrolls the owner")
+    }
+
+    @Test func aMicWhoseEveryClusterIsEchoOverACallNotSplitFallsBackToMeAndThem() async throws {
+        var words = Self.groupCall
+        words[.me]?.append(TranscribedWord(text: "Morning.", start: 20.6, end: 21))
+        let recorder = makeRecorder(
+            transcriber: ReplayTranscriber(words: words),
+            diarizer: ScriptedDiarizer([.fail, .fail], me: [.replay(Self.micOfOnlyTheCallsEcho)]))
+
+        try await recorder.start(language: Locale(identifier: "en_US"))
+        clock.advance(by: 40)
+        let file = try await recorder.stop()
+
+        #expect(try String(contentsOf: file, encoding: .utf8).hasSuffix("""
+            ---
+
+            ## Transcript
+
+            **Me** [0:01] Hi.
+
+            **Them** [0:02] Hello all.
+
+            **Them** [0:20] Morning.
+
+            """))
+        let entry = try #require((try jsonObject(at: support.url.appending(path: "meetings.json"))["meetings"] as? [NSDictionary])?.first)
+        #expect(entry["transcript"] as? String == "fallback")
+    }
+
     @Test func onSpeakersOneVoiceOnTheMicIsStillASpeakerOfItsOwn() async throws {
         let route = ScriptedOutputRoute([.speakers])
         let recorder = makeRecorder(
