@@ -4,7 +4,8 @@ Researched 2026-11-05. Carbon's Detector is losing its "Event ended and another 
 
 - **R1:** the Meeting App's call power assertion has only new `AssertionId`s (none of the old ones left) while the mic stays held;
 - **R2:** the Meeting App's mic and call assertion are both released for ≥ 5 s (`backToBackGap`), then a start signal comes back;
-- **R3 (browsers):** "WebRTC has active PeerConnections" and the mic are both released for ≥ 10 s (`webRTCReleaseGrace`).
+- **R3 (browsers):** "WebRTC has active PeerConnections" and the mic are both released for ≥ 10 s (`webRTCReleaseGrace`);
+- **R4:** the mic is taken back after the Meeting's Event ended, once another Event has begun, whatever the gap. Added in the same change after this note's findings (PR #38); a mic held throughout still stays one Meeting.
 
 Nobody on the team has Zoom, so nothing here was measured by Carbon. It builds on four notes and does not repeat them: [power-assertions-detection.md](power-assertions-detection.md) (IOPM API, Chromium's wake lock, Zoom's "Describe Activity Type"), [native-meeting-app-audio-processes.md](native-meeting-app-audio-processes.md) (Zoom's helper processes, Granola's "may keep the microphone active"), [meeting-end-detection-competitors.md](meeting-end-detection-competitors.md) (end signals, Meet room-code splits) and [prior-art-minute-meeting-transcriber.md](prior-art-minute-meeting-transcriber.md) (pasrom's 5 s cooldown).
 
@@ -99,12 +100,13 @@ Labels: **verified** = read in source code or vendor docs, or measured by a name
 
 - **R1 is sound for Zoom, but only in theory.** powerd guarantees a new ID for a new assertion, and Zoom holds none while idle. If Zoom releases the assertion between calls, as Teams does, R1 splits even when the gap is under 5 s. Until someone measures it, treat R1 for Zoom as unproven, as pasrom does.
 - **Carbon matches Zoom by type only** (`VendorTable.json`: `us.zoom.xos` + `PreventUserIdleDisplaySleep`). Any Zoom display-sleep assertion re-created during a call, with the mic held, ends that call as `.backToBack`. That covers a reconnect, waiting-room admission, a breakout-room move, or a share that swaps assertions. This is the exact risk pasrom named for Zoom. Measure these cases before relying on R1, or require a short gap where neither the old IDs nor the mic were held.
-- **R1 misses overlapping assertions.** `endReason` replaces `callIDs` with the current set on every poll (`Detector.swift` L227). If call 2's assertion appears before call 1's is released, as with simultaneous meetings or a join straight from a running call, the next poll sees `{new}` ⊂ `{old, new}`, never a disjoint set, and the calls merge. Keeping the IDs from the Meeting's first confirmed poll, and splitting once none of those are left, would fix it. pasrom flags the same case.
+- **R1 misses overlapping assertions.** `endReason` replaces `callIDs` with the current set on every poll (`Detector.swift` L232). If call 2's assertion appears before call 1's is released, as with simultaneous meetings or a join straight from a running call, the next poll sees `{new}` ⊂ `{old, new}`, never a disjoint set, and the calls merge. Keeping the IDs from the Meeting's first confirmed poll, and splitting once none of those are left, would fix it. pasrom flags the same case.
 - **R2 depends on human speed.** A person who leaves Zoom and clicks the next join link within 5 s, with the new assertion not yet up, gets no R2 split. R1 then has to catch it.
 - **Browsers lose their back-to-back split.**
   - Joining Meet B in a new tab before leaving A gives no signal at all. That is Chromium by design (§4).
-  - A same-tab switch splits only if both signals stay down for ≥ 10 s. The green room makes that unlikely.
-  - Removing the Event rule therefore merges most back-to-back Meets, as Granola admits for itself. The only signal that separates them is the Meet room code, from the URL or the window title (screenpipe, Omi). That is a later option, not a reason to keep a rule that cuts overrunning calls.
+  - A same-tab switch would split through R3 only if both signals stay down for ≥ 10 s, which the green room makes unlikely. R4 covers it instead: once the old Event has ended and the next has begun, the mic coming back splits the Meeting whatever the gap. A switch before the old Event ends still gets no split.
+  - So the two-tab switch is the case that merges, as Granola admits for itself. The only signal that separates it is the Meet room code, from the URL or the window title (screenpipe, Omi). That is a later option, not a reason to keep a rule that cuts overrunning calls.
+  - R4's risk: during an overrun, a mic release that is not a switch (mute, if the browser releases the mic on it; an input device change) splits the call.
 - **Muting is harmless.** Zoom keeps the mic open while muted, so a muted stretch never looks like a release. That rests on 2022 data; re-check it in the measurement below.
 
 ## Open questions and a manual measurement plan
