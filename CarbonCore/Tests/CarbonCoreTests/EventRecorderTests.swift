@@ -248,7 +248,7 @@ struct EventRecorderTests {
         #expect(speakers.map { $0["voicePrintId"] as? String } == ["11111111-1111-4111-8111-111111111111"])
     }
 
-    @Test func backToBackEventsOnTheSameCallBecomeTwoMeetings() async throws {
+    @Test func aCallThatRunsIntoTheNextEventStaysOneMeeting() async throws {
         let recorder = makeRecorder()
         let review = CalendarEvent(
             id: "review-ext-id", title: "Design review", start: date("2026-10-23T13:30:00Z"),
@@ -260,9 +260,29 @@ struct EventRecorderTests {
         ]))
 
         let entries = try entries()
+        #expect(entries.map { $0["title"] as? String } == ["Weekly sync"])
+        #expect(entries.map { $0["start"] as? String } == ["2026-10-23T09:00:15-04:00"])
+        #expect(entries.map { $0["end"] as? String } == ["2026-10-23T09:50:31-04:00"], "mic released at 13:50, then 30 s of silence")
+        #expect(entries.map { $0["providerMeetingId"] as? String } == ["abc-defg-hij"])
+    }
+
+    @Test func leavingForTheNextEventsCallAfterTheEventEndedMakesTwoMeetings() async throws {
+        let recorder = makeRecorder()
+        let review = CalendarEvent(
+            id: "review-ext-id", title: "Design review", start: date("2026-10-23T13:30:00Z"),
+            end: date("2026-10-23T14:00:00Z"), notes: "https://meet.google.com/xyz-abcd-efg", attendees: [me, sam, kim])
+
+        await recorder.runDetection(ScriptedSignalSource(clock, from: start, events: [sync(attendees: [me, sam, kim]), review], [
+            (0...1_919, [chrome]),
+            (1_920...1_927, []),
+            (1_928...3_000, [chrome]),
+            (3_001...3_700, []),
+        ]))
+
+        let entries = try entries()
         #expect(entries.map { $0["title"] as? String } == ["Weekly sync", "Design review"])
-        #expect(entries.map { $0["start"] as? String } == ["2026-10-23T09:00:15-04:00", "2026-10-23T09:30:05-04:00"])
-        #expect(entries.map { $0["end"] as? String } == ["2026-10-23T09:30:00-04:00", "2026-10-23T10:00:00-04:00"])
+        #expect(entries.map { $0["start"] as? String } == ["2026-10-23T09:00:15-04:00", "2026-10-23T09:32:23-04:00"])
+        #expect(entries.map { $0["end"] as? String } == ["2026-10-23T09:32:08-04:00", "2026-10-23T10:00:00-04:00"], "Design review runs to 14:00")
         #expect(entries.map { $0["providerMeetingId"] as? String } == ["abc-defg-hij", "xyz-abcd-efg"])
     }
 
