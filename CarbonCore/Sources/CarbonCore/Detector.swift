@@ -65,9 +65,10 @@ public struct Detector: Sendable {
         /// The Meeting App's WebRTC assertion and the mic were released for `webRTCReleaseGrace`. No silence is needed:
         /// the browser's other tabs keep playing after the call.
         case webRTCEnded
-        /// A new call began: its Event ended and another one started while the mic stayed held, a new
-        /// `AssertionId` while the mic stayed held, or a start signal after the Meeting App's mic and call
-        /// assertion were both released for `backToBackGap`. A new Meeting follows.
+        /// A new call began: a new `AssertionId` while the mic stayed held, a start signal after the Meeting App's
+        /// mic and call assertion were both released for `backToBackGap`, or the mic taken back after the Event
+        /// ended once another Event has begun. A new Meeting follows. An Event ending never splits a Meeting whose
+        /// mic stays held: the call ran over.
         case backToBack
         /// The Meeting reached `cap`. The start rules run again, so a call still live becomes a new Meeting.
         case cap
@@ -90,7 +91,8 @@ public struct Detector: Sendable {
     public static let webRTCReleaseGrace: TimeInterval = 10
     /// A call released this long and then back is a new call.
     public static let backToBackGap: TimeInterval = 5
-    /// A hold that began this long before the next Event belongs to the earlier call, not to that Event.
+    /// A hold that began this long before the next Event belongs to the earlier call, not to that Event, however
+    /// long it runs into it.
     public static let holdBeforeNextEvent: TimeInterval = 10 * 60
     /// After Detection ends a Meeting, nothing starts for this long.
     public static let cooldown: TimeInterval = 5
@@ -201,9 +203,11 @@ public struct Detector: Sendable {
         if let hold = meeting.app.flatMap({ holds[$0.bundleID] }), let ended = meeting.event, ended.end <= time,
             let next = nextEvent(after: ended, at: time)
         {
-            if next.start.timeIntervalSince(hold.since) >= Self.holdBeforeNextEvent {
+            // Released and taken back after the Event ended: the person left for the next call.
+            if hold.since > meeting.start, hold.since >= ended.end {
                 return end(.backToBack, at: time, event: ended)
             }
+            guard next.start.timeIntervalSince(hold.since) < Self.holdBeforeNextEvent else { return nil }
             meeting.event = next
             live = meeting
             return [.event(next)]

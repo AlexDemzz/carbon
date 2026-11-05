@@ -82,15 +82,35 @@ struct DetectorEventTests {
         #expect(commands.map(\.0) == [15, 901])
     }
 
-    @Test func backToBackEventsOnAHeldMicSplitTheMeetingAfterA5SecondCooldown() {
+    @Test func aCallThatRunsIntoTheNextEventStaysOneMeetingWhileTheMicIsHeld() {
         var detector = Detector()
 
-        let commands = play(&detector, 0, 2_000, holders: [chrome], lastSound: 2_000, events: [sync, review])
+        let commands = play(&detector, 0, 2_400, holders: [chrome], lastSound: 2_400, events: [sync, review])
 
-        #expect(commands.map(\.0) == [15, 1_800, 1_805])
+        #expect(commands.map(\.1) == [.start(chrome, event: sync)], "still on Weekly sync at 13:40")
+    }
+
+    @Test func takingTheMicBackAfterTheEventEndedSplitsTheMeetingWhenTheNextEventHasBegun() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 1_919, holders: [chrome], lastSound: 2_400, events: [sync, review])
+        commands += play(&detector, 1_920, 1_927, holders: [], lastSound: 2_400, events: [sync, review])
+        commands += play(&detector, 1_928, 2_400, holders: [chrome], lastSound: 2_400, events: [sync, review])
+
+        #expect(commands.map(\.0) == [15, 1_928, 1_943], "left Weekly sync at 13:32, back on the mic 8 s later")
         #expect(commands.map(\.1) == [
             .start(chrome, event: sync), .end(.backToBack), .start(chrome, event: review),
         ])
+    }
+
+    @Test func takingTheMicBackBeforeTheEventEndsKeepsTheMeeting() {
+        var detector = Detector()
+
+        var commands = play(&detector, 0, 1_199, holders: [chrome], lastSound: 2_400, events: [sync, review])
+        commands += play(&detector, 1_200, 1_207, holders: [], lastSound: 2_400, events: [sync, review])
+        commands += play(&detector, 1_208, 1_700, holders: [chrome], lastSound: 2_400, events: [sync, review])
+
+        #expect(commands.map(\.1) == [.start(chrome, event: sync)], "a drop at 13:20, inside Weekly sync")
     }
 
     @Test func aHoldThatBeganLessThan10MinutesBeforeTheNextEventBelongsToIt() {
