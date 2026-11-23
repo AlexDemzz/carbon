@@ -113,7 +113,7 @@ webhook-timestamp: 1768485730
 - Audio is processed only on your Mac, and deleted once the transcript is written, unless you turn on "Keep audio".
 - Transcripts are plain files in a folder you choose. Voice Prints are numeric voice signatures stored only on your Mac, and you can delete them, or turn voice recognition off, in Settings.
 - Debug mode, off by default, saves for each meeting every word heard, with its timings and the speaker it went to, in `~/Library/Application Support/Carbon/Debug`, out of your transcripts folder. Those files stay on your Mac; Settings shows them in the Finder, and deleting a meeting deletes its file.
-- There's no account, no analytics and no server. The only network traffic is Sparkle checking for updates, Apple's own speech model downloads and, if you turn it on, the [webhook](#webhook) you set, which receives each meeting's title, date, participants and file path, never its transcript.
+- There's no account, no analytics and no server. The only network traffic is Sparkle checking for updates, Apple's own speech model downloads and, if you turn it on, the [webhook](#webhook) you set, which receives each meeting's details, such as its title, times, participants and file path, never its transcript.
 
 You're responsible for telling others they're being recorded.
 

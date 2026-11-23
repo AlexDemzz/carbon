@@ -9,6 +9,7 @@ struct WebhookSettings: View {
     @AppStorage(SettingsKey.webhookHeaderName) private var headerName = ""
     @State private var headerValue = ""
     @State private var test: TestState = .idle
+    @State private var testTask: Task<Void, Never>?
 
     private enum TestState: Equatable {
         case idle, sending
@@ -23,7 +24,7 @@ struct WebhookSettings: View {
                 Toggle("Send a webhook when a Meeting is transcribed", isOn: $enabled)
             } footer: {
                 Text(
-                    "Carbon posts each new Meeting\u{2019}s title, date, participants and file path to your URL, never its Transcript."
+                    "Carbon posts each new Meeting\u{2019}s details, such as its title, times, participants and file path, to your URL, never its Transcript."
                 )
                 .foregroundStyle(.secondary)
             }
@@ -62,18 +63,35 @@ struct WebhookSettings: View {
             if enabled { headerValue = model.webhookHeaderValue }
         }
         .onChange(of: enabled) { _, on in
+            cancelTest()
             if on { headerValue = model.webhookHeaderValue }
             model.applyWebhookSettings()
         }
-        .onChange(of: url) {
-            test = .idle
+        .onChange(of: [url, headerName, headerValue]) { cancelTest() }
+        // Applied once typing pauses: a typo fixed at once doesn't drop the deliveries waiting for the URL.
+        .task(id: [url, headerName, headerValue]) {
+            try? await Task.sleep(for: .seconds(1))
+            if !Task.isCancelled { commit() }
+        }
+        .onDisappear {
+            cancelTest()
+            commit()
+        }
+    }
+
+    private func commit() {
+        guard enabled else { return }
+        if headerValue != model.webhookHeaderValue {
+            model.webhookHeaderValue = headerValue
+        } else {
             model.applyWebhookSettings()
         }
-        .onChange(of: headerName) { model.applyWebhookSettings() }
-        .onChange(of: headerValue) { _, value in
-            guard enabled else { return }
-            model.webhookHeaderValue = value
-        }
+    }
+
+    private func cancelTest() {
+        testTask?.cancel()
+        testTask = nil
+        test = .idle
     }
 
     @ViewBuilder private var testResult: some View {
@@ -104,9 +122,12 @@ struct WebhookSettings: View {
     }
 
     private func sendTest() {
+        commit()
         test = .sending
-        Task {
-            test = await model.sendWebhookTest().map(TestState.done) ?? .idle
+        testTask = Task {
+            let response = await model.sendWebhookTest()
+            guard !Task.isCancelled else { return }
+            test = response.map(TestState.done) ?? .idle
         }
     }
 

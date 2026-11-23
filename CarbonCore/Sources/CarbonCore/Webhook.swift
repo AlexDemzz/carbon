@@ -17,9 +17,9 @@ public struct WebhookEndpoint: Equatable, Sendable {
     public init?(url: String, headerName: String = "", headerValue: String = "") {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-            scheme == "https" || scheme == "http", url.host() != nil
+            scheme == "https" || scheme == "http", let host = url.host(), !host.isEmpty
         else { return nil }
-        let name = headerName.trimmingCharacters(in: .whitespaces)
+        let name = headerName.trimmingCharacters(in: .whitespacesAndNewlines)
         self.init(url: url, header: name.isEmpty ? nil : (name, headerValue))
     }
 
@@ -178,6 +178,7 @@ public final class Webhooks {
     @ObservationIgnored public var isOnline = true
     /// A delivery was dropped: it failed on every attempt, or the endpoint answered 410 Gone.
     @ObservationIgnored public var onGiveUp: ((WebhookStatus) -> Void)?
+    @ObservationIgnored public var onDiagnostic: ((String) -> Void)?
 
     public var last: WebhookStatus? { outbox.last }
     public var pending: [WebhookDelivery] { outbox.deliveries }
@@ -221,11 +222,12 @@ public final class Webhooks {
     }
 
     /// Sends every due delivery, one at a time, oldest first. A delivery that fails waits its turn again, so it
-    /// never holds up the others. A call while one runs makes that one go round again.
-    public func flush() async {
+    /// never holds up the others. A call while one runs makes that one go round again, and returns false at once.
+    @discardableResult
+    public func flush() async -> Bool {
         guard !isFlushing else {
             flushAgain = true
-            return
+            return false
         }
         isFlushing = true
         defer { isFlushing = false }
@@ -240,6 +242,7 @@ public final class Webhooks {
                 record(response, for: delivery.id)
             }
         } while flushAgain
+        return true
     }
 
     /// Sends a `webhook.test` event once, outside the outbox, with no retries.
@@ -253,7 +256,10 @@ public final class Webhooks {
             "webhook-id": id,
             "webhook-timestamp": String(Int(now().timeIntervalSince1970)),
         ]
-        if let header = endpoint.header { headers[header.name] = header.value }
+        // HTTP header names ignore case: an auth header never replaces Carbon's own.
+        if let header = endpoint.header, !headers.keys.contains(where: { $0.caseInsensitiveCompare(header.name) == .orderedSame }) {
+            headers[header.name] = header.value
+        }
         return WebhookRequest(url: endpoint.url, headers: headers, body: body)
     }
 
@@ -289,7 +295,7 @@ public final class Webhooks {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(outbox).write(to: file, options: .atomic)
         } catch {
-            // The outbox stays in memory: the delivery goes out, it just won't survive a quit.
+            onDiagnostic?("The webhook outbox wasn't saved, so it won't survive a quit: \(error.localizedDescription)")
         }
     }
 }

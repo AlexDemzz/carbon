@@ -21,6 +21,21 @@ final class ScriptedTransport: WebhookTransport {
     }
 }
 
+/// Holds each request until `release(_:)` answers it.
+final class GatedTransport: WebhookTransport {
+    private let waiting = Mutex<[CheckedContinuation<WebhookResponse, Never>]>([])
+
+    var waitingCount: Int { waiting.withLock { $0.count } }
+
+    func send(_ request: WebhookRequest) async -> WebhookResponse {
+        await withCheckedContinuation { continuation in waiting.withLock { $0.append(continuation) } }
+    }
+
+    func release(_ response: WebhookResponse) {
+        waiting.withLock { $0.removeFirst() }.resume(returning: response)
+    }
+}
+
 @MainActor
 struct WebhookTests {
     let folder = try! TemporaryFolder()
@@ -98,6 +113,20 @@ struct WebhookTests {
         #expect(headers["X-Carbon-Key"] == "s3cret")
     }
 
+    @Test(arguments: ["webhook-id", "CONTENT-TYPE"])
+    func theAuthHeaderNeverReplacesCarbonsOwn(name: String) async throws {
+        let transport = ScriptedTransport()
+        let webhooks = makeWebhooks(transport, endpoint: WebhookEndpoint(url: endpoint.url.absoluteString, headerName: name, headerValue: "x"))
+
+        webhooks.meetingTranscribed(meeting(), path: "2026/a.md", folder: folder.url)
+        await webhooks.flush()
+
+        let headers = try #require(transport.sent.only).headers
+        #expect(headers.count == 3)
+        #expect(headers["Content-Type"] == "application/json")
+        #expect(headers["webhook-id"]?.hasPrefix("msg_") == true)
+    }
+
     @Test func theTestEventIsMarkedAndNeverQueued() async throws {
         let transport = ScriptedTransport([.status(401)])
         let webhooks = makeWebhooks(transport)
@@ -126,7 +155,7 @@ struct WebhookTests {
 
     // MARK: Settings
 
-    @Test(arguments: ["", "n8n.local/webhook", "ftp://example.com/x", "https://", "not a url"])
+    @Test(arguments: ["", "n8n.local/webhook", "ftp://example.com/x", "https://", "http://:5678", "not a url"])
     func onlyAnHTTPAddressWithAHostIsAnEndpoint(url: String) {
         #expect(WebhookEndpoint(url: url) == nil)
     }
@@ -304,6 +333,43 @@ struct WebhookTests {
         #expect(transport.sent.map { try! json($0.body)["data"].flatMap { ($0 as? [String: Any])?["path"] as? String } }
             == ["2026/a.md", "2026/b.md"])
         #expect(webhooks.pending.map(\.title) == ["First"])
+        #expect(webhooks.last?.title == "Second")
+    }
+
+    @Test func aURLChangedWhileARequestIsOutDropsItsDelivery() async throws {
+        let transport = GatedTransport()
+        let clock = clock
+        let webhooks = Webhooks(file: outboxFile, transport: transport, now: { clock.now })
+        webhooks.endpoint = endpoint
+        webhooks.meetingTranscribed(meeting(), path: "2026/a.md", folder: folder.url)
+
+        let flush = Task { await webhooks.flush() }
+        while transport.waitingCount == 0 { await Task.yield() }
+        webhooks.endpoint = WebhookEndpoint(url: "https://other.example.com/hook")
+        transport.release(.status(500))
+        #expect(await flush.value)
+
+        #expect(webhooks.pending.isEmpty)
+        #expect(webhooks.last == nil)
+    }
+
+    @Test func aFlushAskedForWhileOneRunsIsFoldedIntoIt() async throws {
+        let transport = GatedTransport()
+        let clock = clock
+        let webhooks = Webhooks(file: outboxFile, transport: transport, now: { clock.now })
+        webhooks.endpoint = endpoint
+        webhooks.meetingTranscribed(meeting("First"), path: "2026/a.md", folder: folder.url)
+
+        let first = Task { await webhooks.flush() }
+        while transport.waitingCount == 0 { await Task.yield() }
+        webhooks.meetingTranscribed(meeting("Second"), path: "2026/b.md", folder: folder.url)
+        #expect(await webhooks.flush() == false)
+        transport.release(.status(200))
+        while transport.waitingCount == 0 { await Task.yield() }
+        transport.release(.status(200))
+
+        #expect(await first.value)
+        #expect(webhooks.pending.isEmpty)
         #expect(webhooks.last?.title == "Second")
     }
 
