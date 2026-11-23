@@ -31,6 +31,7 @@ extension AppModel {
         Task { [weak self] in
             // The retry timer runs on the continuous clock: left running, it would fire at wake, before the network.
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.willSleepNotification) {
+                self?.webhooksAsleep = true
                 self?.webhookRetry?.cancel()
             }
         }
@@ -38,6 +39,7 @@ extension AppModel {
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.didWakeNotification) {
                 // The path monitor may still report the network from before sleep: give it time to catch up.
                 try? await Task.sleep(for: .seconds(10))
+                self?.webhooksAsleep = false
                 self?.flushWebhooks()
             }
         }
@@ -57,8 +59,9 @@ extension AppModel {
         flushWebhooks()
     }
 
-    /// The auth header's value, read from the Keychain only once the webhook is on. After a failed read it stays
-    /// empty until Settings reads it again, so a denied Keychain prompt doesn't come back on every flush.
+    /// The auth header's value, read from the Keychain only once the webhook is on. A failed read keeps the value
+    /// read before, or empty, until Settings reads it again, so a denied Keychain prompt doesn't come back on every
+    /// flush.
     private var webhookHeaderValue: String {
         if let cachedWebhookHeaderValue { return cachedWebhookHeaderValue }
         return reloadWebhookHeaderValue() ?? ""
@@ -68,7 +71,7 @@ extension AppModel {
     @discardableResult
     func reloadWebhookHeaderValue() -> String? {
         let value = WebhookSecret.read()
-        cachedWebhookHeaderValue = value ?? ""
+        cachedWebhookHeaderValue = value ?? cachedWebhookHeaderValue ?? ""
         return value
     }
 
@@ -98,11 +101,10 @@ extension AppModel {
         if online { flushWebhooks() }
     }
 
-    /// A timer to the next due attempt. Its sleep runs on the continuous clock, so it fires on wake if it fell due
-    /// during sleep.
+    /// A timer to the next due attempt. None while the Mac sleeps: the wake flush schedules it again.
     private func scheduleWebhookRetry() {
         webhookRetry?.cancel()
-        guard webhooks.endpoint != nil, webhooks.isOnline, let next = webhooks.nextAttemptAt else { return }
+        guard !webhooksAsleep, webhooks.endpoint != nil, webhooks.isOnline, let next = webhooks.nextAttemptAt else { return }
         webhookRetry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSinceNow)))
             guard !Task.isCancelled else { return }

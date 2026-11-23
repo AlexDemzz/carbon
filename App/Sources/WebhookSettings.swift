@@ -66,8 +66,7 @@ struct WebhookSettings: View {
         }
         .onChange(of: enabled) { _, on in
             cancelTest()
-            if on { loadHeaderValue() }
-            commit()
+            if on { loadHeaderValue() } else { commit() }
         }
         .onChange(of: [url, headerName, headerValue]) { cancelTest() }
         // Applied once typing pauses: a typo fixed at once doesn't drop the deliveries waiting for the URL.

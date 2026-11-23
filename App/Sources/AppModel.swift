@@ -44,6 +44,8 @@ final class AppModel {
     @ObservationIgnored var cachedWebhookHeaderValue: String?
     @ObservationIgnored var networkMonitor: NWPathMonitor?
     @ObservationIgnored var webhookRetry: Task<Void, Never>?
+    /// Between sleep and the wake flush, when no retry timer is set.
+    @ObservationIgnored var webhooksAsleep = false
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
