@@ -74,7 +74,7 @@ Edit the file as you like. Carbon never rewrites your text: renaming a speaker o
 
 ## Webhook
 
-Off by default. Turn it on in Settings › Webhook, and when a meeting's file is first written, Carbon posts its details to your URL, so your own agent or n8n can start on it at once. A meeting Carbon recovers after quitting unexpectedly is sent at the next launch. Renaming, editing or deleting a meeting sends nothing, and turning the webhook on sends nothing for meetings already in your Library. An optional header, such as `Authorization`, authenticates Carbon; its value is kept in your Keychain. Send Test posts a sample `webhook.test` event, marked `"test": true`.
+Off by default. Turn it on in Settings › Webhook, and when a meeting's file is first written, Carbon posts its details to your URL, so your own agent or n8n can start on it at once. A meeting Carbon recovers after quitting unexpectedly is sent at the next launch. Renaming, editing or deleting a meeting sends nothing, and turning the webhook on sends nothing for meetings already in your Library. An optional header authenticates Carbon: paste it whole, such as `Authorization: Bearer …`. It's kept in your Keychain. Send Test posts a sample `webhook.test` event, marked `"test": true`.
 
 ```http
 POST <your URL>

@@ -4,7 +4,7 @@ import Observation
 /// Where Carbon posts its webhook: Settings › Webhook's URL, with an optional auth header.
 public struct WebhookEndpoint: Equatable, Sendable {
     public var url: URL
-    /// A static header the receiver checks, such as n8n's Header Auth. Its value lives in the Keychain.
+    /// A static header the receiver checks, such as n8n's Header Auth. It lives in the Keychain.
     public var header: (name: String, value: String)?
 
     public init(url: URL, header: (name: String, value: String)? = nil) {
@@ -13,14 +13,25 @@ public struct WebhookEndpoint: Equatable, Sendable {
     }
 
     /// The endpoint Settings describe, or nil when the URL isn't an `http(s)://` address with a host.
-    /// An empty header name sends no header.
-    public init?(url: String, headerName: String = "", headerValue: String = "") {
+    /// `header` is one line, as receivers show it to copy: `Authorization: Bearer …`. One that isn't a header sends none.
+    public init?(url: String, header: String = "") {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
             scheme == "https" || scheme == "http", let host = url.host(), !host.isEmpty
         else { return nil }
-        let name = headerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.init(url: url, header: name.isEmpty ? nil : (name, headerValue))
+        self.init(url: url, header: Self.header(header))
+    }
+
+    /// `Name: value`, split at the first colon. Nil for an empty line, or one with no valid name before a colon.
+    public static func header(_ line: String) -> (name: String, value: String)? {
+        let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let colon = line.firstIndex(of: ":") else { return nil }
+        let name = line[..<colon].trimmingCharacters(in: .whitespaces)
+        let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        // RFC 9110's token characters.
+        let token = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "!#$%&'*+-.^_`|~"))
+        guard !name.isEmpty, name.unicodeScalars.allSatisfy({ $0.isASCII && token.contains($0) }) else { return nil }
+        return (name, value)
     }
 
     public static func == (a: Self, b: Self) -> Bool {

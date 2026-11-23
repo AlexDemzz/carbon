@@ -42,7 +42,7 @@ struct WebhookTests {
     let support = try! TemporaryFolder()
     let clock = TestClock(date("2026-01-15T14:02:10Z"))
     let paris = TimeZone(identifier: "Europe/Paris")!
-    let endpoint = WebhookEndpoint(url: "https://n8n.example.com/webhook/carbon", headerName: "X-Carbon-Key", headerValue: "s3cret")!
+    let endpoint = WebhookEndpoint(url: "https://n8n.example.com/webhook/carbon", header: "X-Carbon-Key: s3cret")!
 
     var outboxFile: URL { support.url.appending(path: "webhooks.json") }
 
@@ -116,7 +116,7 @@ struct WebhookTests {
     @Test(arguments: ["webhook-id", "CONTENT-TYPE"])
     func theAuthHeaderNeverReplacesCarbonsOwn(name: String) async throws {
         let transport = ScriptedTransport()
-        let webhooks = makeWebhooks(transport, endpoint: WebhookEndpoint(url: endpoint.url.absoluteString, headerName: name, headerValue: "x"))
+        let webhooks = makeWebhooks(transport, endpoint: WebhookEndpoint(url: endpoint.url.absoluteString, header: "\(name): x"))
 
         webhooks.meetingTranscribed(meeting(), path: "2026/a.md", folder: folder.url)
         await webhooks.flush()
@@ -160,8 +160,21 @@ struct WebhookTests {
         #expect(WebhookEndpoint(url: url) == nil)
     }
 
-    @Test func anEmptyHeaderNameSendsNoHeader() {
-        #expect(WebhookEndpoint(url: " http://192.168.1.10:5678/webhook ", headerName: " ", headerValue: "x")
+    @Test(arguments: [
+        ("Authorization: Bearer crs_123", "Authorization", "Bearer crs_123"),
+        ("  X-Carbon-Key:s3cret  ", "X-Carbon-Key", "s3cret"),
+        ("Authorization: Basic dXNlcjpwYXNz:x", "Authorization", "Basic dXNlcjpwYXNz:x"),
+    ])
+    func aPastedHeaderLineIsSplitAtItsFirstColon(line: String, name: String, value: String) throws {
+        let header = try #require(WebhookEndpoint.header(line))
+        #expect(header.name == name)
+        #expect(header.value == value)
+    }
+
+    @Test(arguments: ["", "   ", "Bearer crs_123", ": Bearer crs_123", "Bad Name: x", "Clé: x"])
+    func aLineThatIsNotAHeaderSendsNone(line: String) {
+        #expect(WebhookEndpoint.header(line) == nil)
+        #expect(WebhookEndpoint(url: " http://192.168.1.10:5678/webhook ", header: line)
             == WebhookEndpoint(url: URL(string: "http://192.168.1.10:5678/webhook")!))
     }
 
@@ -194,7 +207,7 @@ struct WebhookTests {
         webhooks.isOnline = false
         webhooks.meetingTranscribed(meeting(), path: "2026/a.md", folder: folder.url)
 
-        webhooks.endpoint = WebhookEndpoint(url: endpoint.url.absoluteString, headerName: "Authorization", headerValue: "Bearer t")
+        webhooks.endpoint = WebhookEndpoint(url: endpoint.url.absoluteString, header: "Authorization: Bearer t")
         webhooks.isOnline = true
         await webhooks.flush()
 
