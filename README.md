@@ -72,12 +72,48 @@ participants:
 
 Edit the file as you like. Carbon never rewrites your text: renaming a speaker or a meeting only touches the speaker labels or the title.
 
+## Webhook
+
+Off by default. Turn it on in Settings › Webhook, and when a meeting's file is first written, Carbon posts its details to your URL, so your own agent or n8n can start on it at once. A meeting Carbon recovers after quitting unexpectedly is sent at the next launch. Renaming, editing or deleting a meeting sends nothing, and turning the webhook on sends nothing for meetings already in your Library. An optional header, such as `Authorization`, authenticates Carbon; its value is kept in your Keychain. Send Test posts a sample `webhook.test` event, marked `"test": true`.
+
+```http
+POST <your URL>
+Content-Type: application/json
+webhook-id: msg_2D7A0C4E-91B3-4F6E-8C1D-5A9B3E7F2C10
+webhook-timestamp: 1768485730
+```
+
+```json
+{
+  "type": "meeting.transcribed",
+  "timestamp": "2026-01-15T15:02:10+01:00",
+  "data": {
+    "id": "6F1C2B8E-0A51-4C3A-9E0B-1F2D3C4B5A61",
+    "title": "Remote control kickoff",
+    "provider": "Google Meet",
+    "start": "2026-01-15T14:30:00+01:00",
+    "end": "2026-01-15T15:02:10+01:00",
+    "durationSeconds": 1930,
+    "language": "en-US",
+    "participants": [{ "name": "Dana Whitfield", "email": "dana@example.com" }],
+    "path": "2026/2026-01-15-remote-control-kickoff.md",
+    "absolutePath": "/Users/you/Carbon/2026/2026-01-15-remote-control-kickoff.md"
+  }
+}
+```
+
+- The transcript isn't in the event: read the file at `absolutePath`, or at `path` inside your Library folder. The `id` is also in the file's frontmatter, and stays its key if you move the file.
+- Reply with a 2xx status straight away and do the work afterwards. Anything else, a redirect or no answer within 30 seconds is a failure.
+- Carbon retries a failed delivery for about 3 days, holding it while your Mac sleeps, is offline or Carbon is quit, then drops it and notifies you; a 410 drops it at once. Settings shows the last delivery. Changing the URL or turning the webhook off drops what's still waiting.
+- The same event can arrive twice, for instance after a timeout. `webhook-id` stays the same on every retry: ignore an id you've already handled.
+- `http://` works only on your local network, such as `http://192.168.1.10:5678`, and macOS asks once to let Carbon reach it. Anywhere else, use `https://`.
+
 ## Privacy
 
 - Audio is processed only on your Mac, and deleted once the transcript is written, unless you turn on "Keep audio".
 - Transcripts are plain files in a folder you choose. Voice Prints are numeric voice signatures stored only on your Mac, and you can delete them, or turn voice recognition off, in Settings.
 - Debug mode, off by default, saves for each meeting every word heard, with its timings and the speaker it went to, in `~/Library/Application Support/Carbon/Debug`, out of your transcripts folder. Those files stay on your Mac; Settings shows them in the Finder, and deleting a meeting deletes its file.
-- There's no account, no analytics and no server. The only network traffic is Sparkle checking for updates and Apple's own speech model downloads.
+- There's no account, no analytics and no server. The only network traffic is Sparkle checking for updates, Apple's own speech model downloads and, if you turn it on, the [webhook](#webhook) you set, which receives each meeting's title, date, participants and file path, never its transcript.
 
 You're responsible for telling others they're being recorded.
 

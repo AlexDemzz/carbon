@@ -4,7 +4,7 @@ import ServiceManagement
 import UniformTypeIdentifiers
 
 enum SettingsTab: Hashable {
-    case general, languages, ignoredApps, permissions, voicePrints, about
+    case general, languages, ignoredApps, permissions, voicePrints, webhook, about
 }
 
 /// Settings › General › "Show app icon in". With Menu Bar Only, Carbon still joins the Dock while one of its windows
