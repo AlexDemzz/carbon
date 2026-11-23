@@ -22,6 +22,9 @@ struct SettingsView: View {
             Tab("Voice Prints", systemImage: "waveform", value: .voicePrints) {
                 VoicePrintsSettings(model: model)
             }
+            Tab("Webhook", systemImage: "paperplane", value: .webhook) {
+                WebhookSettings(model: model)
+            }
             Tab("About", systemImage: "info.circle", value: SettingsTab.about) {
                 AboutSettings(model: model)
             }

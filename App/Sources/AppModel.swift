@@ -1,5 +1,6 @@
 import AppKit
 import CarbonCore
+import Network
 import Observation
 import Speech
 
@@ -38,6 +39,13 @@ final class AppModel {
     @ObservationIgnored var meetingLanguagesLoad: Task<Void, Never>?
     /// The last "Switch to <app>" offer posted, which its banner's action refers to.
     @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
+    /// Settings › Webhook's outbox, off by default.
+    let webhooks: Webhooks
+    @ObservationIgnored var cachedWebhookHeaderValue: String?
+    @ObservationIgnored var networkMonitor: NWPathMonitor?
+    @ObservationIgnored var webhookRetry: Task<Void, Never>?
+    /// Between sleep and the wake flush, when no retry timer is set.
+    @ObservationIgnored var webhooksAsleep = false
 
     var isLive: Bool {
         if case .live = recorder.state { true } else { false }
@@ -52,6 +60,10 @@ final class AppModel {
             savedIn: .standard, key: SettingsKey.libraryFolder,
             home: fileManager.homeDirectoryForCurrentUser, documents: documents, supportFolder: support)
         library = Library(folder: libraryFolder, supportFolder: support)
+        webhooks = Webhooks(
+            file: support.appending(path: "webhooks.json"),
+            transport: URLSessionWebhookTransport(
+                version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"))
         meetingLanguages = UserDefaults.standard.data(forKey: SettingsKey.meetingLanguages)
             .flatMap { try? JSONDecoder().decode(MeetingLanguages.self, from: $0) }
         recorder = Recorder(
@@ -80,6 +92,8 @@ final class AppModel {
         recorder.onNotice = { [weak self] notice in self?.announce(notice) }
         recorder.meetingLanguageCandidates = { [weak self] in self?.meetingLanguageCandidates ?? [] }
         notifier.onResponse = { [weak self] response in self?.respond(to: response) }
+        // Before recovery, which may file a Meeting whose event is due.
+        startWebhooks()
         Task {
             if FirstLaunch.run() { showOnboarding() }
             async let permissions: Void = watchPermissions()
@@ -433,6 +447,10 @@ enum SettingsKey {
     static let recognizeVoices = "recognizeVoices"
     /// "Show app icon in", an `AppIconPlacement`, Dock and Menu Bar by default.
     static let appIconPlacement = "appIconPlacement"
+    /// Settings › Webhook, off by default. The header's value is in the Keychain, `WebhookSecret`.
+    static let webhookEnabled = "webhookEnabled"
+    static let webhookURL = "webhookURL"
+    static let webhookHeaderName = "webhookHeaderName"
 }
 
 enum AppError: LocalizedError {

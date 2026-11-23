@@ -25,6 +25,9 @@ public final class Library {
     /// The embedding model of this build's diarization: only prints it made are compared.
     @ObservationIgnored public let voicePrintModel: String
 
+    /// A Meeting's file was first written, at `path` relative to `folder`: the webhook's `meeting.transcribed`.
+    @ObservationIgnored public var onCreate: ((FinishedMeeting, _ path: String) -> Void)?
+
     /// The Meetings whose file Carbon could read, newest first. Filled by `load()`, kept current by Carbon's writes.
     public internal(set) var meetings: [ListedMeeting] = []
 
@@ -99,6 +102,7 @@ public final class Library {
             meetings.append(listed)
             meetings.sort(by: Self.newestFirst)
         }
+        onCreate?(meeting, relativePath)
         return url
     }
 
