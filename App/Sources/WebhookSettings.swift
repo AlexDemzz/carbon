@@ -8,6 +8,8 @@ struct WebhookSettings: View {
     @AppStorage(SettingsKey.webhookURL) private var url = ""
     @AppStorage(SettingsKey.webhookHeaderName) private var headerName = ""
     @State private var headerValue = ""
+    /// What the Keychain held when the field was filled, or nil when it couldn't be read: only an edit is saved.
+    @State private var loadedHeaderValue: String?
     @State private var test: TestState = .idle
     @State private var testTask: Task<Void, Never>?
 
@@ -60,12 +62,12 @@ struct WebhookSettings: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            if enabled { headerValue = model.webhookHeaderValue }
+            if enabled { loadHeaderValue() }
         }
         .onChange(of: enabled) { _, on in
             cancelTest()
-            if on { headerValue = model.webhookHeaderValue }
-            model.applyWebhookSettings()
+            if on { loadHeaderValue() }
+            commit()
         }
         .onChange(of: [url, headerName, headerValue]) { cancelTest() }
         // Applied once typing pauses: a typo fixed at once doesn't drop the deliveries waiting for the URL.
@@ -79,10 +81,18 @@ struct WebhookSettings: View {
         }
     }
 
+    private func loadHeaderValue() {
+        loadedHeaderValue = model.reloadWebhookHeaderValue()
+        headerValue = loadedHeaderValue ?? ""
+        model.applyWebhookSettings()
+    }
+
+    /// Saves an edited header value, even with the webhook off, then applies Settings.
     private func commit() {
-        guard enabled else { return }
-        if headerValue != model.webhookHeaderValue {
-            model.webhookHeaderValue = headerValue
+        let edited = loadedHeaderValue.map { headerValue != $0 } ?? !headerValue.isEmpty
+        if edited {
+            loadedHeaderValue = headerValue
+            model.saveWebhookHeaderValue(headerValue)
         } else {
             model.applyWebhookSettings()
         }

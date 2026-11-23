@@ -29,6 +29,12 @@ extension AppModel {
         monitor.start(queue: .main)
         networkMonitor = monitor
         Task { [weak self] in
+            // The retry timer runs on the continuous clock: left running, it would fire at wake, before the network.
+            for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.willSleepNotification) {
+                self?.webhookRetry?.cancel()
+            }
+        }
+        Task { [weak self] in
             for await _ in NSWorkspace.shared.notificationCenter.notifications(named: NSWorkspace.didWakeNotification) {
                 // The path monitor may still report the network from before sleep: give it time to catch up.
                 try? await Task.sleep(for: .seconds(10))
@@ -51,20 +57,25 @@ extension AppModel {
         flushWebhooks()
     }
 
-    /// The auth header's value, read from the Keychain only once the webhook is on, and again after a failed read.
-    var webhookHeaderValue: String {
-        get {
-            if let cachedWebhookHeaderValue { return cachedWebhookHeaderValue }
-            guard let value = WebhookSecret.read() else { return "" }
-            cachedWebhookHeaderValue = value
-            return value
-        }
-        set {
-            guard newValue != webhookHeaderValue else { return }
-            cachedWebhookHeaderValue = newValue
-            WebhookSecret.write(newValue)
-            applyWebhookSettings()
-        }
+    /// The auth header's value, read from the Keychain only once the webhook is on. After a failed read it stays
+    /// empty until Settings reads it again, so a denied Keychain prompt doesn't come back on every flush.
+    private var webhookHeaderValue: String {
+        if let cachedWebhookHeaderValue { return cachedWebhookHeaderValue }
+        return reloadWebhookHeaderValue() ?? ""
+    }
+
+    /// Reads the header value from the Keychain again. Nil when it couldn't be read.
+    @discardableResult
+    func reloadWebhookHeaderValue() -> String? {
+        let value = WebhookSecret.read()
+        cachedWebhookHeaderValue = value ?? ""
+        return value
+    }
+
+    func saveWebhookHeaderValue(_ value: String) {
+        cachedWebhookHeaderValue = value
+        WebhookSecret.write(value)
+        applyWebhookSettings()
     }
 
     /// "Send Test": a `webhook.test` event to the endpoint in Settings, once.
