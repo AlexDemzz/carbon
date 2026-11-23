@@ -6,10 +6,9 @@ struct WebhookSettings: View {
     let model: AppModel
     @AppStorage(SettingsKey.webhookEnabled) private var enabled = false
     @AppStorage(SettingsKey.webhookURL) private var url = ""
-    @AppStorage(SettingsKey.webhookHeaderName) private var headerName = ""
-    @State private var headerValue = ""
+    @State private var header = ""
     /// What the Keychain held when the field was filled, or nil when it couldn't be read: only an edit is saved.
-    @State private var loadedHeaderValue: String?
+    @State private var loadedHeader: String?
     @State private var test: TestState = .idle
     @State private var testTask: Task<Void, Never>?
 
@@ -19,6 +18,7 @@ struct WebhookSettings: View {
     }
 
     private var urlIsValid: Bool { WebhookEndpoint(url: url) != nil }
+    private var headerIsValid: Bool { header.trimmingCharacters(in: .whitespaces).isEmpty || WebhookEndpoint.header(header) != nil }
 
     var body: some View {
         Form {
@@ -38,9 +38,11 @@ struct WebhookSettings: View {
                     Label("Enter an address that starts with https:// or http://.", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
                 }
-                TextField("Header name", text: $headerName, prompt: Text("Optional, such as Authorization"))
-                    .autocorrectionDisabled()
-                SecureField("Header value", text: $headerValue)
+                SecureField("Header", text: $header, prompt: Text("Optional, such as Authorization: Bearer \u{2026}"))
+                if !headerIsValid {
+                    Label("Paste the whole header, name and value, such as Authorization: Bearer \u{2026}", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                }
                 HStack {
                     Button("Send Test") { sendTest() }
                         .disabled(!urlIsValid || test == .sending)
@@ -62,15 +64,15 @@ struct WebhookSettings: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            if enabled { loadHeaderValue() }
+            if enabled { loadHeader() }
         }
         .onChange(of: enabled) { _, on in
             cancelTest()
-            if on { loadHeaderValue() } else { commit() }
+            if on { loadHeader() } else { commit() }
         }
-        .onChange(of: [url, headerName, headerValue]) { cancelTest() }
+        .onChange(of: [url, header]) { cancelTest() }
         // Applied once typing pauses: a typo fixed at once doesn't drop the deliveries waiting for the URL.
-        .task(id: [url, headerName, headerValue]) {
+        .task(id: [url, header]) {
             try? await Task.sleep(for: .seconds(1))
             if !Task.isCancelled { commit() }
         }
@@ -80,18 +82,18 @@ struct WebhookSettings: View {
         }
     }
 
-    private func loadHeaderValue() {
-        loadedHeaderValue = model.reloadWebhookHeaderValue()
-        headerValue = loadedHeaderValue ?? ""
+    private func loadHeader() {
+        loadedHeader = model.reloadWebhookHeader()
+        header = loadedHeader ?? ""
         model.applyWebhookSettings()
     }
 
-    /// Saves an edited header value, even with the webhook off, then applies Settings.
+    /// Saves an edited header, even with the webhook off, then applies Settings.
     private func commit() {
-        let edited = loadedHeaderValue.map { headerValue != $0 } ?? !headerValue.isEmpty
+        let edited = loadedHeader.map { header != $0 } ?? !header.isEmpty
         if edited {
-            loadedHeaderValue = headerValue
-            model.saveWebhookHeaderValue(headerValue)
+            loadedHeader = header
+            model.saveWebhookHeader(header)
         } else {
             model.applyWebhookSettings()
         }

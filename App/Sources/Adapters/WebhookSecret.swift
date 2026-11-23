@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// The webhook auth header's value, in the login keychain rather than UserDefaults' readable plist.
+/// The webhook auth header, one `Name: value` line, in the login keychain rather than UserDefaults' readable plist.
 enum WebhookSecret {
     private static var query: [String: Any] {
         [

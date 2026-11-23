@@ -41,7 +41,7 @@ final class AppModel {
     @ObservationIgnored private var switchOffer: Recorder.SwitchOffer?
     /// Settings › Webhook's outbox, off by default.
     let webhooks: Webhooks
-    @ObservationIgnored var cachedWebhookHeaderValue: String?
+    @ObservationIgnored var cachedWebhookHeader: String?
     @ObservationIgnored var networkMonitor: NWPathMonitor?
     @ObservationIgnored var webhookRetry: Task<Void, Never>?
     /// Between sleep and the wake flush, when no retry timer is set.
@@ -447,10 +447,9 @@ enum SettingsKey {
     static let recognizeVoices = "recognizeVoices"
     /// "Show app icon in", an `AppIconPlacement`, Dock and Menu Bar by default.
     static let appIconPlacement = "appIconPlacement"
-    /// Settings › Webhook, off by default. The header's value is in the Keychain, `WebhookSecret`.
+    /// Settings › Webhook, off by default. The auth header is in the Keychain, `WebhookSecret`.
     static let webhookEnabled = "webhookEnabled"
     static let webhookURL = "webhookURL"
-    static let webhookHeaderName = "webhookHeaderName"
 }
 
 enum AppError: LocalizedError {

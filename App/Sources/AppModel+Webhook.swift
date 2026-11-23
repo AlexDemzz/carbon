@@ -52,32 +52,28 @@ extension AppModel {
             webhooks.endpoint = nil
             return
         }
-        webhooks.endpoint = WebhookEndpoint(
-            url: defaults.string(forKey: SettingsKey.webhookURL) ?? "",
-            headerName: defaults.string(forKey: SettingsKey.webhookHeaderName) ?? "",
-            headerValue: webhookHeaderValue)
+        webhooks.endpoint = WebhookEndpoint(url: defaults.string(forKey: SettingsKey.webhookURL) ?? "", header: webhookHeader)
         flushWebhooks()
     }
 
-    /// The auth header's value, read from the Keychain only once the webhook is on. A failed read keeps the value
-    /// read before, or empty, until Settings reads it again, so a denied Keychain prompt doesn't come back on every
-    /// flush.
-    private var webhookHeaderValue: String {
-        if let cachedWebhookHeaderValue { return cachedWebhookHeaderValue }
-        return reloadWebhookHeaderValue() ?? ""
+    /// The auth header line, read from the Keychain only once the webhook is on. A failed read keeps the line read
+    /// before, or empty, until Settings reads it again, so a denied Keychain prompt doesn't come back on every flush.
+    private var webhookHeader: String {
+        if let cachedWebhookHeader { return cachedWebhookHeader }
+        return reloadWebhookHeader() ?? ""
     }
 
-    /// Reads the header value from the Keychain again. Nil when it couldn't be read.
+    /// Reads the header line from the Keychain again. Nil when it couldn't be read.
     @discardableResult
-    func reloadWebhookHeaderValue() -> String? {
-        let value = WebhookSecret.read()
-        cachedWebhookHeaderValue = value ?? cachedWebhookHeaderValue ?? ""
-        return value
+    func reloadWebhookHeader() -> String? {
+        let header = WebhookSecret.read()
+        cachedWebhookHeader = header ?? cachedWebhookHeader ?? ""
+        return header
     }
 
-    func saveWebhookHeaderValue(_ value: String) {
-        cachedWebhookHeaderValue = value
-        WebhookSecret.write(value)
+    func saveWebhookHeader(_ header: String) {
+        cachedWebhookHeader = header
+        WebhookSecret.write(header)
         applyWebhookSettings()
     }
 
